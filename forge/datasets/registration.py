@@ -183,6 +183,13 @@ async def register_files(
     await c.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"{namespace}:{engine}",)
     )
+    if parents:
+        cursor = await c.execute(
+            "SELECT id FROM historical.datasets WHERE id=ANY(%s) AND status='complete' FOR SHARE",
+            (parents,),
+        )
+        if {row[0] for row in await cursor.fetchall()} != set(parents):
+            raise MarketForgeError("A selected upstream file is no longer available.")
     shared = {
         **{
             k: v
@@ -219,6 +226,13 @@ async def register_files(
                 and json.loads(json.dumps(value)) != previous[1][key]
             ):
                 raise MarketForgeError(f"Publication {engine} conflicts on {key}.")
+    retired = await c.execute(
+        """SELECT 1 FROM historical.datasets
+           WHERE publication_id=%s AND status='superseded' LIMIT 1""",
+        (publication,),
+    )
+    if await retired.fetchone():
+        raise MarketForgeError("This registry publication has been superseded.")
     if legacy_id is None:
         cur = await c.execute(
             """SELECT d.id FROM historical.datasets d

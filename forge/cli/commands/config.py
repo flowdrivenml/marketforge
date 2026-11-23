@@ -13,58 +13,36 @@ def show_config(
     as_json: bool = False,
 ) -> None:
     """Display public settings without modifying application state."""
-    settings_file = str(context.settings_file) if context.settings_file is not None else None
-
-    # Select public fields explicitly so future secrets are not exposed.
-    payload = {
-        "schema_version": 1,
-        "project_root": str(context.paths.root),
-        "settings_file": settings_file,
-        "settings": {
-            "version": context.settings.version,
-            "storage": {
-                "data_root": context.settings.storage.data_root,
-                "resolved_data_root": str(context.paths.data_root),
-            },
-            "presentation": {
-                "mode": context.settings.presentation.mode,
-                "color": context.settings.presentation.color,
-                "editor": context.settings.presentation.editor,
-            },
-        },
-        "http": context.settings.http.model_dump(mode="json"),
+    payload = context.configuration_report()
+    settings_file = payload["settings_file"]
+    sources = payload["setting_sources"]
+    settings = context.settings
+    sections = {
+        "storage": settings.storage,
+        "presentation": settings.presentation,
+        "http": settings.http,
     }
 
     if as_json:
         print(json.dumps(payload, indent=2))
         return
 
-    console = context.console
+    from rich.table import Table
+    from rich.text import Text
 
+    console = context.console
     console.print("MarketForge · Configuration", style="mf.heading")
-    console.print()
-    console.print(f"Project root   {context.paths.root}")
-    console.print(f"Settings file  {settings_file or 'Built-in defaults'}")
-    console.print(f"Data root      {context.paths.data_root}")
-    console.print(f"Presentation   {context.settings.presentation.mode}")
-    console.print(f"Color          {context.settings.presentation.color}")
-    console.print(
-        f"Editor         {context.settings.presentation.editor or 'VISUAL / EDITOR / vi'}"
-    )
-    console.print("HTTP defaults", style="mf.heading")
-    console.print(
-        f"Requests per second: {context.settings.http.requests_per_second}",
-        style="mf.body",
-    )
-    console.print(
-        f"Concurrent requests: {context.settings.http.max_concurrent}",
-        style="mf.body",
-    )
-    console.print(
-        f"Timeout: {context.settings.http.timeout_seconds} seconds",
-        style="mf.body",
-    )
-    console.print(
-        f"Maximum attempts: {context.settings.http.max_attempts}",
-        style="mf.body",
-    )
+    console.print(Text(f"Project root   {context.paths.root}"))
+    console.print(Text(f"Settings file  {settings_file or 'Built-in defaults'}"))
+    console.print(Text(f"Data root      {context.paths.data_root}"))
+    table = Table("Setting", "Value", "Source")
+    table.add_row("version", str(settings.version), Text(sources["version"] or "Built-in default"))
+    for section, model in sections.items():
+        for name, value in model.model_dump().items():
+            label = f"{section}.{name}"
+            table.add_row(
+                label,
+                Text(str(value) if value is not None else "Environment / editor fallback"),
+                Text(sources[label] or "Built-in default"),
+            )
+    console.print(table)

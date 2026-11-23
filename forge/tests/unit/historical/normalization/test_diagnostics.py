@@ -2,9 +2,11 @@
 
 from copy import deepcopy
 from io import StringIO
+from pathlib import Path
 
 from forge.historical.normalization.diagnostics import summarize
 from forge.markets.models import array, obj
+from forge.shared.presentation.normalization import PreparationView
 from forge.shared.terminal.console import create_console
 from forge.shared.terminal.normalization import render_batch
 
@@ -90,13 +92,19 @@ def test_partial_v4_presentation_reports_blockers_not_obsolete_protocol_failure(
         ),
         "ranking_resolution": {"snapshot": "snapshot-id", "policy": "turnover"},
     }
-    render_batch(create_console(stream=output), result)
+    render_batch(
+        create_console(stream=output),
+        PreparationView.from_result(
+            result, environment="testing", recipe="fixture", dry_run=bool(result.get("dry_run"))
+        ),
+        root=Path.cwd(),
+    )
     text = output.getvalue()
-    assert "schema v4" in text
-    assert "missing_historical_specifications" in text
-    assert "not a selection blocker" in text
-    assert "(persisted)" in text
-    assert "not performed (dry run)" in text
+    assert "Batch schema" in text and "4" in text
+    assert "Missing historical specifications" in text
+    assert "Blockers" in text and "Coverage and Metadata Warnings" in text
+    assert "snapshot-id" in text
+    assert "DRY RUN" in text and "Not Written" in text
     assert "v3" not in text and "unsupported" not in text
     assert "passed" not in text
 
@@ -114,9 +122,15 @@ def test_validated_preparation_is_distinct_from_execution() -> None:
         "report_path": "report.json",
         "engine_compatibility": {"direct_execution_supported": True},
     }
-    render_batch(create_console(stream=output), result)
-    assert "validation: passed" in output.getvalue()
-    assert "normalization has not been executed" in output.getvalue()
+    render_batch(
+        create_console(stream=output),
+        PreparationView.from_result(
+            result, environment="testing", recipe="fixture", dry_run=bool(result.get("dry_run"))
+        ),
+        root=Path.cwd(),
+    )
+    assert "Prepared batch contract validated" in output.getvalue()
+    assert "Preparation finished before execution." in output.getvalue()
 
 
 def test_grouping_keeps_exchange_instrument_market_and_content_distinct() -> None:

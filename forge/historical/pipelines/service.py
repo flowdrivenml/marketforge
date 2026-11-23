@@ -7,7 +7,7 @@ import os
 import shutil
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -18,6 +18,7 @@ from forge.historical.archives.selection import ArchiveSelection, ArchiveSelecti
 from forge.historical.archives.storage.files import contained
 from forge.historical.engine.managed import checksum, resolve
 from forge.historical.engine.process import PreparationObserver, joined_io
+from forge.historical.engine.runtime import compose_pipeline
 from forge.historical.merge import service as merge
 from forge.historical.normalization import execution as normalize
 from forge.historical.normalization.batch import (
@@ -34,10 +35,19 @@ from forge.historical.normalization.service import default_output_paths, write_j
 from forge.historical.pipelines.config import PipelineRecipe, load_recipe
 from forge.historical.pipelines.progress import Activity, PipelineSnapshot, StageSnapshot
 from forge.orchestration.artifacts import RunArtifacts
+from forge.orchestration.registry import begin, complete_call, show_index
 from forge.shared.config.models import AppSettings
-from forge.shared.database.testing import TestingDatabaseError, testing_connection, testing_dsn
+from forge.shared.database.connection import (
+    DatabaseError,
+    database_connection,
+    database_dsn,
+    database_purpose,
+    pinned_registry,
+    require_registry,
+    selected_registry_id,
+)
 from forge.shared.errors import MarketForgeError
-from forge.shared.identity import new_attempt_id, new_run_id, parse_run_id
+from forge.shared.identity import RunOperation, new_attempt_id, new_run_id, parse_run_id
 from forge.shared.paths import ProjectPaths
 from forge.startup.context import ApplicationContext
 
@@ -81,18 +91,14 @@ def retained(path: Path, digest: str) -> Path:
 
 
 async def registry_identity(paths: ProjectPaths) -> str:
-    async with testing_connection(testing_dsn(paths.root)) as connection:
-        cursor = await connection.execute(
-            "SELECT database_id FROM forge_meta.database_identity WHERE singleton"
-        )
-        row = await cursor.fetchone()
-        if not row or row[0] is None:
-            raise Blocked("The testing registry has no retained database identity.")
-        return str(row[0])
+    return await selected_registry_id(paths.root)
 
 
 def artifacts_for(paths: ProjectPaths, run_id: str) -> RunArtifacts:
-    return RunArtifacts.for_run(paths, parse_run_id(run_id))
+    identity = parse_run_id(run_id)
+    if identity.operation not in {None, RunOperation.PIPELINE}:
+        raise Blocked("Expected a pipeline run reference.")
+    return RunArtifacts.for_run(paths, identity)
 
 
 def status(paths: ProjectPaths, run_id: str) -> dict[str, Any]:
@@ -215,18 +221,18 @@ class PipelineRun:
         return retained(Path(item["path"]), item["sha256"])
 
     def freeze(self) -> None:
-        historical = self.paths.config_dir / "historical"
         self.historical.mkdir(parents=True, exist_ok=True)
-        files = [historical / "general.toml"]
-        files.extend(
-            Path(item["location"]) for item in normalize.profile_inventory(self.paths, None)
-        )
         snapshots: dict[str, str] = {}
-        for source in files:
-            target = self.historical / source.relative_to(historical)
+        profile_root = self.historical / "profiles"
+        profile_root.mkdir(exist_ok=True)
+        for item in normalize.profile_inventory(self.paths, None):
+            source = Path(item["location"])
+            target = profile_root / item["id"].rsplit(".", 1)[1] / source.name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
-            snapshots[str(target)] = checksum(target)
+            if checksum(target) != item["sha256"]:
+                raise Blocked(f"Profile changed during the snapshot: {source}")
+            snapshots[str(target)] = item["sha256"]
         engines: dict[str, Any] = {}
         for name in ("normalize", "merge"):
             source = resolve(self.paths, name)
@@ -237,7 +243,15 @@ class PipelineRun:
             if checksum(target) != digest:
                 raise Blocked(f"Managed {name} executable changed during the snapshot.")
             engines[name] = {"path": str(target), "sha256": digest}
-        self.report.update(settings_files=snapshots, engines=engines)
+        runtime = compose_pipeline(
+            self.paths,
+            self.historical,
+            {name: Path(item["path"]) for name, item in engines.items()},
+        )
+        for name in engines:
+            path = self.historical / f"{name}.toml"
+            snapshots[str(path)] = checksum(path)
+        self.report.update(settings_files=snapshots, engines=engines, runtime=runtime)
         self.save()
 
     def inspect_preparation(self, stage: dict[str, Any]) -> Path:
@@ -312,7 +326,7 @@ class PipelineRun:
                 result = await run_acquisition(
                     self.context,
                     self.recipe.acquisition(),
-                    dsn=testing_dsn(self.paths.root),
+                    dsn=database_dsn(self.paths.root),
                     download=True,
                     observer=self.observe_acquisition,
                     resume_report=prior,
@@ -323,6 +337,8 @@ class PipelineRun:
                 raise
             child = Path(result["report"])
             self.save_acquisition_reference(child)
+            stage["child_run_id"] = result["run_id"]
+            self.save()
             if result["status"] != "complete":
                 raise Blocked(f"Acquisition did not complete; inspect {child}.")
             selection = ArchiveSelection.model_validate_json(json.dumps(result["selection"]))
@@ -436,7 +452,7 @@ class PipelineRun:
         batch = read(source)
         report = read(Path(stage["prepared"]["report"]))
         identity = f"normalize-retry-{new_attempt_id()}"
-        async with testing_connection(testing_dsn(self.paths.root)) as connection:
+        async with database_connection(database_dsn(self.paths.root)) as connection:
             used = await used_ids(connection, self.paths)
         directory = self.paths.runs_dir / identity
         jobs: dict[int, dict[str, object]] = {}
@@ -530,12 +546,14 @@ class PipelineRun:
         }
         intent = self.inspect_intent(stage)
         if intent is not None:
-            if read(intent)["submitted_sha256"] != stage["prepared"]["job_sha256"]:
+            if (prior := read(intent)).get("requested_sha256", prior["submitted_sha256"]) != stage[
+                "prepared"
+            ]["job_sha256"]:
                 raise Blocked("Normalization intent differs from the retained submitted batch.")
-            document = read(source)
+            document = read(intent.parent / "submitted-batch.json")
             outputs = [self.paths.root / job["output"]["dataset_path"] for job in document["jobs"]]
             if all(output_present(path) for path in outputs):
-                await normalize.pin_raw_inputs(self.paths, document["jobs"], expected=expected)
+                await normalize.pin_raw_inputs(self.paths, read(source)["jobs"], expected=expected)
                 return self.finish(
                     name,
                     await normalize.recover(
@@ -590,7 +608,14 @@ class PipelineRun:
         intent = self.inspect_intent(stage)
         if intent is not None:
             prior = read(intent)
-            if prior["submitted_sha256"] != stage["prepared"]["job_sha256"]:
+            reused = stage.get("result", {}).get("disposition") == "reused"
+            if (
+                not reused
+                and prior["submitted_sha256"] != stage["prepared"]["job_sha256"]
+                or reused
+                and checksum(Path(stage["result"]["requested_submission_path"]))
+                != stage["prepared"]["job_sha256"]
+            ):
                 raise Blocked("Merge intent differs from the retained submitted job.")
             if await joined_io(lambda: output_present(Path(prior["path"]))):
                 self.inspect_preparation(stage)
@@ -646,31 +671,68 @@ class PipelineRun:
             executable=self.engine(name),
             lifecycle=self.on_engine(name),
         )
+        if original_intent := result.get("execution_intent_reference"):
+            stage["execution_intent"] = original_intent
+            stage["execution_intent_sha256"] = checksum(Path(original_intent))
         self.finish(name, result)
 
     async def run(self, *, stop: bool = False) -> dict[str, Any]:
+        identity = parse_run_id(self.report["run_id"])
+        prior = self.report if self.report.get("registry_id") is not None else None
+        if self.report.get("environment") != database_purpose() or (
+            prior is None
+            and any(stage["state"] != "pending" for stage in self.report["stages"].values())
+        ):
+            raise Blocked("The pipeline requires its original database environment and identity.")
+        # A prior registration may have committed just before the initial report update.
+        indexed = (
+            await show_index(self.paths, str(identity))
+            if prior is None and identity.operation == RunOperation.PIPELINE
+            else None
+        )
+        execution = await begin(
+            self.paths,
+            RunOperation.PIPELINE,
+            "resume" if prior or indexed else "run",
+            identity=identity,
+            recipe=self.report["name"],
+            source=Path(self.report["source"])
+            if self.report.get("source")
+            else self.artifacts.submitted_config,
+            resume=prior is not None or indexed is not None,
+            evidence=prior,
+        )
+        self.report["registry_id"] = execution.registry
+        return await complete_call(execution, lambda: self._run(stop=stop))
+
+    async def _run(self, *, stop: bool = False) -> dict[str, Any]:
         self.report.update(state="running", error=None, finished_at=None)
         self.save()
         try:
             identity = await registry_identity(self.paths)
-            if self.report.get("registry_id", identity) != identity:
-                raise Blocked("Resume requires the same verified testing registry.")
+            if self.report.get("registry_id") is not None:
+                require_registry(self.report, identity)
+            elif self.report.get("environment") != database_purpose() or any(
+                stage["state"] != "pending" for stage in self.report["stages"].values()
+            ):
+                raise Blocked("The original database identity cannot be established for this run.")
             self.report["registry_id"] = identity
             self.save()
             if "engines" not in self.report:
                 await joined_io(self.freeze)
             for path, digest in self.report["settings_files"].items():
                 retained(Path(path), digest)
-            selection = await self.acquire()
-            files = await self.normalize(selection, stop=stop)
-            if files is not None:
-                await self.merge(files)
+            with pinned_registry(identity):
+                selection = await self.acquire()
+                files = await self.normalize(selection, stop=stop)
+                if files is not None:
+                    await self.merge(files)
             self.report["state"] = "stopped" if stop else "complete"
         except (asyncio.CancelledError, KeyboardInterrupt):
             self.end_error(
                 "interrupted", "Interrupted. Resume this run to reconcile any committed output."
             )
-        except (Blocked, ArchiveSelectionError, TestingDatabaseError) as error:
+        except (Blocked, ArchiveSelectionError, DatabaseError) as error:
             self.end_error("blocked", str(error))
         except (MarketForgeError, OSError, ValueError, KeyError, TypeError) as error:
             self.end_error("failed", str(error))
@@ -686,9 +748,11 @@ class PipelineRun:
             self.transition(name, self.stage(name)["phase"], state)
 
 
-def new(context: ApplicationContext, name: str, submitted: bytes) -> PipelineRun:
+def new(
+    context: ApplicationContext, name: str, submitted: bytes, *, source: Path | None = None
+) -> PipelineRun:
     recipe = load_recipe(submitted)
-    run_id = new_run_id()
+    run_id = new_run_id(RunOperation.PIPELINE)
     artifacts = RunArtifacts.for_run(context.paths, run_id)
     artifacts.steps_dir.mkdir(parents=True, exist_ok=False)
     artifacts.submitted_config.write_bytes(submitted)
@@ -705,8 +769,9 @@ def new(context: ApplicationContext, name: str, submitted: bytes) -> PipelineRun
         "kind": "historical_pipeline",
         "state": "pending",
         "name": name,
+        "source": str(source) if source else None,
         "run_id": str(run_id),
-        "environment": "testing",
+        "environment": "testing" if context.testing else "production",
         "interval": resolved["recipe"]["interval"],
         "started_at": now(),
         "report_path": str(artifacts.report),
@@ -733,7 +798,5 @@ def resume(context: ApplicationContext, run_id: str) -> PipelineRun:
     ):
         raise Blocked("Resume requires the original workspace and storage root.")
     settings = AppSettings.model_validate_json(json.dumps(saved["settings"]))
-    context = ApplicationContext(
-        settings, context.paths, None, context.console, context.error_console
-    )
+    context = replace(context, settings=settings, settings_file=None)
     return PipelineRun(context, artifacts, report, load_recipe(original.read_bytes()))

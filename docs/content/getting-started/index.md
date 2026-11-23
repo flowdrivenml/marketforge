@@ -1,9 +1,11 @@
-# Start here
+# Getting started
 
-MarketForge turns historical venue archives and supported external recordings into inspectable market-data publications. Forge manages the source files and PostgreSQL catalogue. Engine decodes the files and publishes canonical data and evidence on disk.
+Use this route to produce a first historical dataset from a fresh checkout.
 
-1. [Install Forge and Engine and configure PostgreSQL](installation.md).
-2. [Acquire and normalize Bybit BTCUSDT perpetual trades and L2 depth](quickstart.md).
-3. [Inspect registered datasets](../workflows/datasets.md), [register your own data](../workflows/acquisition/external-data.md) or [explore markets](../workflows/markets/index.md).
+1. [Install Forge and prepare the workspace](installation.md). Verify the managed normalizer, the testing registry, and Arrow inspection tools.
+2. [Acquire and normalize a day of Bybit BTCUSDT trades and depth](quickstart.md). Follow the returned file IDs to inspect the registered output and reconstruct the first book state.
+3. [Choose a guide](../workflows/index.md) for another market, your own recording, a merge, or a downstream dataset reader.
 
-Use the [reference](../reference/index.md) for exact options and compatibility.
+For current instruments and rankings, start with [Markets and statistics](../workflows/markets/index.md).
+
+If your workspace already has a publication, go directly to [dataset inspection](../workflows/datasets.md). For a development checkout or implementation change, start with the [developer overview](../development/index.md).

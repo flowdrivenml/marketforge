@@ -192,12 +192,12 @@ pub(crate) fn build_depth_inventory_with_order(
             let segments = read_depth_segments(depth_directory)?;
 
             if profile {
-                eprintln!(
+                crate::historical::normalize::progress::log::diagnostic(format_args!(
                     "[depth-inventory] dataset={} task={} segments={:.6}s",
                     input.dataset_id,
                     task_id,
                     started.elapsed().as_secs_f64(),
-                );
+                ));
             }
 
             if segments.total_levels != canonical_rows {
@@ -231,14 +231,14 @@ pub(crate) fn build_depth_inventory_with_order(
                 })?;
 
             if profile {
-                eprintln!(
+                crate::historical::normalize::progress::log::diagnostic(format_args!(
                     "[depth-boundary] dataset={} task={} bytes={} read={:.6}s parse={:.6}s",
                     input.dataset_id,
                     task_id,
                     bytes.len(),
                     read_elapsed.as_secs_f64(),
                     (boundary_started.elapsed() - read_elapsed).as_secs_f64(),
-                );
+                ));
             }
 
             // -----------------------------------------------------------------
@@ -266,12 +266,12 @@ pub(crate) fn build_depth_inventory_with_order(
                 boundary,
             });
             if profile {
-                eprintln!(
+                crate::historical::normalize::progress::log::diagnostic(format_args!(
                     "[depth-inventory] dataset={} task={} total={:.6}s",
                     input.dataset_id,
                     task_id,
                     task_started.elapsed().as_secs_f64(),
-                );
+                ));
             }
         }
     }

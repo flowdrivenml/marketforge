@@ -40,7 +40,7 @@ const DECLARED: &[&str] = &[
 ];
 #[test]
 fn every_supported_profile_has_an_identifiable_case() {
-    let c = FormatCatalog::load(root().join("data/.config/historical")).unwrap();
+    let c = FormatCatalog::load(root().join("data/.config/engine/normalize")).unwrap();
     let declared: BTreeSet<_> = DECLARED.iter().copied().collect();
     let supported: BTreeSet<_> = c
         .profiles()
@@ -54,7 +54,7 @@ fn every_supported_profile_has_an_identifiable_case() {
 }
 #[test]
 fn profile_coverage_distinguishes_fixture_and_execution_prerequisites() {
-    let c = FormatCatalog::load(root().join("data/.config/historical")).unwrap();
+    let c = FormatCatalog::load(root().join("data/.config/engine/normalize")).unwrap();
     let b = workload().unwrap();
     let mut coverage = vec![];
     for p in c.profiles() {
@@ -112,4 +112,9 @@ fn xnas_equity_depth_profile() {
         crate::support::profile_cases::Units::Base,
     )
     .unwrap();
+}
+
+#[test]
+fn documented_authoring_examples() {
+    crate::support::profile_cases::authoring_examples().unwrap();
 }

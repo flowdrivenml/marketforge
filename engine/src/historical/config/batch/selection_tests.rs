@@ -26,7 +26,7 @@ pub(crate) fn resolved(b: &PreparedBatch) -> ProcessingJob {
     b.validate(&root()).unwrap();
     b.resolve_job(
         &b.jobs[0],
-        &FormatCatalog::load(root().join("data/.config/historical")).unwrap(),
+        &FormatCatalog::load(root().join("data/.config/engine/normalize")).unwrap(),
         &runtime(),
         &root(),
     )
@@ -117,7 +117,7 @@ fn expansion_preserves_original_priority_and_is_deterministic() {
     let other = changed
         .resolve_job(
             &changed.jobs[0],
-            &FormatCatalog::load(root().join("data/.config/historical")).unwrap(),
+            &FormatCatalog::load(root().join("data/.config/engine/normalize")).unwrap(),
             &config,
             &root(),
         )
@@ -195,7 +195,7 @@ fn metadata_is_deferred_for_unencountered_family_candidates() {
     assert!(
         b.resolve_job(
             &b.jobs[0],
-            &FormatCatalog::load(root().join("data/.config/historical")).unwrap(),
+            &FormatCatalog::load(root().join("data/.config/engine/normalize")).unwrap(),
             &runtime(),
             &root()
         )
@@ -282,7 +282,7 @@ fn family_expansion_cannot_allocate_an_unadmitted_fanout() {
     let error = b
         .resolve_job(
             &b.jobs[0],
-            &FormatCatalog::load(root().join("data/.config/historical")).unwrap(),
+            &FormatCatalog::load(root().join("data/.config/engine/normalize")).unwrap(),
             &config,
             &root(),
         )

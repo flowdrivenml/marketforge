@@ -81,7 +81,7 @@ fn invoke_at(run: &TestRun, project: &Path, args: &[&str]) -> (std::process::Out
         .arg("--project-root")
         .arg(project)
         .arg("--profiles-root")
-        .arg(support::root().join("data/.config/historical"))
+        .arg(support::root().join("data/.config/engine/normalize"))
         .arg("--config")
         .arg(run.path.join("runtime.toml"))
         .args(args)
@@ -334,4 +334,80 @@ fn batch_cli_diagnostics_keep_stdout_structured() {
     assert_eq!(report["status"], "committed");
     assert_eq!(report["schema_version"], 1);
     run.finish(&Ok(())).unwrap();
+}
+
+#[test]
+fn managed_output_is_advertised_and_writes_the_same_result_protocol() {
+    let (mut run, batch) = fixture(false);
+    let (_, protocol) = invoke(&run, &["--protocol"]);
+    assert_eq!(protocol["managed_output"], true);
+    let result = run.path.join("engine-result.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_marketforge-normalize"))
+        .arg("--project-root")
+        .arg(support::root())
+        .arg("--config")
+        .arg(run.path.join("runtime.toml"))
+        .args([
+            "--batch",
+            &batch_path(&run),
+            "--managed-output",
+            "--result-file",
+        ])
+        .arg(&result)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty());
+    let response: NormalizationResponse =
+        serde_json::from_slice(&fs::read(result).unwrap()).unwrap();
+    assert_eq!(response.schema_version, 1);
+    assert_eq!(response.kind, "normalization_result");
+    assert_eq!(response.run_id, Some(batch.run_id));
+    assert_eq!(response.jobs[0].events_written, 1);
+    run.finish(&Ok(())).unwrap();
+}
+
+#[cfg(all(feature = "monitor-tui", target_os = "linux"))]
+#[test]
+fn real_tui_restores_the_pty_in_managed_standalone_and_cancelled_runs() {
+    let mut modes = vec!["managed", "standalone", "cancel"];
+    let forge_python = std::env::var_os("MF_FORGE_TEST_PYTHON");
+    if forge_python.is_some() {
+        modes.extend(["forge", "forge-json", "forge-cancel", "forge-signal"]);
+    }
+    for mode in modes {
+        let (mut run, batch) = fixture(false);
+        if mode.ends_with("cancel") || mode.ends_with("signal") {
+            // Keep the worker active long enough for the dashboard to read Ctrl-C.
+            let mut gzip = flate2::write::GzEncoder::new(
+                fs::File::create(&batch.jobs[0].tasks[0].input_path).unwrap(),
+                flate2::Compression::fast(),
+            );
+            gzip.write_all(b"id,timestamp,price,volume,side,rpi\n")
+                .unwrap();
+            for id in 0..100_000 {
+                writeln!(gzip, "{id},{},200,3,buy,0", 1250 + id).unwrap();
+            }
+            gzip.finish().unwrap();
+        }
+        let project = support::root();
+        let output = Command::new(forge_python.as_deref().unwrap_or("python3".as_ref()))
+            .env("PYTHONPATH", &project)
+            .arg(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/historical/normalize/tui_pty.py"),
+            )
+            .arg(mode)
+            .arg(env!("CARGO_BIN_EXE_marketforge-normalize"))
+            .arg("--project-root")
+            .arg(support::root())
+            .arg("--config")
+            .arg(run.path.join("runtime.toml"))
+            .args(["--batch", &batch_path(&run), "--result-file"])
+            .arg(run.path.join("engine-result.json"))
+            .arg("--tui")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{mode}: {output:?}");
+        run.finish(&Ok(())).unwrap();
+    }
 }

@@ -50,6 +50,7 @@ class Form(ModalScreen[Values | None]):
         root: Path | None = None,
         *,
         local: bool = False,
+        testing: bool = False,
     ) -> None:
         super().__init__()
         self.spec = action
@@ -57,6 +58,7 @@ class Form(ModalScreen[Values | None]):
         self.choices = choices
         self.root = root or Path.cwd()
         self.local = local
+        self.testing = testing
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog"):
@@ -162,7 +164,11 @@ class Form(ModalScreen[Values | None]):
             return
         if event.button.id == "copy-command":
             cast(WorkspaceHost, self).app.push_screen(
-                Detail("Equivalent CLI command", self.spec.command(values), raw=True)
+                Detail(
+                    "Equivalent CLI command",
+                    self.spec.command(values, testing=self.testing),
+                    raw=True,
+                )
             )
         else:
             self.dismiss(values)

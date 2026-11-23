@@ -5,16 +5,28 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from pydantic import TypeAdapter
 
 from forge.datasets.discovery import inventory, is_staging, read_object
 from forge.historical.conversion.contract import Currency, Identity
-from forge.historical.conversion.registry import Connection, Publication, rows
+from forge.historical.conversion.recipes import PublicationSource
+from forge.historical.conversion.registry import (
+    Connection,
+    Publication,
+    rows,
+    selectable_publication,
+)
 from forge.historical.engine.managed import checksum
 from forge.historical.merge.service import select_inputs
 from forge.historical.normalization.datasets import verify_inventory
+from forge.shared.database.connection import (
+    database_connection,
+    database_dsn,
+    database_purpose,
+    registry_id,
+)
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -83,7 +95,7 @@ def stream_metadata(
     }
 
 
-def verify_merge_inventory(pub: Publication) -> dict[str, str]:
+def check_merge_metadata(pub: Publication) -> None:
     root, manifest, evidence = pub.root, pub.manifest, pub.evidence
     if (
         not root.is_absolute()
@@ -108,6 +120,113 @@ def verify_merge_inventory(pub: Publication) -> dict[str, str]:
         or manifest["mode"] not in {"trades", "depth", "combined"}
     ):
         raise MarketForgeError("Unsupported committed physical merge manifest contract.")
+
+
+def bind_publication(pub: Publication, registry: str) -> PublicationSource:
+    """Check the commit metadata without scanning or hashing primary files."""
+    try:
+        check_merge_metadata(pub)
+        evidence = pub.evidence
+        metadata = {
+            "manifest.json": evidence["manifest_sha256"],
+            "merge-job.json": evidence["processing_job_sha256"],
+        }
+        index = pub.root / "publication-checksums.json"
+        files = {entry["path"] for entry in pub.manifest["files"]}
+        if (
+            not files
+            or index.resolve() != index
+            or read_object(index) != evidence["inventory_sha256"]
+            or not files <= evidence["inventory_sha256"].keys()
+            or any(
+                (pub.root / name).resolve() != pub.root / name
+                or evidence["inventory_sha256"].get(name) != digest
+                or checksum(pub.root / name) != digest
+                for name, digest in metadata.items()
+            )
+            or read_object(pub.manifest_path) != pub.manifest
+            or read_object(pub.root / "merge-job.json") != evidence["resolved_job"]
+        ):
+            raise MarketForgeError("Committed metadata differs from registry evidence.")
+        job = evidence["resolved_job"]
+        if (
+            str(job["job_id"]) != pub.engine_id
+            or job["operation"] != "merge"
+            or job["time_range"] != pub.manifest["time_range"]
+            or job["output"]["dataset_path"] != str(pub.root)
+            or job.get("timeline_ordering", "chronological")
+            != pub.manifest.get("timeline_ordering", "chronological")
+        ):
+            raise MarketForgeError("Committed merge job disagrees with the publication scope.")
+        return PublicationSource.model_validate(
+            {
+                "registry_publication_id": pub.id,
+                "registry_id": registry,
+                "environment": cast(Literal["testing", "production"], database_purpose()),
+                "engine_publication_id": pub.engine_id,
+                "manifest_sha256": metadata["manifest.json"],
+                "processing_job_sha256": metadata["merge-job.json"],
+                "publication_checksums_sha256": checksum(index),
+                "interval": pub.manifest["time_range"],
+            }
+        )
+    except (MarketForgeError, KeyError, OSError, TypeError, ValueError) as error:
+        raise MarketForgeError(
+            f"Cannot bind registry merge publication {pub.id}: {error}"
+        ) from error
+
+
+def check_source_environment(source: PublicationSource) -> None:
+    if source.environment != database_purpose():
+        raise MarketForgeError(
+            f"Publication source is bound to {source.environment}. Select --{source.environment}."
+        )
+
+
+async def resolve_binding(connection: Connection, source: PublicationSource) -> Publication:
+    check_source_environment(source)
+    registry = await registry_id(connection)
+    if str(source.registry_id) != registry:
+        raise MarketForgeError(
+            f"Publication source belongs to a different {source.environment} registry. "
+            "Select the original registry or create a new recipe for this registry."
+        )
+    pub = await selectable_publication(connection, source.registry_publication_id)
+    if await asyncio.to_thread(bind_publication, pub, registry) != source:
+        raise MarketForgeError(
+            f"Committed source binding changed for registry publication {pub.id}. "
+            "Inspect that publication before creating a new binding."
+        )
+    return pub
+
+
+async def inspect_publication_source(paths: ProjectPaths, publication_id: int) -> PublicationSource:
+    async with (
+        database_connection(database_dsn(paths.root)) as connection,
+        connection.transaction(),
+    ):
+        await connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        registry = await registry_id(connection)
+        pub = await selectable_publication(connection, publication_id)
+        return await checked_binding(connection, pub, registry)
+
+
+async def checked_binding(
+    connection: Connection, pub: Publication, registry: str
+) -> PublicationSource:
+    source = await asyncio.to_thread(bind_publication, pub, registry)
+    try:
+        await registered_files(connection, pub)
+    except (MarketForgeError, KeyError, TypeError, ValueError) as error:
+        raise MarketForgeError(
+            f"Cannot bind registry merge publication {pub.id}: {error}"
+        ) from error
+    return source
+
+
+def verify_merge_inventory(pub: Publication) -> dict[str, str]:
+    check_merge_metadata(pub)
+    root, manifest, evidence = pub.root, pub.manifest, pub.evidence
     artifacts = (
         "manifest.json",
         "merge-job.json",
@@ -131,23 +250,11 @@ def verify_merge_inventory(pub: Publication) -> dict[str, str]:
     return fingerprints
 
 
-async def verify_publication(
-    connection: Connection,
-    paths: ProjectPaths,
-    pub: Publication,
-    parent_rows: list[dict[str, Any]],
-) -> dict[str, Any]:
+async def registered_files(
+    connection: Connection, pub: Publication
+) -> tuple[list[dict[str, Any]], set[tuple[str, int]]]:
+    """Check the registry's complete primary-file declarations and membership."""
     manifest, evidence = pub.manifest, pub.evidence
-    job = evidence["resolved_job"]
-    if (
-        str(job["job_id"]) != pub.engine_id
-        or job["operation"] != "merge"
-        or job["output"]["dataset_path"] != str(pub.root)
-        or job["time_range"] != manifest["time_range"]
-        or job.get("timeline_ordering", "chronological")
-        != manifest.get("timeline_ordering", "chronological")
-    ):
-        raise MarketForgeError("Merge job disagrees with committed publication scope.")
     files = await rows(
         connection,
         """
@@ -171,7 +278,6 @@ async def verify_publication(
         raise MarketForgeError(
             "Registry files do not cover the complete merged manifest inventory."
         )
-    fingerprints = await asyncio.to_thread(verify_merge_inventory, pub)
     observed_members: set[tuple[str, int]] = set()
     for file in files:
         name = file["primary_file"]
@@ -180,7 +286,7 @@ async def verify_publication(
             (file["status"], file["operation"], file["storage_format"])
             != ("complete", "merge", "parquet")
             or file["storage_path"] != str(pub.root / name)
-            or file["file_sha256"] != fingerprints[name]
+            or file["file_sha256"] != evidence["inventory_sha256"].get(name)
             or any(file[key] != entry[key] for key in ("start_timestamp_ns", "end_timestamp_ns"))
             or any(summary.get(key) != value for key, value in entry.items())
             or summary.get("integrity") != "physical_validation"
@@ -191,6 +297,28 @@ async def verify_publication(
             )
         for member in summary["memberships"]:
             observed_members.add((member["source_publication_id"], member["stream_rank"]))
+    return files, observed_members
+
+
+async def verify_publication(
+    connection: Connection,
+    paths: ProjectPaths,
+    pub: Publication,
+    parent_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    manifest, evidence = pub.manifest, pub.evidence
+    job = evidence["resolved_job"]
+    if (
+        str(job["job_id"]) != pub.engine_id
+        or job["operation"] != "merge"
+        or job["output"]["dataset_path"] != str(pub.root)
+        or job["time_range"] != manifest["time_range"]
+        or job.get("timeline_ordering", "chronological")
+        != manifest.get("timeline_ordering", "chronological")
+    ):
+        raise MarketForgeError("Merge job disagrees with committed publication scope.")
+    files, observed_members = await registered_files(connection, pub)
+    fingerprints = await asyncio.to_thread(verify_merge_inventory, pub)
     selected = await select_inputs(paths, job=job, recovery=True)
     if [item["database_id"] for item in selected] != pub.parent_ids or [
         item["database_id"] for item in evidence["merge_inputs"]

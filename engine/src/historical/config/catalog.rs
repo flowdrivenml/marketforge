@@ -146,9 +146,35 @@ impl FormatCatalog {
         if !root.is_absolute() {
             return Err(invalid("historical configuration root must be absolute"));
         }
+        if root.ends_with("data/.config/engine/normalize") {
+            let legacy = root
+                .parent()
+                .and_then(Path::parent)
+                .expect("canonical profile root has two parents")
+                .join("historical/profiles");
+            let expected = root.join("profiles");
+            if !expected.exists() && legacy.is_dir() {
+                return Err(invalid(format!(
+                    "profile migration required: {} → {}",
+                    legacy.display(),
+                    expected.display()
+                )));
+            }
+        }
         let profile_root = root.join("profiles");
         let mut paths = vec![];
-        collect(&profile_root, &mut paths)?;
+        if !profile_root.is_dir() || profile_root.is_symlink() {
+            return Err(invalid(format!(
+                "{}: expected a profile directory",
+                profile_root.display()
+            )));
+        }
+        for category in ["trades", "depth"] {
+            let directory = profile_root.join(category);
+            if directory.exists() || directory.is_symlink() {
+                collect(&directory, &mut paths)?;
+            }
+        }
         paths.sort();
         let mut physical = BTreeMap::new();
         let mut profiles = vec![];
@@ -425,7 +451,7 @@ fn catalog_root(explicit: Option<PathBuf>, legacy: Option<PathBuf>) -> Result<Pa
         ));
     }
     let root = explicit.or(legacy).unwrap_or_else(|| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/historical")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/engine/normalize")
     });
     if !root.is_absolute() {
         return Err(invalid("historical configuration root must be absolute"));
@@ -457,21 +483,47 @@ fn identity_token(value: &str) -> bool {
 }
 
 fn collect(root: &Path, paths: &mut Vec<PathBuf>) -> Result<()> {
+    if root.is_symlink() {
+        return Err(invalid(format!(
+            "{}: catalog symlinks are not supported",
+            root.display()
+        )));
+    }
     for entry in fs::read_dir(root).map_err(|e| invalid(format!("{}: {e}", root.display())))? {
         let entry = entry.map_err(|e| invalid(e.to_string()))?;
         let path = entry.path();
+        let Some(id) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let parts: Vec<_> = id.split('.').collect();
+        if path.extension().is_none_or(|extension| extension != "toml")
+            || !matches!(
+                parts.as_slice(),
+                [
+                    _,
+                    "spot" | "perpetual" | "future" | "option" | "equity",
+                    "spot" | "linear" | "inverse" | "option" | "equity",
+                    "trades" | "depth"
+                ]
+            )
+            || !parts[0]
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_lowercase)
+            || !parts[0]
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_')
+        {
+            continue;
+        }
         let kind = entry.file_type().map_err(|e| invalid(e.to_string()))?;
-        if kind.is_symlink() {
+        if !kind.is_file() {
             return Err(invalid(format!(
-                "{}: catalog symlinks are not supported",
+                "{}: expected a regular profile file",
                 path.display()
             )));
         }
-        if kind.is_dir() {
-            collect(&path, paths)?;
-        } else if path.extension().is_some_and(|e| e == "toml") {
-            paths.push(path);
-        }
+        paths.push(path);
     }
     Ok(())
 }

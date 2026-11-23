@@ -11,7 +11,9 @@ use {
     },
     marketforge_engine::historical::job::ProcessingJob,
     marketforge_engine::historical::normalize::ProcessingConfig,
-    marketforge_engine::historical::normalize::config::{project_root, resolve_path},
+    marketforge_engine::historical::normalize::config::{
+        DEFAULT_NORMALIZE_CONFIG, DEFAULT_PROFILES_ROOT, project_root, resolve_path,
+    },
     marketforge_engine::historical::normalize::execute_processing_job,
     marketforge_engine::historical::normalize::load_processing_config,
     marketforge_engine::historical::normalize::session::execute_processing_session_reporting,
@@ -32,7 +34,7 @@ use marketforge_engine::tui::processing::{
 #[command(group(
     ArgGroup::new("input")
         .required(true)
-        .args(["batch", "job", "jobs_dir", "validate_profiles", "validate_batch", "validate_dataset", "resolve_batch", "protocol"])
+        .args(["batch", "job", "jobs_dir", "validate_profiles", "validate_batch", "validate_dataset", "resolve_batch", "protocol", "runtime_settings", "runtime_schema"])
 ))]
 struct Args {
     /// Resolve profiles and bounded archive family identities without normalizing.
@@ -61,12 +63,20 @@ struct Args {
     #[arg(long, conflicts_with = "job")]
     jobs_dir: Option<PathBuf>,
 
+    /// Print the supported normalization runtime field schema.
+    #[arg(long)]
+    runtime_schema: bool,
+
+    /// Validate and print effective normalization runtime settings.
+    #[arg(long)]
+    runtime_settings: Option<PathBuf>,
+
     /// Historical configuration root containing the effective profiles catalogue.
     #[arg(long)]
     profiles_root: Option<PathBuf>,
 
     /// Global processing configuration.
-    #[arg(long, default_value = "data/.config/historical/general.toml")]
+    #[arg(long, default_value = DEFAULT_NORMALIZE_CONFIG)]
     config: PathBuf,
 
     /// Project root used to resolve processing configuration.
@@ -76,6 +86,10 @@ struct Args {
     /// Write the authoritative execution response to a fresh file.
     #[arg(long, requires = "batch")]
     result_file: Option<PathBuf>,
+
+    /// Leave final presentation to Forge and retain the result-file protocol.
+    #[arg(long, requires = "result_file")]
+    managed_output: bool,
 
     /// Redirect dataset and staging outputs to a separate directory.
     #[arg(long)]
@@ -202,7 +216,7 @@ fn execute(
     let catalog = FormatCatalog::load(
         args.profiles_root
             .clone()
-            .unwrap_or_else(|| root.join("data/.config/historical")),
+            .unwrap_or_else(|| root.join(DEFAULT_PROFILES_ROOT)),
     )?;
     #[cfg(feature = "monitor-tui")]
     if args.tui
@@ -217,23 +231,34 @@ fn execute(
             .output_root
             .as_ref()
             .map(|path| resolve_path(&root, path));
-        let result = execute_prepared_session_with_tui(batch, config, move |reporter| {
-            let mut jobs = prepared.resolve_jobs_with_progress(
-                &catalog,
-                &preparation_config,
-                &root,
-                reporter,
-            )?;
-            bind_submission(&mut jobs, &fingerprint);
-            if let Some(path) = output_root {
-                redirect_outputs(&mut jobs, &path).map_err(|error| {
-                    marketforge_engine::shared::error::MarketForgeError::InvalidConfiguration(
-                        error.to_string(),
-                    )
-                })?;
-            }
-            Ok(jobs)
-        })?;
+        let diagnostics = args.managed_output.then(|| {
+            args.result_file
+                .as_ref()
+                .expect("managed result file")
+                .with_file_name("engine-tui.log")
+        });
+        let result = execute_prepared_session_with_tui(
+            batch,
+            config,
+            diagnostics.as_deref(),
+            move |reporter| {
+                let mut jobs = prepared.resolve_jobs_with_progress(
+                    &catalog,
+                    &preparation_config,
+                    &root,
+                    reporter,
+                )?;
+                bind_submission(&mut jobs, &fingerprint);
+                if let Some(path) = output_root {
+                    redirect_outputs(&mut jobs, &path).map_err(|error| {
+                        marketforge_engine::shared::error::MarketForgeError::InvalidConfiguration(
+                            error.to_string(),
+                        )
+                    })?;
+                }
+                Ok(jobs)
+            },
+        )?;
         *total = result.jobs.len();
         results.extend(result.jobs);
         return Ok(());
@@ -284,6 +309,8 @@ fn main() -> std::process::ExitCode {
     let args = Args::parse();
     if args.protocol
         || args.validate_profiles.is_some()
+        || args.runtime_settings.is_some()
+        || args.runtime_schema
         || args.validate_batch.is_some()
         || args.validate_dataset.is_some()
         || args.resolve_batch.is_some()
@@ -291,7 +318,7 @@ fn main() -> std::process::ExitCode {
         let result = (|| -> Result<serde_json::Value, Box<dyn std::error::Error>> {
             if args.protocol {
                 return Ok(
-                    serde_json::json!({"schema_version":1,"kind":"forge_engine_protocol","batch_schema_versions":[4],"result_file":true,"profile_schema_versions":[2]}),
+                    serde_json::json!({"schema_version":1,"kind":"forge_engine_protocol","batch_schema_versions":[4],"result_file":true,"managed_output":true,"runtime_schema":true,"profile_schema_versions":[2]}),
                 );
             }
             if let Some(path) = &args.validate_dataset {
@@ -327,6 +354,13 @@ fn main() -> std::process::ExitCode {
                     serde_json::json!({"schema_version":1,"kind":"dataset_validation","status":"valid"}),
                 );
             }
+            if args.runtime_schema {
+                return Ok(marketforge_engine::shared::historical::config::runtime_schema());
+            }
+            if let Some(path) = &args.runtime_settings {
+                let config = load_processing_config(path, project_root(&args.project_root)?)?;
+                return Ok(serde_json::to_value(config)?);
+            }
             if let Some(path) = &args.validate_profiles {
                 let catalog = FormatCatalog::load(path)?;
                 return Ok(
@@ -345,7 +379,7 @@ fn main() -> std::process::ExitCode {
             let catalog = FormatCatalog::load(
                 args.profiles_root
                     .clone()
-                    .unwrap_or_else(|| root.join("data/.config/historical")),
+                    .unwrap_or_else(|| root.join(DEFAULT_PROFILES_ROOT)),
             )?;
             if args.resolve_batch.is_some() {
                 let jobs = batch.resolve_jobs(&catalog, &config, &root)?;
@@ -396,7 +430,9 @@ fn main() -> std::process::ExitCode {
         .and_then(|error| error.downcast_ref::<std::io::Error>())
         .is_some_and(|error| error.kind() == std::io::ErrorKind::Interrupted);
     let error = execution.err().map(|e| {
-        eprintln!("Normalization failed: {e}");
+        if !args.managed_output {
+            eprintln!("Normalization failed: {e}");
+        }
         NormalizationError::from_error(e.as_ref())
     });
     let response = NormalizationResponse::new(run_id, total, jobs, error);
@@ -424,7 +460,7 @@ fn main() -> std::process::ExitCode {
                     return std::process::ExitCode::FAILURE;
                 }
             }
-            if writeln!(std::io::stdout().lock(), "{json}").is_err() {
+            if !args.managed_output && writeln!(std::io::stdout().lock(), "{json}").is_err() {
                 return std::process::ExitCode::FAILURE;
             }
         }
@@ -447,7 +483,8 @@ mod runtime_cli_tests {
     use super::*;
     use tempfile::TempDir;
 
-    const EXAMPLE: &str = include_str!("../../../docs/historical/normalize-job-v3.example.json");
+    const EXAMPLE: &str =
+        include_str!("../../tests/historical/fixtures/normalize-job-v3.example.json");
     const RUNTIME: &str = include_str!("../shared/historical/config/fixtures/runtime.toml");
 
     #[test]
@@ -471,10 +508,7 @@ mod runtime_cli_tests {
     #[test]
     fn cli_defaults_and_job_directory_loading_are_configuration_only() {
         let args = Args::try_parse_from(["marketforge-normalize", "--job", "job.json"]).unwrap();
-        assert_eq!(
-            args.config,
-            PathBuf::from("data/.config/historical/general.toml")
-        );
+        assert_eq!(args.config, PathBuf::from(DEFAULT_NORMALIZE_CONFIG));
         assert!(
             Args::try_parse_from([
                 "marketforge-normalize",
@@ -491,7 +525,7 @@ mod runtime_cli_tests {
         fs::write(root.path().join("runtime.toml"), RUNTIME).unwrap();
         let config = load_processing_config("runtime.toml", root.path()).unwrap();
         let catalog = FormatCatalog::load(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/historical"),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/engine/normalize"),
         )
         .unwrap();
         assert!(load_jobs(&directory, root.path(), &catalog, &config).is_err());

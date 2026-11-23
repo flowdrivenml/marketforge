@@ -59,7 +59,7 @@ def prepared_references(paths: ProjectPaths) -> PreparedReferences:
                     result.paths.setdefault(str(resolved), []).append(
                         f"Prepared job {source} references this file."
                     )
-    for source in sorted(paths.normalization_config_dir.glob("*.toml")):
+    for source in sorted(paths.normalization_recipe_dir.glob("*.toml")):
         try:
             with source.open("rb") as stream:
                 document = cast(dict[str, object], tomllib.load(stream))

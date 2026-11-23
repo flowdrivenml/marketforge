@@ -13,24 +13,32 @@ from forge.historical.merge.config import DerivedRecipe, normalization_path
 from forge.historical.normalization.batch import utc_timestamp
 from forge.historical.normalization.config import NormalizationRecipe, NormalizationSource
 from forge.historical.normalization.mapping import bitget_spot_pair
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn, database_purpose
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
+SubmissionBinding = tuple[str, str, str, str]
+SubmissionMember = tuple[SubmissionBinding, str]
+
 
 def linked_submissions(
-    paths: ProjectPaths, source: Path, config: NormalizationRecipe
+    paths: ProjectPaths,
+    source: Path,
+    config: NormalizationRecipe,
+    *,
+    cohorts: dict[str, set[SubmissionMember]] | None = None,
 ) -> dict[tuple[str, str, str, str], str]:
     """Find retained intents whose submission and prepared request evidence agree."""
     links: dict[tuple[str, str, str, str], str] = {}
     expected = [request.model_dump(mode="json") for request in config.requests]
     interval = {key: utc_timestamp(value) for key, value in config.interval.model_dump().items()}
+    resolutions: list[tuple[dict[str, Any], set[SubmissionMember]]] = []
     for intent_path in sorted(paths.runs_dir.glob("normalize-execute-*/execution-intent.json")):
         try:
             intent = json.loads(intent_path.read_bytes())
             if (
                 intent.get("operation") != "normalize"
-                or intent.get("environment") != "testing"
+                or intent.get("environment") != database_purpose()
                 or intent.get("execution_id") != intent_path.parent.name
                 or not intent.get("recipe")
                 or normalization_path(paths, intent["recipe"]) != source
@@ -44,23 +52,79 @@ def linked_submissions(
                 Path(intent["submitted_source"]).with_name("prepare-report.json").read_bytes()
             )
             batch = json.loads(batch_bytes)
+            requested_path = intent_path.parent / "requested-batch.json"
+            requested_bytes = (
+                requested_path.read_bytes() if requested_path.is_file() else batch_bytes
+            )
+            requested_digest = hashlib.sha256(requested_bytes).hexdigest()
             if (
-                report.get("submitted_sha256") != digest
+                requested_digest != intent.get("requested_sha256", digest)
+                or report.get("submitted_sha256") != requested_digest
                 or report.get("requested_interval") != interval
                 or report.get("ranking_policy") != config.ranking_policy
                 or [item["request"] for item in report["requests"]] != expected
                 or batch["run_id"] != intent["run_id"]
             ):
                 continue
+            members: set[SubmissionMember] = set()
             for job in batch["jobs"]:
                 root = (paths.root / job["output"]["dataset_path"]).resolve()
-                links[
-                    (batch["instrument_namespace"], str(job["dataset_id"]), str(root), digest)
-                ] = intent["execution_id"]
+                binding = (batch["instrument_namespace"], str(job["dataset_id"]), str(root), digest)
+                links[binding] = intent["execution_id"]
+                members.add((binding, intent["execution_id"]))
+            if cohorts is not None:
+                resolutions.append((intent, members))
         except (OSError, ValueError, KeyError, TypeError, AttributeError, MarketForgeError):
             # Old or incomplete receipts cannot establish ownership. Their files
             # can still be discovered and explicitly approved by publication ID.
             continue
+    if cohorts is not None:
+        for report_path in paths.runs_dir.glob("normalize-*/reuse-result.json"):
+            try:
+                report = json.loads(report_path.read_bytes())
+                if (
+                    report["operation"] == "normalize"
+                    and report["environment"] == database_purpose()
+                    and report["disposition"] == "reused"
+                    and report["verification"] == "verified"
+                    and report["registration"] == "registered"
+                    and report["recipe_source"] == str(source.resolve())
+                    and report["requested_interval"] == interval
+                    and report["ranking_policy"] == config.ranking_policy
+                    and [item["request"] for item in report["requests"]] == expected
+                ):
+                    resolutions.append((report, set()))
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        for intent, members in resolutions:
+            try:
+                aliases: set[SubmissionMember] = set()
+                for original in intent.get("reused_outputs", {}).values():
+                    submission = Path(original["submission_path"])
+                    payload = submission.read_bytes()
+                    digest = hashlib.sha256(payload).hexdigest()
+                    if digest != original["submitted_sha256"]:
+                        raise ValueError("Reused submission changed.")
+                    batch = json.loads(payload)
+                    job = next(
+                        job
+                        for job in batch["jobs"]
+                        if (paths.root / job["output"]["dataset_path"]).resolve()
+                        == Path(original["path"])
+                    )
+                    binding = (
+                        batch["instrument_namespace"],
+                        str(job["dataset_id"]),
+                        original["path"],
+                        digest,
+                    )
+                    aliases.add((binding, original["execution_id"]))
+                resolved = members | aliases
+                if resolved:
+                    cohort = hashlib.sha256(json.dumps(sorted(resolved)).encode()).hexdigest()
+                    cohorts[cohort] = resolved
+            except (OSError, ValueError, KeyError, TypeError, StopIteration):
+                continue
     return links
 
 
@@ -180,7 +244,7 @@ def contributing_tasks(evidence: dict[str, Any]) -> dict[str, list[dict[str, Any
 async def registry(
     paths: ProjectPaths, start: int, end: int
 ) -> tuple[list[tuple[Any, ...]], dict[int, tuple[Any, ...]], dict[int, dict[str, str]]]:
-    async with testing_connection(testing_dsn(paths.root)) as connection:
+    async with database_connection(database_dsn(paths.root)) as connection:
         async with connection.transaction():
             await connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             cursor = await connection.execute(
@@ -190,7 +254,7 @@ async def registry(
                    JOIN historical.dataset_publications p ON p.id=d.publication_id
                    WHERE d.operation='normalize' AND p.operation='normalize'
                      AND d.storage_format='parquet' AND d.primary_file IS NOT NULL
-                     AND d.status <> 'deleted'
+                     AND d.status <> 'superseded'
                      AND d.start_timestamp_ns < %s AND d.end_timestamp_ns >= %s
                    ORDER BY d.id""",
                 (end, start),
@@ -198,8 +262,11 @@ async def registry(
             files = await cursor.fetchall()
             ids = sorted({row[1] for row in files})
             cursor = await connection.execute(
-                """SELECT id,engine_dataset_id,instrument_namespace,storage_root,evidence
-                   FROM historical.dataset_publications WHERE id=ANY(%s)""",
+                """SELECT p.id,p.engine_dataset_id,p.instrument_namespace,p.storage_root,
+                          p.evidence || jsonb_build_object('canonical_id', s.canonical_id)
+                   FROM historical.dataset_publications p
+                   LEFT JOIN historical.publication_supersessions s ON s.publication_id=p.id
+                   WHERE p.id=ANY(%s)""",
                 (ids,),
             )
             publications = {row[0]: row[1:] for row in await cursor.fetchall()}
@@ -226,7 +293,8 @@ async def discover(
 ) -> dict[str, Any]:
     requests = filter_requests(recipe, config)
     files, publications, source_keys = await registry(paths, recipe.start_ns, recipe.end_ns)
-    links = linked_submissions(paths, source, config)
+    cohorts: dict[str, set[SubmissionMember]] = {}
+    links = linked_submissions(paths, source, config, cohorts=cohorts)
     tasks_by_publication: dict[int, dict[str, list[dict[str, Any]]]] = {}
     provenance: dict[int, tuple[str, str]] = {}
     for pub, (engine, namespace, root, evidence) in publications.items():
@@ -237,8 +305,13 @@ async def discover(
         }
         if len(digests) == 1:
             digest = next(iter(digests))
-            intent = links.get((namespace, engine, root, digest))
+            binding = (namespace, engine, root, digest)
             execution: dict[str, Any] = evidence.get("execution") or {}
+            intent = links.get(binding)
+            if intent is None:
+                owner = execution.get("execution_id")
+                if any((binding, owner) in members for members in cohorts.values()):
+                    intent = owner
             if intent and (
                 not execution
                 or (execution.get("submitted_sha256"), execution.get("execution_id"))
@@ -298,12 +371,46 @@ async def discover(
                     "memberships": memberships,
                     "request_indexes": sorted(matched),
                     "provenance": provenance.get(pub),
+                    "canonical_publication_id": evidence.get("canonical_id"),
                 }
             )
 
     explicit = recipe.selection.publication_ids
     proven = [item for item in candidates if item["provenance"]]
-    run_digests = {item["provenance"][1] for item in proven}
+    matched_cohorts = {
+        frozenset(
+            item["publication_id"]
+            for item in proven
+            if (
+                (item["namespace"], item["engine_id"], item["path"], item["provenance"][1]),
+                item["provenance"][0],
+            )
+            in members
+        )
+        for members in cohorts.values()
+    } - {frozenset()}
+    if not cohorts:
+        matched_cohorts = {
+            frozenset(item["publication_id"] for item in proven if item["provenance"][1] == digest)
+            for digest in {item["provenance"][1] for item in proven}
+        }
+    if not explicit:
+        active = {
+            item["publication_id"] for item in candidates if not item["canonical_publication_id"]
+        }
+        replacements = {
+            item["publication_id"]: item["canonical_publication_id"]
+            for item in candidates
+            if item["canonical_publication_id"] in active
+        }
+        matched_cohorts = {
+            frozenset(replacements.get(publication, publication) for publication in group)
+            for group in matched_cohorts
+        }
+        candidates = [item for item in candidates if item["publication_id"] not in replacements]
+    maximal = {
+        group for group in matched_cohorts if not any(group < other for other in matched_cohorts)
+    }
     blockers: list[dict[str, Any]] = []
     if explicit:
         selected = [item for item in candidates if item["publication_id"] in explicit]
@@ -311,8 +418,9 @@ async def discover(
             blockers.append(
                 {"publication_id": pub, "reason": "Approved publication has no matching files."}
             )
-    elif len(run_digests) == 1:
-        selected = proven
+    elif len(maximal) == 1:
+        group = next(iter(maximal))
+        selected = [item for item in candidates if item["publication_id"] in group]
     else:
         selected = []
         if candidates:
@@ -388,7 +496,7 @@ async def discover(
         for index, request in requests.items()
         if index not in selected_indexes
     ]
-    if not requests or not ordered or missing:
+    if not blockers and (not requests or not ordered or missing):
         blockers.append(
             {
                 "reason": "No requests pass the filters."

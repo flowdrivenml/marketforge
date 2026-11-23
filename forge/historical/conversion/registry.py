@@ -75,6 +75,10 @@ async def publications(
         SELECT p.id,p.engine_dataset_id,p.instrument_namespace,p.storage_root,p.manifest_path,p.evidence
         FROM historical.dataset_publications p
         WHERE p.operation='merge' AND (%s::bigint[] IS NULL OR p.id=ANY(%s))
+          AND EXISTS (SELECT 1 FROM historical.datasets f
+              WHERE f.publication_id=p.id AND f.status='complete')
+          AND (%s::bigint[] IS NOT NULL OR NOT EXISTS (
+              SELECT 1 FROM historical.publication_supersessions s WHERE s.publication_id=p.id))
           AND (%s::bigint IS NULL OR EXISTS (
             SELECT 1 FROM historical.datasets d
             WHERE d.publication_id=p.id AND d.status='complete'
@@ -83,6 +87,7 @@ async def publications(
         ORDER BY p.id
     """,
         (
+            ids,
             ids,
             ids,
             interval[0] if interval else None,
@@ -105,6 +110,38 @@ async def publications(
         )
         for row in records
     ]
+
+
+async def selectable_publication(connection: Connection, publication_id: int) -> Publication:
+    records = await rows(
+        connection,
+        """
+        SELECT p.operation, s.state AS supersession, i.publication_id AS invalidation
+        FROM historical.dataset_publications p
+        LEFT JOIN historical.publication_supersessions s ON s.publication_id=p.id
+        LEFT JOIN historical.publication_invalidations i ON i.publication_id=p.id
+        WHERE p.id=%s
+        """,
+        (publication_id,),
+    )
+    if not records or records[0]["operation"] != "merge":
+        raise MarketForgeError(
+            f"Registry publication {publication_id} is not a registered merge in this environment. "
+            "Find its registry publication ID with mf datasets list --view publications --operation merge."
+        )
+    record = records[0]
+    if record["supersession"] is not None or record["invalidation"] is not None:
+        raise MarketForgeError(
+            f"Registry merge publication {publication_id} is superseded, retired or invalidated. "
+            "Inspect its recorded state with mf datasets show --publication-id "
+            f"{publication_id}; select an eligible publication explicitly."
+        )
+    try:
+        return (await publications(connection, ids=[publication_id]))[0]
+    except MarketForgeError as error:
+        raise MarketForgeError(
+            f"Registry merge publication {publication_id} has no complete registered files."
+        ) from error
 
 
 async def parents(connection: Connection, pub: Publication) -> list[dict[str, Any]]:

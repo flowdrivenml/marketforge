@@ -3,16 +3,20 @@
 import asyncio
 import json
 import os
+import shlex
 import shutil
 import subprocess
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
 
+from forge.cli.commands import conversion as cli_conversion
 from forge.cli.main import main
 from forge.datasets.parquet import arrow_modules
 from forge.historical.archives.config import AcquisitionConfig
@@ -60,12 +64,12 @@ def paths(tmp_path: Path) -> ProjectPaths:
     for folder in (
         paths.acquisition_config_dir,
         paths.normalization_recipe_dir,
-        paths.config_dir / "historical/merge",
+        paths.workflow_dir("merge"),
     ):
         folder.mkdir(parents=True)
     (paths.acquisition_config_dir / "example.toml").write_text(SOURCE_CONFIG)
     (paths.normalization_recipe_dir / "example.toml").write_text(SOURCE_CONFIG)
-    (paths.config_dir / "historical/merge/example.toml").write_text(DIRECT)
+    (paths.workflow_dir("merge") / "example.toml").write_text(DIRECT)
     return paths
 
 
@@ -92,11 +96,11 @@ def test_new_and_validate(
     assert report["status"] == "valid"
     assert report["recipe"]["interval"] == {"start_ns": START, "end_ns": END}
     assert invoke(paths, *argv) == 2
-    assert "already exists" in capsys.readouterr().err
+    assert "already exists" in capsys.readouterr().out
     assert path.read_bytes() == original
     source.write_bytes(source.read_bytes() + b"# edit\n")
     assert invoke(paths, "validate", str(path)) == 2
-    assert "fingerprint changed" in capsys.readouterr().err
+    assert "fingerprint changed" in capsys.readouterr().out
 
 
 def test_recipe_cli_rejects_conflicting_arguments_and_legacy(
@@ -117,12 +121,12 @@ def test_recipe_cli_rejects_conflicting_arguments_and_legacy(
         )
     assert error.value.code == 2
     assert invoke(paths, "run", "x", "--testing", "--tui") == 2
-    assert "incompatible with global --json" in capsys.readouterr().err
-    source = paths.normalization_config_dir / "legacy.toml"
-    source.parent.mkdir(parents=True)
+    assert "incompatible with global --json" in capsys.readouterr().out
+    source = paths.normalization_recipe_dir / "legacy.toml"
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("job_id = 12\n")
     assert invoke(paths, "new", "x", "--from-normalize", "legacy", "--target-quote", "USDT") == 2
-    assert "Legacy archive-ID" in capsys.readouterr().err
+    assert "Legacy archive-ID" in capsys.readouterr().out
 
 
 def test_exact_single_job_contract(paths: ProjectPaths, tmp_path: Path) -> None:
@@ -600,8 +604,19 @@ def test_managed_convert_target_is_explicit(paths: ProjectPaths) -> None:
 def prepare_fixture(paths: ProjectPaths) -> Path:
     result = recipes.create(paths, "converted", "merge", "example", "USDT")
     path = Path(str(result["path"]))
-    runtime = paths.config_dir / "historical/general.toml"
-    runtime.write_text("[resources]\nworkers = 2\nmemory_budget_bytes = 1073741824\n")
+    runtime = paths.runtime_config("convert")
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text("""
+schema_version = 1
+[resources]
+workers = 2
+memory_limit_mb = 1024
+max_open_files = 64
+[parquet]
+row_group_target_mb = 64
+file_target_mb = 256
+compression_level = 3
+""")
     return path
 
 
@@ -610,6 +625,10 @@ def test_dry_run_and_generated_compatibility(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    def no_registry(*_args: object) -> nullcontext[None]:
+        return nullcontext()
+
+    monkeypatch.setattr(cli_conversion, "cli_execution", no_registry)
     prepare_fixture(paths)
     source = publication(paths, combined=False)
     write_trade_publication(source)
@@ -618,11 +637,19 @@ def test_dry_run_and_generated_compatibility(
         return {"sources": [source], "external_reference": None, "candidates": [], "blockers": []}
 
     monkeypatch.setattr(service, "discover", select_source)
+    monkeypatch.setattr(service, "selected_registry_id", AsyncMock(return_value="registry-fixture"))
+    monkeypatch.setattr(execution.WorkIndex, "peek", AsyncMock(return_value={}))
+    monkeypatch.setattr(execution, "require_live_prepared_inputs", AsyncMock())
+    monkeypatch.setattr(execution.WorkIndex, "acquire", AsyncMock(return_value={}))
+    monkeypatch.setattr(execution.WorkIndex, "complete", AsyncMock())
+    monkeypatch.setattr(
+        execution, "selected_registry_id", AsyncMock(return_value="registry-fixture")
+    )
     assert invoke(paths, "prepare", "converted", "--testing", "--dry-run") == 0
     dry = json.loads(capsys.readouterr().out)
     assert dry["status"] == "generated" and dry["compatibility"] == "not_validated"
     assert dry["job_path"] is None and not paths.runs_dir.exists()
-    assert invoke(paths, "prepare", "converted", "--testing") == 0
+    assert invoke(paths, "prepare", "converted", "--testing") == 1
     report = json.loads(capsys.readouterr().out)
     assert report["status"] == "generated"
     assert any(
@@ -656,6 +683,14 @@ async def test_collection_submits_original_single_job_bytes(
     binary.write_text('#!/bin/sh\n[ "$3" = --validate ]\n')
     binary.chmod(0o755)
     monkeypatch.setattr(service, "discover", select_sources)
+    monkeypatch.setattr(service, "selected_registry_id", AsyncMock(return_value="registry-fixture"))
+    monkeypatch.setattr(execution.WorkIndex, "peek", AsyncMock(return_value={}))
+    monkeypatch.setattr(execution, "require_live_prepared_inputs", AsyncMock())
+    monkeypatch.setattr(execution.WorkIndex, "acquire", AsyncMock(return_value={}))
+    monkeypatch.setattr(execution.WorkIndex, "complete", AsyncMock())
+    monkeypatch.setattr(
+        execution, "selected_registry_id", AsyncMock(return_value="registry-fixture")
+    )
 
     def resolve_fake(_paths: ProjectPaths, _target: str) -> Path:
         return binary
@@ -665,6 +700,18 @@ async def test_collection_submits_original_single_job_bytes(
     catalog = paths.root / "data/catalog/instruments.json"
     catalog.parent.mkdir(parents=True)
     catalog.write_text(service.catalog_snapshot(candidates).model_dump_json())
+    ready: dict[str, dict[str, Any]] = {}
+
+    async def acquire(_index: object, jobs: dict[str, Any]) -> dict[str, Any]:
+        return {key: ("original", {}, ready[key]) for key in jobs if key in ready}
+
+    async def complete(
+        _index: object, key: str, receipt: dict[str, Any], **_kwargs: object
+    ) -> None:
+        ready[key] = receipt
+
+    monkeypatch.setattr(execution.WorkIndex, "acquire", acquire)
+    monkeypatch.setattr(execution.WorkIndex, "complete", complete)
     report = await service.prepare(paths, recipe)
     assert report["compatibility_blockers"] == []
     assert report["status"] == "generated" and report["compatibility"] == "validated"
@@ -682,12 +729,35 @@ async def test_collection_submits_original_single_job_bytes(
 
     def output(job: Job, pinned: dict[str, Any]) -> dict[str, Any]:
         assert job.input_merge == pinned["root"]
-        return {"fixture": True}
+        return {
+            "manifest": str(Path(job.output.dataset_path) / "manifest.json"),
+            "fingerprints": {"manifest.json": "fixture"},
+            "events": 1,
+        }
 
     monkeypatch.setattr(execution, "run_process", supervise)
     monkeypatch.setattr(execution, "verify_output", output)
     result = await execution.execute(paths, Path(report["job_path"]))
     assert result["status"] == "complete" and observed == submitted
+    repeated = await execution.execute(paths, Path(report["job_path"]))
+    assert repeated["disposition"] == "reused" and observed == submitted
+    assert [job["publication"] for job in repeated["jobs"]] == [
+        job["publication"] for job in result["jobs"]
+    ]
+
+    second_key = result["jobs"][1]["work_key"]
+
+    async def blocked(_index: object, work: dict[str, Any]) -> dict[str, Any]:
+        if second_key in work:
+            raise MarketForgeError("Equivalent work is already in progress.")
+        return await acquire(_index, work)
+
+    monkeypatch.setattr(execution.WorkIndex, "acquire", blocked)
+    partial = await execution.execute(paths, Path(report["job_path"]))
+    assert partial["status"] == "blocked" and observed == submitted
+    assert [job["status"] for job in partial["jobs"]] == ["complete", "blocked"]
+    assert partial["jobs"][0]["disposition"] == "reused"
+
     job_path = Path(report["jobs"][0]["path"])
     await asyncio.to_thread(job_path.write_bytes, submitted[0] + b" ")
     with pytest.raises(MarketForgeError, match="Retained artifact changed"):
@@ -723,7 +793,7 @@ async def test_direct_merge_requires_exact_registered_and_retained_inputs(
         json.dumps(
             {
                 "operation": "merge",
-                "environment": "testing",
+                "environment": "production",
                 "execution_id": execution_id,
                 "job_id": int(ENGINE_ID),
                 "path": str(root),
@@ -801,6 +871,24 @@ def test_forge_prepared_job_runs_in_real_engine(
         return {"sources": [source], "external_reference": None, "blockers": []}
 
     monkeypatch.setattr(service, "discover", select_source)
+    monkeypatch.setattr(service, "selected_registry_id", AsyncMock(return_value="registry-fixture"))
+    monkeypatch.setattr(execution.WorkIndex, "peek", AsyncMock(return_value={}))
+    monkeypatch.setattr(execution, "require_live_prepared_inputs", AsyncMock())
+    ready: dict[str, dict[str, Any]] = {}
+
+    async def acquire(_index: object, jobs: dict[str, Any]) -> dict[str, Any]:
+        return {key: ("original", {}, ready[key]) for key in jobs if key in ready}
+
+    async def complete(
+        _index: object, key: str, receipt: dict[str, Any], **_kwargs: object
+    ) -> None:
+        ready[key] = receipt
+
+    monkeypatch.setattr(execution.WorkIndex, "acquire", acquire)
+    monkeypatch.setattr(execution.WorkIndex, "complete", complete)
+    monkeypatch.setattr(
+        execution, "selected_registry_id", AsyncMock(return_value="registry-fixture")
+    )
 
     def resolve_binary(_paths: ProjectPaths, _target: str) -> Path:
         return binary
@@ -811,7 +899,15 @@ def test_forge_prepared_job_runs_in_real_engine(
     second = asyncio.run(service.prepare(paths, recipe))
     for report in (first, second):
         assert report["compatibility"] == "validated", report.get("compatibility_blockers")
+        assert report["jobs"][0]["planned_routes"][0]["routes"] == [["USDT"]]
     first_path = Path(first["jobs"][0]["path"])
+    assert service.validate_reference(paths, Path(first["job_path"]))["validated_job_count"] == 1
+    assert service.validate_reference(paths, first_path)["validation_layers"]["engine"] == "passed"
+    first_bytes = first_path.read_bytes()
+    first_path.write_bytes(first_bytes + b" ")
+    with pytest.raises(MarketForgeError, match="Retained artifact changed"):
+        service.validate_reference(paths, first_path)
+    first_path.write_bytes(first_bytes)
     first_job = Job.model_validate_json(first_path.read_bytes())
     second_job = Job.model_validate_json(Path(second["jobs"][0]["path"]).read_bytes())
     assert first_job.model_dump(exclude={"job_id", "output"}) == second_job.model_dump(
@@ -838,11 +934,81 @@ def test_forge_prepared_job_runs_in_real_engine(
     assert validated.returncode == 0, validated.stderr
     assert not output.exists() and not output.with_suffix(".staging").exists()
 
+    if kind == "merge" and (pty_command := shutil.which("script")):
+        # Exercise the live Rust monitor against a disposable job under a real PTY.
+        monitor_job = first_job.model_dump()
+        monitor_job["output"]["dataset_path"] = str(output.with_name("monitor-output"))
+        monitor_path = workspace / "monitor-job.json"
+        monitor_path.write_text(json.dumps(monitor_job))
+        command = shlex.join(
+            [
+                str(binary),
+                "--job",
+                str(monitor_path),
+                "--run",
+                "--tui",
+                "--managed-output",
+            ]
+        )
+        monitored = subprocess.run(
+            [
+                pty_command,
+                "--quiet",
+                "--return",
+                "--command",
+                f"stty rows 38 cols 110; {command}",
+                "/dev/null",
+            ],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            env={**os.environ, "TERM": "xterm"},
+            check=False,
+            timeout=20,
+        )
+        assert monitored.returncode == 0, monitored.stdout[-2000:]
+        assert b"\x1b[?1049h" in monitored.stdout and b"\x1b[?1049l" in monitored.stdout
+        after_monitor = monitored.stdout.rsplit(b"\x1b[?1049l", 1)[-1]
+        assert b"Source publication" not in after_monitor and b"Manifest " not in after_monitor
+        assert (output.with_name("monitor-output") / "manifest.json").is_file()
+
     result = asyncio.run(execution.execute(paths, first_path))
     assert result["status"] == "complete", result
     assert output.is_dir()
     assert result["jobs"][0]["argv"][1::2] == ["--job", "--run"]
     assert result["jobs"][0]["publication"]["events"] == 1
+    from io import StringIO
+
+    from forge.shared.config.models import PresentationSettings
+    from forge.shared.presentation.conversion import ConversionView
+    from forge.shared.terminal.console import create_console
+    from forge.shared.terminal.conversion import render
+
+    for width in (64, 120):
+        sink = StringIO()
+        console = create_console(PresentationSettings(color="never"), stream=sink)
+        console.width = width
+        render(
+            console,
+            ConversionView.from_result(result, "run", "example", 0.1),
+            paths.root,
+        )
+        rendered = sink.getvalue()
+        assert rendered.count("MarketForge · Convert · Run") == 1
+        assert "Verified" in rendered and "Catalogue registration" in rendered
+        assert "Identity valuations" in rendered and "Indexed output reference" in rendered
+        assert "\x1b" not in rendered
+
+    original = execution.run_process
+    launch = AsyncMock(side_effect=AssertionError("The materializing process must be skipped."))
+    monkeypatch.setattr(execution, "run_process", launch)
+    repeated = asyncio.run(execution.execute(paths, Path(second["jobs"][0]["path"])))
+    assert repeated["disposition"] == "reused"
+    assert repeated["jobs"][0]["publication"] == result["jobs"][0]["publication"]
+    assert not Path(second_job.output.dataset_path).exists()
+    launch.assert_not_called()
+    monkeypatch.setattr(execution, "run_process", original)
+    ready.clear()
+    monkeypatch.setattr(execution.WorkIndex, "release", AsyncMock())
 
     manifest = Path(source["root"]) / "manifest.json"
     manifest.write_text(manifest.read_text() + " ")
@@ -850,3 +1016,293 @@ def test_forge_prepared_job_runs_in_real_engine(
     assert failure["status"] == "blocked" and failure["execution"] == "not_started"
     assert "pin mismatch" in failure["jobs"][0]["error"]
     assert not Path(second_job.output.dataset_path).exists()
+
+
+def test_local_recipe_lifecycle(
+    paths: ProjectPaths, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def prohibited(*_args: object) -> None:
+        raise AssertionError("Local inspection should not retain evidence or resolve the Engine.")
+
+    monkeypatch.setattr(recipes, "retain_recipe", prohibited)
+    monkeypatch.setattr(service, "resolve", prohibited)
+    assert invoke(paths, "list") == 0
+    assert json.loads(capsys.readouterr().out)["recipes"] == []
+    active = prepare_fixture(paths)
+    stale = Path(str(recipes.create(paths, "stale", "normalize", "example", "USDT")["path"]))
+    upstream = recipes.source_path(paths, "normalize", "example")
+    upstream.write_bytes(upstream.read_bytes() + b"# changed\n")
+    broken = stale.with_name("bad.toml")
+    broken.write_text("[invalid")
+    assert invoke(paths, "list") == 0
+    rows = json.loads(capsys.readouterr().out)["recipes"]
+    assert [(item["name"], item["status"]) for item in rows] == [
+        ("bad", "invalid"),
+        ("converted", "valid"),
+        ("stale", "stale"),
+    ]
+    assert invoke(paths, "show", str(stale)) == 0
+    assert "fingerprint changed" in json.loads(capsys.readouterr().out)["diagnostic"]
+    assert invoke(paths, "edit", str(active)) == 2
+    assert "requires a terminal" in json.loads(capsys.readouterr().out)["error"]["message"]
+
+    def editor(draft: Path, **_: object) -> Path:
+        draft.write_bytes(draft.read_bytes().replace(b"USDT", b"USDC"))
+        return draft
+
+    monkeypatch.setattr("forge.shared.config.recipe_editing.edit_file", editor)
+    from forge.startup.context import build_context
+
+    cli_conversion.edit(build_context(project_root=paths.root), active)
+    assert recipes.read_recipe(active)[0].conversion.target_quote == "USDC"
+    assert invoke(paths, "delete", "converted.toml") == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "ready_to_delete"
+    assert active.is_file()
+    assert invoke(paths, "delete", "converted", "--apply") == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "deleted"
+    assert not active.exists() and stale.is_file() and broken.is_file() and upstream.is_file()
+    assert not paths.runs_dir.exists()
+
+
+def test_conversion_runtime_cli_validates_with_rust(
+    paths: ProjectPaths, capsys: pytest.CaptureFixture[str]
+) -> None:
+    configured = os.environ.get("MARKETFORGE_TEST_CONVERT_BINARY")
+    if not configured:
+        pytest.skip("set MARKETFORGE_TEST_CONVERT_BINARY to the freshly built converter")
+    prepare_fixture(paths)
+    binary = Path(configured).resolve(strict=True)
+    installed = paths.root / ".bin"
+    installed.mkdir()
+    executable = installed / "marketforge-convert"
+    shutil.copy2(binary, executable)
+    (installed / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "targets": {"convert": {"sha256": checksum(executable)}},
+            }
+        )
+    )
+    assert invoke(paths, "config", "schema") == 0
+    fields = {field["path"] for field in json.loads(capsys.readouterr().out)["fields"]}
+    assert fields == {
+        "schema_version",
+        "resources.workers",
+        "resources.memory_limit_mb",
+        "resources.max_open_files",
+        "parquet.file_target_mb",
+        "parquet.row_group_target_mb",
+        "parquet.compression_level",
+    }
+    runtime = paths.runtime_config("convert")
+    before = b"# retain this comment\n" + runtime.read_bytes()
+    runtime.write_bytes(before)
+    assert invoke(paths, "config", "set", "resources.memory_limit_mb", "4GiB") == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "ready_to_apply"
+    assert runtime.read_bytes() == before
+    assert invoke(paths, "config", "set", "parquet.file_target_mb", "1MiB", "--apply") == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "failed"
+    assert runtime.read_bytes() == before
+    assert invoke(paths, "config", "unset", "resources.max_open_files", "--apply") == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "applied"
+    assert runtime.read_bytes().startswith(b"# retain this comment\n")
+    assert invoke(paths, "config", "validate") == 0
+    assert json.loads(capsys.readouterr().out)["effective"]["resources"]["max_open_files"] == 64
+
+
+@pytest.mark.parametrize("change", ["invalid", "conflict", "cancel"])
+def test_recipe_editor_keeps_original_when_draft_cannot_apply(
+    paths: ProjectPaths, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    from forge.startup.context import build_context
+
+    recipe = prepare_fixture(paths)
+    original = recipe.read_bytes()
+    concurrent = original + b"# concurrent edit\n"
+
+    def editor(draft: Path, **_: object) -> Path:
+        if change == "cancel":
+            raise MarketForgeError("Editor exited unsuccessfully")
+        if change == "conflict":
+            recipe.write_bytes(concurrent)
+            draft.write_bytes(original.replace(b"USDT", b"USDC"))
+        else:
+            draft.write_bytes(b"[invalid")
+        return draft
+
+    monkeypatch.setattr("forge.shared.config.recipe_editing.edit_file", editor)
+    with pytest.raises(MarketForgeError, match="Retained draft:") as error:
+        cli_conversion.edit(build_context(project_root=paths.root), recipe)
+    draft = Path(str(error.value).rsplit("Retained draft: ", 1)[1])
+    assert draft.is_file()
+    shutil.rmtree(draft.parent)
+    assert recipe.read_bytes() == (concurrent if change == "conflict" else original)
+
+
+def test_new_argument_diagnostics(paths: ProjectPaths, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        invoke(paths, "new", "--from-merge", "example", "--target-quote", "USDT")
+    error = capsys.readouterr().err
+    assert "needs a name" in error and "getting_started_usdt" in error
+    with pytest.raises(SystemExit):
+        invoke(paths, "new", "new_recipe", "--from-acuisition", "example", "--target-quote", "USDT")
+    assert "Did you mean --from-acquisition" in capsys.readouterr().err
+    for route in ("merge", "normalize", "acquisition"):
+        with pytest.raises(SystemExit):
+            invoke(
+                paths,
+                "new",
+                "new_recipe",
+                "--from-publication",
+                "60",
+                f"--from-{route}",
+                "example",
+                "--target-quote",
+                "USDT",
+            )
+    assert (
+        invoke(paths, "new", "new_recipe", "--from-merge", "example", "--target-quote", "a_recipe")
+        == 2
+    )
+    assert "--target-quote" in json.loads(capsys.readouterr().out)["error"]["message"]
+
+
+def publication_declaration(
+    paths: ProjectPaths, source: dict[str, Any]
+) -> recipes.PublicationSource:
+    root = Path(source["root"])
+    return recipes.PublicationSource(
+        registry_id="fb19f358-fcab-4bf7-98ed-5835ff24b455",
+        environment="testing",
+        registry_publication_id=source["registry_publication_id"],
+        engine_publication_id=source["engine_publication_id"],
+        manifest_sha256=source["fingerprints"]["manifest.json"],
+        processing_job_sha256="1" * 64,
+        publication_checksums_sha256=checksum(root / "publication-checksums.json"),
+        interval=recipes.Interval(start_ns=START, end_ns=END),
+    )
+
+
+def test_publication_recipe_local_lifecycle(
+    paths: ProjectPaths,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = publication(paths, combined=False)
+    write_trade_publication(source)
+    binding = publication_declaration(source)
+    resolve_binding = AsyncMock(return_value=binding)
+    monkeypatch.setattr(cli_conversion, "inspect_publication_source", resolve_binding)
+    assert (
+        invoke(
+            paths,
+            "new",
+            "direct",
+            "--testing",
+            "--from-publication",
+            "60",
+            "--target-quote",
+            "USDT",
+        )
+        == 0
+    )
+    created = json.loads(capsys.readouterr().out)
+    assert created["source"] == binding.model_dump()
+    assert created["execution_readiness"] == "not_assessed"
+    assert created["reference_configuration"] == "review_required"
+    resolve_binding.assert_awaited_once_with(paths, 60)
+    for argv in (("list",), ("show", "direct"), ("validate", "direct")):
+        assert invoke(paths, *argv) == 0
+        document = json.loads(capsys.readouterr().out)
+        if argv[0] == "list":
+            document = document["recipes"][0]
+        assert document["recipe"]["source"] == binding.model_dump()
+    resolve_binding.assert_awaited_once()
+    assert not paths.runs_dir.exists()
+    assert invoke(paths, "prepare", "direct") == 2
+    assert "Select --testing" in json.loads(capsys.readouterr().out)["error"]["message"]
+    assert not paths.runs_dir.exists()
+    recipe, _ = recipes.read_recipe(Path(created["path"]))
+    for field in ("file_dataset_ids", "publication_ids", "expected_engine_publication_ids"):
+        configured = recipe.model_dump()
+        configured["selection"][field] = ["60"] if field.startswith("expected") else [60]
+        with pytest.raises(ValidationError, match="remove other source selectors"):
+            recipes.Recipe.model_validate(configured)
+    configured = recipe.model_dump()
+    configured["interval"]["end_ns"] -= 1
+    with pytest.raises(ValidationError, match="cropping is unsupported"):
+        recipes.Recipe.model_validate(configured)
+    resolve_binding.side_effect = MarketForgeError("ineligible publication")
+    assert (
+        invoke(
+            paths,
+            "new",
+            "blocked",
+            "--testing",
+            "--from-publication",
+            "60",
+            "--target-quote",
+            "USDT",
+        )
+        == 2
+    )
+    assert not (recipes.library(paths) / "blocked.toml").exists()
+
+
+def test_publication_preparation_keeps_standalone_job_and_work_key(
+    paths: ProjectPaths,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from forge.historical.engine.work import convert_key
+    from forge.shared.database.connection import database_environment
+
+    configured = os.environ.get("MARKETFORGE_TEST_CONVERT_BINARY")
+    if not configured:
+        pytest.skip("set MARKETFORGE_TEST_CONVERT_BINARY to the managed converter")
+    binary = Path(configured).resolve(strict=True)
+    recipe_route = prepare_fixture(paths)
+    source = publication(paths, combined=False)
+    write_trade_publication(source)
+    binding = publication_declaration(source)
+    direct = Path(
+        str(recipes.create_bound(paths, "direct", binding, binding.interval, "USDT")["path"])
+    )
+    monkeypatch.setattr(
+        service, "selected_registry_id", AsyncMock(return_value=binding.registry_id)
+    )
+    monkeypatch.setattr(execution.WorkIndex, "peek", AsyncMock(return_value={}))
+
+    def resolve_binary(_paths: ProjectPaths, _target: str) -> Path:
+        return binary
+
+    monkeypatch.setattr(service, "resolve", resolve_binary)
+
+    async def discover_source(
+        _paths: ProjectPaths,
+        recipe: recipes.Recipe,
+        declaration: recipes.LoadedSource | recipes.PublicationSource,
+    ) -> dict[str, Any]:
+        if recipe.source.kind == "publication":
+            assert declaration == binding
+        return {"sources": [source], "external_reference": None, "blockers": []}
+
+    monkeypatch.setattr(service, "discover", discover_source)
+    with database_environment(testing=True):
+        via_recipe = asyncio.run(service.prepare(paths, recipe_route))
+        recipes.source_path(paths, "merge", "example").unlink()
+        via_publication = asyncio.run(service.prepare(paths, direct))
+    key = checksum(binary)
+    work_keys: list[str] = []
+    for report in (via_recipe, via_publication):
+        assert report["compatibility"] == "validated", report.get("compatibility_blockers")
+        entry = report["jobs"][0]
+        job = Job.model_validate_json(Path(entry["path"]).read_bytes())
+        assert entry["references"] == []  # BTCUSDT -> USDT needs no reference stream.
+        assert entry["engine_validation"] == "passed"
+        work_keys.append(convert_key(binding.registry_id, key, job.model_dump(mode="json")))
+    assert work_keys[0] == work_keys[1]
+    _, collection, _ = service.retained_collection(Path(via_publication["job_path"]))
+    assert collection["pins"]["publication_source"] == binding.model_dump()
+    assert "upstream_snapshot" not in collection["pins"]
+    assert not Path(via_publication["job_path"]).with_name("upstream.toml").exists()

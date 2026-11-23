@@ -29,6 +29,7 @@ from forge.markets.ranking.policy import RankingPolicy, currency, policy_documen
 from forge.markets.ranking.volume import ALGORITHM as VOLUME_ALGORITHM
 from forge.markets.ranking.volume import evaluate_volume, measure
 from forge.markets.repository import iter_instruments, json_value
+from forge.shared.database.connection import database_flag
 
 
 @dataclass(frozen=True)
@@ -534,7 +535,7 @@ async def latest_snapshot(c: AsyncConnection[TupleRow], name: str) -> UUID:
     if snapshot is None:
         raise MarketDataError(
             f"No published snapshot for {name}. Create one with: "
-            f"marketforge markets rank update {name} --testing"
+            f"marketforge markets rank update {name} {database_flag()}"
         )
     return snapshot
 

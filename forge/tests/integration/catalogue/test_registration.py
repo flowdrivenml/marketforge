@@ -108,11 +108,11 @@ async def test_prerequisites_registration_reuse_and_immutable_specs(
         def engine(_: ProjectPaths) -> Path:
             return executable
 
-        monkeypatch.setattr(registration, "testing_connection", existing)
-        monkeypatch.setattr(registration, "testing_dsn", test_dsn)
+        monkeypatch.setattr(registration, "database_connection", existing)
+        monkeypatch.setattr(registration, "database_dsn", test_dsn)
         monkeypatch.setattr(profiles, "resolve", engine)
-        monkeypatch.setattr("forge.shared.database.testing.testing_connection", existing)
-        monkeypatch.setattr("forge.shared.database.testing.testing_dsn", test_dsn)
+        monkeypatch.setattr("forge.shared.database.connection.database_connection", existing)
+        monkeypatch.setattr("forge.shared.database.connection.database_dsn", test_dsn)
 
         async def blocked(reason: str) -> None:
             with pytest.raises(MarketForgeError, match=reason):

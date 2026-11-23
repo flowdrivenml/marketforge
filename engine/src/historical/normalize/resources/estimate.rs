@@ -281,7 +281,7 @@ pub(crate) fn reserve_compatibility_trade(
         return Ok(None);
     }
     let mut config = crate::shared::historical::load_processing_config(
-        "data/.config/historical/general.toml",
+        "data/.config/engine/normalize.toml",
         ".",
     )?;
     // Preserve this legacy interface's explicit writer settings.

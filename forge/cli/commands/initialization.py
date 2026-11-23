@@ -1,22 +1,24 @@
-"""Testing-only application initialization using services directly."""
+"""Initialize selected workspace services."""
 
 import argparse
 import asyncio
 from dataclasses import asdict
 
-from forge.historical.metadata.service import enrich_testing
+from forge.cli.environment import add_database_options
+from forge.historical.metadata.service import enrich_registry
 from forge.markets.ranking.coordination import ranking_lock
 from forge.markets.ranking.workflow import reason, refresh_and_publish
 from forge.markets.service import collect
+from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.database.migrations import migrate_testing_database
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.status import require_initialized_production
 from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.terminal.markets import MarketCollectionDisplay, render_workflow_result
 from forge.startup.context import ApplicationContext
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--testing", required=True, action="store_true")
+    add_database_options(parser)
     parser.add_argument("--silent", action="store_true")
     parser.set_defaults(service_handler=run)
 
@@ -46,14 +48,14 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             }
         active_stage = "historical_metadata"
         try:
-            enrichment = await enrich_testing(dsn, context.paths)
+            enrichment = await enrich_registry(dsn, context.paths)
         except Exception as error:
             enrichment = {"status": "failed", "error": reason(error)}
         stages.append({"stage": "historical_metadata", **enrichment})
         active_stage = "rankings"
         # Track scope completion independently for each collection phase.
         display.reported.clear()
-        async with testing_connection(dsn) as ranking_owner:
+        async with database_connection(dsn) as ranking_owner:
             async with ranking_lock(ranking_owner):
                 value = await refresh_and_publish(
                     dsn,
@@ -70,9 +72,13 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             context.paths.ensure_application_directories()
             stages.append({"stage": "directories", "status": "complete"})
             active_stage = "migrations"
-            dsn = testing_dsn(context.paths.root)
-            migration = migrate_testing_database(dsn=dsn)
-            stages.append({"stage": "migrations", "status": "complete", **asdict(migration)})
+            if context.testing:
+                dsn = database_dsn(context.paths.root)
+                migration = migrate_testing_database(dsn=dsn)
+                stages.append({"stage": "migrations", "status": "complete", **asdict(migration)})
+            else:
+                require_initialized_production(context.paths.root)
+                dsn = database_dsn(context.paths.root)
             active_stage = "catalogue"
             value = asyncio.run(initialize(dsn))
         except Exception as error:

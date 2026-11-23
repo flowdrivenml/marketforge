@@ -75,3 +75,201 @@ These methods also work on a selected stream. Set `time_field="system_timestamp_
 Arrow batches retain exact Decimal256 prices and quantities. Previews represent Decimal256 as exact strings, including nested combined payloads. A Polars lazy query requires a supported projection. Exclude Decimal256 fields or use Arrow batches for those fields. Inspection applies no scaling or contract multipliers.
 
 Use `report.profile(["event_timestamp_ns"], input_rows=1000)` to summarize a bounded physical prefix and `compare(file_a, file_b)` to compare stored schemas, envelopes and sizes. These operations report their evidence and scope. See the [Python API reference](../reference/python-datasets.md).
+
+## Inspect causal streams and bounded reads
+
+### AND and OR Semantics
+
+This is one of the most important properties of the search API.
+
+### OR within one filter
+
+For example:
+
+```python
+exchange=["bybit", "okx"]
+```
+
+means:
+
+```text
+Bybit OR OKX
+```
+
+### AND between filters
+
+For example:
+
+```python
+catalog.find(
+    exchange="bybit",
+    symbol="BTCUSDT",
+    data_type="trades",
+)
+```
+
+means:
+
+```text
+Exchange is Bybit
+AND
+Symbol is BTCUSDT
+AND
+Content is trades
+```
+
+### Why does membership consistency matter?
+
+Suppose one merged file contains:
+
+```text
+Bybit BTCUSDT Trades
+OKX ETHUSDT Trades
+```
+
+Now consider:
+
+```python
+catalog.find(
+    exchange="bybit",
+    symbol="ETHUSDT",
+)
+```
+
+The file should not match merely because it contains:
+
+```text
+Bybit
+```
+
+somewhere and:
+
+```text
+ETHUSDT
+```
+
+somewhere else.
+
+The conditions must identify the same established stream membership.
+
+### Why is this important?
+
+Otherwise, a combined file could produce false matches for markets it does not actually represent.
+
+MarketForge preserves this relationship.
+
+---
+
+### Composable Searches
+
+A search returns another `DatasetCatalog`.
+
+This means you can apply additional filters later.
+
+For example:
+
+```python
+bybit = catalog.find(
+    exchange="bybit",
+)
+
+perpetuals = bybit.find(
+    instrument_type="perpetual",
+)
+
+trades = perpetuals.find(
+    data_type="trades",
+)
+
+display(trades.summary())
+```
+
+### Why is this useful?
+
+You can build reusable research selections.
+
+For example:
+
+```python
+btc = catalog.find(
+    symbol="BTCUSDT",
+)
+
+btc_trades = btc.find(
+    data_type="trades",
+)
+```
+
+### Does each search start from every original file?
+
+No.
+
+The next search operates on the current matching collection.
+
+### Are previous membership filters retained?
+
+Yes.
+
+Composable searches retain matching memberships.
+
+This prevents later filters from unexpectedly switching to unrelated streams in the same physical file.
+
+### Does filtering modify the underlying datasets?
+
+No.
+
+The searches return new metadata collections.
+
+They do not alter Parquet files.
+
+---
+
+## Publication and File Filters
+
+### Search by Processing Operation
+
+The API supports an operation filter.
+
+For example:
+
+```python
+normalized = catalog.find(
+    operation="normalize",
+)
+```
+
+Or:
+
+```python
+merged = catalog.find(
+    operation="merge",
+)
+```
+
+### Why distinguish operations?
+
+Normalization and merging produce different physical publication formats.
+
+For example:
+
+**Normalization**
+
+```text
+Raw Archives
+    |
+    v
+Canonical Trades / Depth
+```
+
+**Merge**
+
+```text
+Normalized Streams
+    |
+    v
+Combined Timeline
+```
+
+The appropriate inspection strategy can depend on the selected operation.
+
+---

@@ -36,12 +36,23 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut result_file = None;
     let mut project_root = None;
     let mut config_origin = None;
-    let mut config = PathBuf::from("data/.config/historical/general.toml");
+    let mut config =
+        PathBuf::from(marketforge_engine::shared::historical::config::DEFAULT_MERGE_CONFIG);
     #[cfg(feature = "monitor-tui")]
     let mut tui = false;
 
     while let Some(argument) = args.next() {
         match argument.as_str() {
+            "--runtime-schema" => {
+                if job.is_some() || args.len() != 0 {
+                    return Err("--runtime-schema takes no arguments".to_owned());
+                }
+                println!(
+                    "{}",
+                    marketforge_engine::shared::historical::config::merge_runtime_schema()
+                );
+                std::process::exit(0);
+            }
             "--runtime-settings" => {
                 use marketforge_engine::shared::historical::config::load_merge_runtime_settings;
                 if job.is_some() || args.len() != 1 {
@@ -108,7 +119,7 @@ fn parse_args() -> Result<CliArgs, String> {
 
             "--help" | "-h" => {
                 println!(
-                    "Usage: marketforge-merge [--validate-job <PATH> | --validate-dataset <DIR>] or \
+                    "Usage: marketforge-merge [--validate-job <PATH> | --validate-dataset <DIR> | --runtime-settings <PATH> | --runtime-schema] or \
                      --job <PATH> \
                      [--project-root <PATH>] [--config <PATH>] [--config-origin <PATH>] [--result-file <PATH>] [--tui]"
                 );

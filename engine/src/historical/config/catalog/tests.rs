@@ -2,7 +2,7 @@
 use super::*;
 use tempfile::TempDir;
 const PROFILE: &str = include_str!(
-    "../../../../../data/.config/historical/profiles/trades/binance.perpetual.linear.trades.toml"
+    "../../../../../data/.config/engine/normalize/profiles/trades/binance.perpetual.linear.trades.toml"
 );
 fn fixture(text: &str) -> TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -22,7 +22,7 @@ fn load(text: &str) -> Result<FormatCatalog> {
 #[test]
 fn production_inventory_compiles_without_archives_or_external_schemas() {
     let c = FormatCatalog::load(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/historical"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/engine/normalize"),
     )
     .unwrap();
     let mut ids = BTreeSet::new();
@@ -70,12 +70,13 @@ fn strict_unified_documents_reject_unknowns_versions_and_references() {
     }
 }
 #[test]
-fn filenames_duplicates_categories_and_symlinks_fail_closed() {
+fn namespaced_filenames_must_match_and_unrelated_files_are_ignored() {
     let dir = fixture(PROFILE);
     fs::rename(
         dir.path()
             .join("profiles/trades/binance.perpetual.linear.trades.toml"),
-        dir.path().join("profiles/trades/wrong.toml"),
+        dir.path()
+            .join("profiles/trades/bybit.spot.spot.trades.toml"),
     )
     .unwrap();
     assert!(
@@ -92,11 +93,15 @@ fn filenames_duplicates_categories_and_symlinks_fail_closed() {
         PROFILE,
     )
     .unwrap();
-    assert!(
-        FormatCatalog::load(dir.path())
-            .unwrap_err()
-            .to_string()
-            .contains("duplicate")
+    fs::write(dir.path().join("profiles/trades/notes.toml"), "unrelated").unwrap();
+    fs::write(
+        dir.path().join("profiles/trades/example.toml.bak"),
+        "backup",
+    )
+    .unwrap();
+    assert_eq!(
+        FormatCatalog::load(dir.path()).unwrap().profiles().count(),
+        1
     );
 }
 #[test]
@@ -136,7 +141,7 @@ fn unsupported_profiles_are_inventory_only() {
 #[test]
 fn xlsx_fixed_layout_settings_are_enforced() {
     let original = include_str!(
-        "../../../../../data/.config/historical/profiles/depth/bitget.spot.spot.depth.toml"
+        "../../../../../data/.config/engine/normalize/profiles/depth/bitget.spot.spot.depth.toml"
     );
     for text in [
         original.replace("workbook_sheets = 1", "workbook_sheets = 2"),
@@ -171,14 +176,15 @@ fn catalog_symlinks_are_rejected() {
     std::os::unix::fs::symlink(
         dir.path()
             .join("profiles/trades/binance.perpetual.linear.trades.toml"),
-        dir.path().join("profiles/trades/link.toml"),
+        dir.path()
+            .join("profiles/trades/bybit.spot.spot.trades.toml"),
     )
     .unwrap();
     assert!(
         FormatCatalog::load(dir.path())
             .unwrap_err()
             .to_string()
-            .contains("symlinks")
+            .contains("regular profile file")
     );
 }
 
@@ -218,7 +224,7 @@ fn native_trade_identity_contract_is_strict_and_fingerprinted() {
     );
     let text=PROFILE.replace("[source]","[source]\ntrade_id_scope = \"instrument_scoped\"\ntrade_id_reset_domain = \"instrument_lifetime\"");
     assert!(load(&text).is_ok());
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/historical");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/engine/normalize");
     let catalog = FormatCatalog::load(root).unwrap();
     assert_eq!(
         catalog
@@ -297,5 +303,29 @@ fn byod_profile_contracts_fail_closed() {
         ),
     ] {
         assert!(unified::compile(&depth.replace(old, new), &depth_path, "depth").is_err());
+    }
+}
+
+#[test]
+fn published_profile_schema_matches_its_rust_authority() {
+    let engine = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let reference = engine.join("../forge/historical/profiles/schema.json");
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(reference).unwrap()).unwrap();
+    assert_eq!(metadata["metadata_version"], 1);
+    assert_eq!(metadata["schema_version"], 2);
+    let sources = metadata["rust_sources"].as_object().unwrap();
+    assert!(sources.contains_key("src/historical/config/catalog/unified.rs"));
+    for (path, expected) in sources {
+        let bytes = std::fs::read(engine.join(path)).unwrap();
+        let actual: String = Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert_eq!(
+            expected.as_str(),
+            Some(actual.as_str()),
+            "Review profile semantics in {path}, then run engine/scripts/generate_profile_schema.py"
+        );
     }
 }

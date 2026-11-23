@@ -202,7 +202,7 @@ mod tests {
     fn config() -> ProcessingConfig {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         crate::shared::historical::config::load_processing_config(
-            "data/.config/historical/general.toml",
+            "data/.config/engine/normalize.toml",
             root,
         )
         .unwrap()

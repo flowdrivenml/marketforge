@@ -42,7 +42,7 @@ pub(super) fn setup(
     let mut job = b
         .resolve_job(
             &j,
-            &FormatCatalog::load(support::root().join("data/.config/historical")).unwrap(),
+            &FormatCatalog::load(support::root().join("data/.config/engine/normalize")).unwrap(),
             &config,
             &support::root(),
         )

@@ -1,15 +1,17 @@
 """Editable conversion configuration and fingerprinted upstream intent."""
 
 import hashlib
+import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
 from forge.historical.archives.config import AcquisitionConfig
-from forge.historical.conversion.contract import Currency, Policy, Resources
+from forge.historical.conversion.contract import Currency, Digest, Policy, Resources
+from forge.historical.engine.runtime_config import directory_fd
 from forge.historical.merge.config import (
     DatabaseID,
     DerivedRecipe,
@@ -19,10 +21,13 @@ from forge.historical.merge.config import (
 )
 from forge.historical.merge.service import Recipe as DirectMerge
 from forge.historical.normalization.config import NormalizationRecipe
-from forge.shared.config.library import resolve_config_file
+from forge.orchestration.registry import retain_recipe
+from forge.shared.config.library import config_filename, resolve_config_file
+from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
 from forge.shared.config.toml import dumps
 from forge.shared.errors import MarketForgeError
+from forge.shared.identity import RunOperation
 from forge.shared.paths import ProjectPaths
 
 SourceKind = Literal["merge", "normalize", "acquisition"]
@@ -44,6 +49,29 @@ class Interval(SettingsModel, frozen=True):
     def ordered(self) -> Self:
         if self.start_ns >= self.end_ns:
             raise ValueError("Conversion interval must be nonempty and half-open.")
+        return self
+
+
+EnginePublicationID = Annotated[str, Field(pattern=r"^[1-9][0-9]{0,19}$")]
+
+
+class PublicationSource(SettingsModel, frozen=True):
+    kind: Literal["publication"] = "publication"
+    registry_publication_id: DatabaseID
+    registry_id: str = Field(
+        pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    )
+    environment: Literal["testing", "production"]
+    engine_publication_id: EnginePublicationID
+    manifest_sha256: Digest
+    processing_job_sha256: Digest
+    publication_checksums_sha256: Digest
+    interval: Interval
+
+    @model_validator(mode="after")
+    def engine_id_is_uint64(self) -> Self:
+        if int(self.engine_publication_id) >= 2**64:
+            raise ValueError("Engine publication ID must fit in uint64.")
         return self
 
 
@@ -79,7 +107,7 @@ class Selection(SettingsModel, frozen=True):
 
 class Recipe(SettingsModel, frozen=True):
     version: Literal[1]
-    source: Source
+    source: Annotated[Source | PublicationSource, Field(discriminator="kind")]
     interval: Interval
     selection: Selection = Field(default_factory=Selection)
     conversion: Policy
@@ -89,6 +117,21 @@ class Recipe(SettingsModel, frozen=True):
 
     @model_validator(mode="after")
     def reference_selection(self) -> Self:
+        if isinstance(self.source, PublicationSource):
+            if (
+                self.selection.file_dataset_ids
+                or self.selection.publication_ids
+                or self.selection.expected_engine_publication_ids
+            ):
+                raise ValueError(
+                    "A publication source already pins the selection; remove other source selectors."
+                )
+            if not self.selection.whole_publication:
+                raise ValueError("A publication source requires selection.whole_publication=true.")
+            if self.interval != self.source.interval:
+                raise ValueError(
+                    "A publication source interval must equal the committed half-open interval; cropping is unsupported."
+                )
         refs = self.reference_stream_ids
         if any(not item.strip() for item in refs) or len(refs) != len(set(refs)):
             raise ValueError("Reference stream IDs must be nonblank and unique.")
@@ -107,7 +150,7 @@ class LoadedSource:
 
 
 def library(paths: ProjectPaths) -> Path:
-    return paths.config_dir / "historical/conversion"
+    return paths.workflow_dir("conversion")
 
 
 def source_path(paths: ProjectPaths, kind: SourceKind, reference: str) -> Path:
@@ -115,31 +158,30 @@ def source_path(paths: ProjectPaths, kind: SourceKind, reference: str) -> Path:
         return Path(reference).expanduser().resolve()
     if kind == "normalize":
         return normalization_path(paths, reference).resolve()
-    directory = (
-        paths.config_dir / "historical/merge" if kind == "merge" else paths.acquisition_config_dir
-    )
+    directory = paths.workflow_dir("merge") if kind == "merge" else paths.acquisition_config_dir
     return resolve_config_file(directory, reference)
 
 
 def load_source(paths: ProjectPaths, kind: SourceKind, reference: str) -> LoadedSource:
     path = source_path(paths, kind, reference)
     data = path.read_bytes()
-    document = tomllib.loads(data.decode())
-    config: Upstream
-    if kind == "merge":
-        config = (
-            DirectMerge.model_validate(document)
-            if "dataset_ids" in document
-            else DerivedRecipe.model_validate(document)
-        )
-    elif kind == "normalize":
-        if {"inputs", "job_id"} & document.keys():
-            raise MarketForgeError(
-                "Legacy archive-ID normalization requests cannot establish conversion recipe lineage."
+    with configuration_errors(path):
+        document = tomllib.loads(data.decode())
+        config: Upstream
+        if kind == "merge":
+            config = (
+                DirectMerge.model_validate(document)
+                if "dataset_ids" in document
+                else DerivedRecipe.model_validate(document)
             )
-        config = NormalizationRecipe.model_validate(document)
-    else:
-        config = AcquisitionConfig.model_validate(document)
+        elif kind == "normalize":
+            if {"inputs", "job_id"} & document.keys():
+                raise MarketForgeError(
+                    "Legacy archive-ID normalization requests cannot establish conversion recipe lineage."
+                )
+            config = NormalizationRecipe.model_validate(document)
+        else:
+            config = AcquisitionConfig.model_validate(document)
     interval = (
         Interval(start_ns=config.start_ns, end_ns=config.end_ns)
         if isinstance(config, (DirectMerge, DerivedRecipe))
@@ -154,45 +196,99 @@ def load_source(paths: ProjectPaths, kind: SourceKind, reference: str) -> Loaded
     )
 
 
-def load_recipe(paths: ProjectPaths, path: Path) -> tuple[Recipe, LoadedSource, bytes]:
+def read_recipe(path: Path) -> tuple[Recipe, bytes]:
     data = path.read_bytes()
-    recipe = Recipe.model_validate(tomllib.loads(data.decode()))
+    with configuration_errors(path):
+        recipe = Recipe.model_validate(tomllib.loads(data.decode()))
+    return recipe, data
+
+
+def validate_binding(
+    paths: ProjectPaths, path: Path, recipe: Recipe
+) -> LoadedSource | PublicationSource:
+    if isinstance(recipe.source, PublicationSource):
+        return recipe.source
     source = load_source(paths, recipe.source.kind, recipe.source.reference)
     if source.declaration != recipe.source:
         raise MarketForgeError(
-            "Upstream recipe path or fingerprint changed. Review and recreate the conversion recipe."
+            f"{path}: source path or fingerprint changed ({source.declaration.path}). Review and recreate the conversion recipe."
         )
+    return source
+
+
+def load_recipe(
+    paths: ProjectPaths, path: Path, *, retain: bool = True
+) -> tuple[Recipe, LoadedSource | PublicationSource, bytes]:
+    recipe, data = read_recipe(path)
+    source = validate_binding(paths, path, recipe)
+    if retain:
+        retain_recipe(RunOperation.CONVERT, path, data)
     return recipe, source, data
 
 
 def create(
     paths: ProjectPaths, name: str, kind: SourceKind, reference: str, target: Currency
 ) -> dict[str, object]:
-    destination = resolve_config_file(library(paths), name)
-    if destination.exists():
-        raise MarketForgeError(f"Conversion recipe already exists: {destination}")
     if "/" in reference:
         reference = str(Path(reference).expanduser().resolve())
     upstream = load_source(paths, kind, reference)
+    return create_bound(paths, name, upstream.declaration, upstream.interval, target)
+
+
+def create_bound(
+    paths: ProjectPaths,
+    name: str,
+    source: Source | PublicationSource,
+    interval: Interval,
+    target: Currency,
+) -> dict[str, object]:
+    destination = resolve_config_file(library(paths), name)
+    entry = library(paths).resolve() / config_filename(name)
+    if destination != entry or entry.exists() or entry.is_symlink():
+        raise MarketForgeError(f"Conversion recipe already exists: {destination}")
+    publication = isinstance(source, PublicationSource)
     recipe = Recipe(
         version=1,
-        source=upstream.declaration,
-        interval=upstream.interval,
+        source=source,
+        interval=interval,
+        selection=Selection(whole_publication=publication),
         conversion=Policy(target_quote=target, max_staleness_ns=60_000_000_000),
     )
-    fields = recipe.model_dump(exclude_none=True)
+    fields = recipe.model_dump(mode="json", exclude_none=True)
     sections = ("source", "interval", "selection", "conversion", "resources")
     base = {key: value for key, value in fields.items() if key not in sections}
     document = (
-        "# Select reference trade stream IDs explicitly. Review the interval and resource limits.\n"
-        "# Set selection.file_dataset_ids or selection.publication_ids to disambiguate revisions.\n"
+        "# Select reference trade stream IDs explicitly when needed. Review the resource limits.\n"
+        + (
+            "# The bound source fixes the whole publication and its committed interval.\n"
+            if publication
+            else "# Review the interval and use selection IDs to disambiguate revisions.\n"
+        )
         + dumps(base)
         + "".join(f"\n[{name}]\n" + dumps(fields[name]) for name in sections)
     )
-    destination.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with destination.open("x", encoding="utf-8") as output:
-            output.write(document)
+        with directory_fd(destination.parent, create=True) as directory:
+            handle = os.open(
+                destination.name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o666,
+                dir_fd=directory,
+            )
+            with os.fdopen(handle, "w", encoding="utf-8") as output:
+                output.write(document)
     except FileExistsError as error:
         raise MarketForgeError(f"Conversion recipe already exists: {destination}") from error
-    return {"status": "template_created", "path": str(destination), "source": fields["source"]}
+    result: dict[str, object] = {
+        "status": "template_created",
+        "path": str(destination),
+        "source": fields["source"],
+    }
+    if publication:
+        result.update(
+            source_binding="committed_metadata_checked",
+            execution_scope="whole_merge_publication",
+            reference_configuration="review_required",
+            execution_readiness="not_assessed",
+        )
+    return result

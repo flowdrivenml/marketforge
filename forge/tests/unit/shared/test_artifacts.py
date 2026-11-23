@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from forge.orchestration.artifacts import RunArtifacts
-from forge.shared.identity import new_run_id, parse_run_id
+from forge.shared.identity import RunOperation, new_run_id, parse_run_id
 from forge.shared.paths import ProjectPaths
 
 
@@ -17,7 +17,7 @@ def test_artifact_resolution_is_independent_of_working_directory(
         root=tmp_path / "workspace",
         data_root=tmp_path / "storage",
     )
-    run_id = new_run_id()
+    run_id = new_run_id(RunOperation.PIPELINE)
 
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
@@ -38,7 +38,7 @@ def test_restored_identity_resolves_the_same_artifacts(
         root=tmp_path / "workspace",
         data_root=tmp_path / "storage",
     )
-    original_id = new_run_id()
+    original_id = new_run_id(RunOperation.PIPELINE)
 
     original = RunArtifacts.for_run(paths, original_id)
     restored = RunArtifacts.for_run(

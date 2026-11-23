@@ -1,0 +1,46 @@
+[source]
+container = "plain"
+format = "jsonl"
+record_format = "snapshot_rows"
+ordering = "chronological"
+granularity = "daily"
+
+# Adjust source keys and encodings to match your sample. Quote dotted JSON paths.
+[fields.timestamp]
+type = "integer"
+encoding = "unix_nanoseconds"
+
+[fields.asks]
+type = "array"
+ordering = "price_ascending"
+level_format = ["price", "quantity"]
+
+[fields.bids]
+type = "array"
+ordering = "price_descending"
+level_format = ["price", "quantity"]
+
+# Select the target and quantity units before mapping canonical fields.
+[normalization]
+target = "l2_snapshot"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.snapshot]
+type = "single_row"
+
+[normalization.bids]
+field = "bids"
+
+[normalization.asks]
+field = "asks"
+
+[normalization.book]
+update_id = false
+sequence_id = false
+
+[normalization.book.snapshot_depth]
+asks = 1
+bids = 1

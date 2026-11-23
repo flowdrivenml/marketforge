@@ -153,8 +153,8 @@ def test_entry_points_use_guarded_read_only_services(
             )
         return result(path, "list", filters)
 
-    monkeypatch.setattr(storage, "testing_dsn", dsn)
-    monkeypatch.setattr(storage, "testing_connection", connect)
+    monkeypatch.setattr(storage, "database_dsn", dsn)
+    monkeypatch.setattr(storage, "database_connection", connect)
     monkeypatch.setattr(storage, "coverage", coverage)
     monkeypatch.setattr(storage, "list_archives", listing)
     args = ["--project-root", str(workspace), *(["--json"] if as_json else []), "storage"]
@@ -212,7 +212,7 @@ def test_invalid_browsing_filters_before_connection(
     def forbidden(root: Path) -> str:
         raise AssertionError("invalid request reached database")
 
-    monkeypatch.setattr(storage, "testing_dsn", forbidden)
+    monkeypatch.setattr(storage, "database_dsn", forbidden)
     assert (
         main(
             ["--project-root", str(workspace), "--json", "storage", "coverage", "--testing", *flags]
@@ -230,7 +230,7 @@ def test_existing_local_id_syntax(value: str) -> None:
 def test_custom_storage_root_is_read_only_and_not_created(
     workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    config = workspace / "data/.config/marketforge.toml"
+    config = workspace / "data/.config/forge/marketforge.toml"
     config.parent.mkdir(parents=True)
     config.write_text('[storage]\ndata_root = "alternate-data"\n')
     expected = workspace / "alternate-data/raw"
@@ -248,8 +248,8 @@ def test_custom_storage_root_is_read_only_and_not_created(
         assert root == expected and selected.instrument == "ETH_USDT"
         return {"schema_version": 1, "coverage": [], "pagination": pagination(0, selected, 0)}
 
-    monkeypatch.setattr(storage, "testing_dsn", dsn)
-    monkeypatch.setattr(storage, "testing_connection", connect)
+    monkeypatch.setattr(storage, "database_dsn", dsn)
+    monkeypatch.setattr(storage, "database_connection", connect)
     monkeypatch.setattr(storage, "coverage", controlled)
     assert (
         main(
@@ -269,6 +269,16 @@ def test_custom_storage_root_is_read_only_and_not_created(
     assert not expected.parent.exists()
 
 
-def test_explicit_testing_is_required(workspace: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_storage_defaults_to_production(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from forge.shared.database.connection import DatabaseError, is_testing
+
+    def selected(root: Path) -> str:
+        assert root == workspace
+        assert not is_testing()
+        raise DatabaseError("Production credentials unavailable.")
+
+    monkeypatch.setattr(storage, "database_dsn", selected)
     assert main(["--project-root", str(workspace), "--json", "storage"]) == 2
-    assert "requires --testing" in capsys.readouterr().err
+    assert "Production credentials unavailable." in capsys.readouterr().err

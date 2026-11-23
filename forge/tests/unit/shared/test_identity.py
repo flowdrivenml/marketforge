@@ -12,7 +12,7 @@ def test_run_reference_is_normalized() -> None:
 
     run_id = parse_run_id(value)
 
-    assert isinstance(run_id, UUID)
+    assert isinstance(run_id.uuid, UUID) and run_id.operation is None
     assert str(run_id) == value.lower()
 
 
@@ -41,3 +41,17 @@ def test_invalid_external_references_are_rejected(value: str) -> None:
 
     with pytest.raises(ValueError):
         parse_attempt_id(value)
+
+
+def test_all_public_operation_ids_round_trip() -> None:
+    from forge.shared.identity import RunOperation, new_run_id
+
+    identities = {new_run_id(operation) for operation in RunOperation for _ in range(20)}
+    assert len(identities) == len(RunOperation) * 20
+    for identity in identities:
+        assert identity.operation is not None
+        assert identity.uuid.version == 4
+        assert str(identity).startswith(f"{identity.operation}-")
+        assert parse_run_id(str(identity)) == identity
+        with pytest.raises(ValueError):
+            parse_run_id(f"arbitrary-{identity.uuid}")

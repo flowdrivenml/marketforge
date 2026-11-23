@@ -87,7 +87,7 @@ async def test_dry_run_and_publication_share_read_only_planner(
     from contextlib import asynccontextmanager
     from datetime import UTC, datetime
     from typing import cast
-    from unittest.mock import patch
+    from unittest.mock import AsyncMock, patch
 
     from psycopg import AsyncConnection
     from psycopg.rows import TupleRow
@@ -145,10 +145,19 @@ async def test_dry_run_and_publication_share_read_only_planner(
     async def lock(c: AsyncConnection[TupleRow], *, shared: bool = False) -> AsyncGenerator[None]:
         yield
 
-    monkeypatch.setattr("forge.historical.normalization.batch.testing_connection", connect)
-    monkeypatch.setattr("forge.historical.normalization.batch.testing_dsn", dsn)
+    monkeypatch.setattr(
+        "forge.historical.normalization.batch.registry_id",
+        AsyncMock(return_value="registry-fixture"),
+    )
+    monkeypatch.setattr("forge.historical.normalization.batch.database_connection", connect)
+    monkeypatch.setattr("forge.historical.normalization.batch.database_dsn", dsn)
     monkeypatch.setattr("forge.historical.normalization.batch.plan_batch", planner)
-    config = paths.config_dir / "historical/general.toml"
+
+    async def registry(c: AsyncConnection[TupleRow]) -> str:
+        return "fixture"
+
+    monkeypatch.setattr("forge.historical.normalization.batch.registry_id", registry)
+    config = paths.config_dir / "engine/normalize.toml"
     config.parent.mkdir(parents=True)
     config.write_text("schema_version=1\n")
     with patch("subprocess.run", side_effect=AssertionError("Engine must never launch")):
@@ -157,6 +166,13 @@ async def test_dry_run_and_publication_share_read_only_planner(
         actual = await prepare_batch(paths, recipe)
     assert dry["status"] == actual["status"]
     assert len(queries) == 2
-    assert sorted(p.name for p in run.iterdir()) == ["normalize-batch.json", "prepare-report.json"]
+    assert sorted(p.name for p in run.iterdir()) == [
+        "historical",
+        "normalize-batch.json",
+        "normalize.toml",
+        "prepare-report.json",
+    ]
+    config.write_text("changed after preparation")
+    assert (run / "normalize.toml").read_text() == "schema_version=1\n"
     assert json.loads((run / "normalize-batch.json").read_text()) == plan.batch
     assert json.loads((run / "prepare-report.json").read_text()) == actual

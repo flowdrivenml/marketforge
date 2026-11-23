@@ -121,13 +121,14 @@ pub fn execute_processing_session_with_tui(
     config: ProcessingConfig,
 ) -> Result<ProcessingSessionResult, Box<dyn std::error::Error>> {
     let dashboard = ProcessingDashboard::new_session(&jobs, &config);
-    execute_session_dashboard(dashboard, config, move |_| Ok(jobs))
+    execute_session_dashboard(dashboard, config, None, move |_| Ok(jobs))
 }
 
 /// Resolve physical sources on the worker after the dashboard owns the terminal.
 pub fn execute_prepared_session_with_tui<F>(
     batch: &crate::historical::config::PreparedBatch,
     config: ProcessingConfig,
+    diagnostics: Option<&std::path::Path>,
     prepare: F,
 ) -> Result<ProcessingSessionResult, Box<dyn std::error::Error>>
 where
@@ -136,12 +137,13 @@ where
         + 'static,
 {
     let dashboard = ProcessingDashboard::new_prepared(batch, &config);
-    execute_session_dashboard(dashboard, config, prepare)
+    execute_session_dashboard(dashboard, config, diagnostics, prepare)
 }
 
 fn execute_session_dashboard<F>(
     mut dashboard: ProcessingDashboard,
     config: ProcessingConfig,
+    diagnostics: Option<&std::path::Path>,
     prepare: F,
 ) -> Result<ProcessingSessionResult, Box<dyn std::error::Error>>
 where
@@ -154,7 +156,12 @@ where
     }
 
     // Initialize terminal before launching processing.
-    let log = crate::historical::normalize::progress::log::DashboardLog::enter()?;
+    use crate::historical::normalize::progress::log::{DashboardLog, diagnostic};
+    // A managed log is optional. Fall back to the standalone temporary log.
+    let log = match diagnostics {
+        Some(path) => DashboardLog::enter_managed(path).ok(),
+        None => Some(DashboardLog::enter()?),
+    };
     let guard = TerminalGuard::enter()?;
 
     let backend = CrosstermBackend::new(io::stdout());
@@ -172,10 +179,12 @@ where
     let progress_state = reporter.state();
 
     // Initialize dashboard with every job and task.
-    dashboard.log_path = Some(log.path.display().to_string());
-    dashboard
-        .activity
-        .push_back(format!("Diagnostics: {}", log.path.display()));
+    if let Some(log) = &log {
+        dashboard.log_path = Some(log.path.display().to_string());
+        dashboard
+            .activity
+            .push_back(format!("Diagnostics: {}", log.path.display()));
+    }
 
     // Execute the existing global processing session.
     let worker = thread::spawn(move || {
@@ -192,13 +201,27 @@ where
 
     drop(terminal);
     drop(guard);
+    let report_fallback_log = || {
+        if let (Some(expected), Some(log)) = (diagnostics, &log)
+            && log.path != expected
+        {
+            eprintln!("Normalization diagnostics: {}", log.path.display());
+        }
+    };
     if let Err(error) = dashboard_result {
         if error.kind() == io::ErrorKind::Interrupted {
             // The foreground CLI exits immediately, stopping its worker without
             // removing staging or published outputs.
+            report_fallback_log();
             return Err(Box::new(error));
         }
-        eprintln!("Dashboard stopped: {error}; waiting for processing to finish");
+        if diagnostics.is_some() {
+            diagnostic(format_args!(
+                "Dashboard stopped: {error}; waiting for processing to finish"
+            ));
+        } else {
+            eprintln!("Dashboard stopped: {error}; waiting for processing to finish");
+        }
     }
     let processing_result = worker.join();
     loop {
@@ -213,13 +236,29 @@ where
     dashboard.update_snapshots(&progress_state);
     dashboard.ended.get_or_insert_with(Instant::now);
 
-    eprintln!("Normalization diagnostics: {}", log.path.display());
+    if diagnostics.is_none()
+        && let Some(log) = &log
+    {
+        eprintln!("Normalization diagnostics: {}", log.path.display());
+    }
 
-    let result = processing_result.map_err(|_| "processing session thread panicked")??;
+    let result = processing_result
+        .map_err(|_| "processing session thread panicked".into())
+        .and_then(|result| result.map_err(Into::<Box<dyn std::error::Error>>::into))
+        .inspect_err(|_| report_fallback_log())?;
+    if result
+        .jobs
+        .iter()
+        .any(|job| job.status != ProcessingStatus::Complete)
+    {
+        report_fallback_log();
+    }
 
-    dashboard.reconcile_results(&result.jobs);
-    print_session_summary(&dashboard, &result);
-    print_output_summary(&dashboard, &result.jobs);
+    if diagnostics.is_none() {
+        dashboard.reconcile_results(&result.jobs);
+        print_session_summary(&dashboard, &result);
+        print_output_summary(&dashboard, &result.jobs);
+    }
 
     Ok(result)
 }

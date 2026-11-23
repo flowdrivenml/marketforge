@@ -10,6 +10,7 @@ from pydantic import Field, field_validator, model_validator
 
 from forge.markets.capabilities import EXCHANGES
 from forge.markets.models import Exchange, Market, MarketDataError, number
+from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
 
 
@@ -216,9 +217,10 @@ class RankingPolicy(SettingsModel, frozen=True):
 
 
 def load_policy(path: Path) -> RankingPolicy:
-    with path.open("rb") as source:
-        document = tomllib.load(source)
-    return RankingPolicy.model_validate(document)
+    with configuration_errors(path):
+        with path.open("rb") as source:
+            document = tomllib.load(source)
+        return RankingPolicy.model_validate(document)
 
 
 def policy_document(policy: RankingPolicy) -> dict[str, object]:

@@ -8,8 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 from forge.cli.commands import datasets
+from forge.datasets.query import preview_columns
 from forge.shared.terminal.console import create_console
-from forge.shared.terminal.datasets import render_find, render_inspection
+from forge.shared.terminal.datasets import render_inspection
 
 START = 1793059200123456789
 LONG = "BTC-" + "X" * 110
@@ -52,14 +53,6 @@ def test_search_and_details_preserve_membership_and_timestamps(width, file):
     output = StringIO()
     console = create_console(stream=output)
     console.width = width
-    render_find(
-        console,
-        {"datasets": [file, {**file, "id": 716}], "limit": 2, "offset": 0, "has_more": True},
-        filters={"data_type": "order_book_l2"},
-    )
-    search = output.getvalue()
-    assert "L2 depth" in search and "ETHUSDT" in search and "Next page --offset 2" in search
-    assert search.count("715") == 1 and search.count("716") == 1
     render_inspection(
         console,
         "show",
@@ -83,18 +76,8 @@ def test_search_and_details_preserve_membership_and_timestamps(width, file):
     assert all(len(line) <= width for line in text.splitlines())
     assert LONG in "".join(line.strip() for line in text.splitlines())
     assert "bybit.family:BTC" in text and "7.1 KiB" in text
-    assert "2026-10-27 00:00:00" in search and ".123456789 UTC" in text
+    assert ".123456789 UTC" in text
     assert "/private/" not in text and file["file_sha256"] not in text and "…" not in text
-
-
-def test_empty_search():
-    output = StringIO()
-    render_find(
-        create_console(stream=output),
-        {"datasets": [], "limit": 1, "offset": 9},
-        filters={},
-    )
-    assert "No matching files" in output.getvalue() and "Offset 9" in output.getvalue()
 
 
 def test_scoped_lineage(file):
@@ -139,7 +122,7 @@ def test_scoped_lineage(file):
 def test_schema_and_preview(file, kind, field, value, label):
     file["data_type"] = kind
     cols = ["event_timestamp_ns", "side", "price", "quantity_base", "trade_id", "order_count"]
-    projection = datasets.preview_columns(file, cols)
+    projection = preview_columns(file, cols)
     assert projection[-1] == field
     price = Decimal("80982.9000000000000000000000000000")
     output = StringIO()
@@ -181,11 +164,16 @@ def test_schema_and_preview(file, kind, field, value, label):
 def test_json_bypasses_the_renderer(monkeypatch, capsys):
     expected = {"id": 715, "rows": [{"event_timestamp_ns": START, "price": Decimal("12.300")}]}
 
-    async def browse(*_):
+    async def browse(*_, detailed):
         return expected
 
     monkeypatch.setattr(datasets, "browse", browse)
-    assert datasets.run(SimpleNamespace(as_json=True, dataset_action="head"), None) == 0
+    assert (
+        datasets.run(
+            SimpleNamespace(as_json=True, dataset_action="head"), SimpleNamespace(paths=None)
+        )
+        == 0
+    )
     raw = capsys.readouterr().out
     assert "\x1b" not in raw
     assert json.loads(raw) == {

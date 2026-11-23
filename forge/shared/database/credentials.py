@@ -9,13 +9,17 @@ from pathlib import Path
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import resolve_project_root
 
-TEST_DATABASE_KEY = "MARKETFORGE_DATABASE_URL_TEST"
-PRODUCTION_DATABASE_KEY = "MARKETFORGE_DATABASE_URL"
+TEST_DATABASE_KEY = "TEST_DATABASE_KEY"
+PRODUCTION_DATABASE_KEY = "PRODUCTION_DATABASE_KEY"
 _ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
 
 
 class DatabaseCredentialsError(MarketForgeError):
     """Credentials are missing or invalid; messages never include their values."""
+
+
+class MissingDatabaseCredentials(DatabaseCredentialsError):
+    """The selected key has no configured value."""
 
 
 def _dotenv_value(text: str, *, key: str, line: int) -> str:
@@ -75,7 +79,7 @@ def resolve_database_dsn(*, testing: bool, project_root: Path | None = None) -> 
             f"Cannot read PostgreSQL credentials for {key} from .secrets/postgres.env."
         ) from None
     if value is None or not value.strip():
-        raise DatabaseCredentialsError(
+        raise MissingDatabaseCredentials(
             f"Set {key} to a nonempty value in the environment or in "
             "<project-root>/.secrets/postgres.env."
         )

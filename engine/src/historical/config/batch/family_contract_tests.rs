@@ -46,7 +46,7 @@ fn batch(value: Value) -> PreparedBatch {
     serde_json::from_value(value).unwrap()
 }
 fn catalog() -> FormatCatalog {
-    FormatCatalog::load(root().join("data/.config/historical")).unwrap()
+    FormatCatalog::load(root().join("data/.config/engine/normalize")).unwrap()
 }
 fn resolve(batch: &PreparedBatch) -> Result<ProcessingJob> {
     batch.validate(&root())?;

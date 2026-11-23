@@ -74,6 +74,8 @@ def test_explicit_configuration_produces_plain_json(
     assert "\x1b[" not in captured.out
     assert payload["settings_file"] == str(source)
     assert payload["settings"]["presentation"]["mode"] == "silent"
+    assert payload["setting_sources"]["presentation.mode"] == str(source)
+    assert payload["setting_sources"]["http.timeout_seconds"] is None
     assert payload["settings"]["storage"]["resolved_data_root"] == str(
         workspace / "archive-storage",
     )

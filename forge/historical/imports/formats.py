@@ -7,7 +7,8 @@ import json
 import re
 import tomllib
 import zipfile
-from pathlib import Path
+import zlib
+from pathlib import Path, PurePosixPath
 from typing import cast
 
 from forge.historical.imports.models import ImportConfig, ImportError, freeze_inputs
@@ -16,7 +17,35 @@ from forge.shared.config.toml import dumps
 SAMPLE_BYTES = 65536
 
 
-def sample(path: Path, member: str | None = None, header: bool | None = None) -> dict[str, object]:
+ZIP_DIRECTORY_BYTES = 8 * 1024 * 1024
+COMPRESSED_SAMPLE_BYTES = 2 * 1024 * 1024
+
+
+class BoundedArchiveReader(io.BufferedReader):
+    """Limit physical reads when compressed input yields little or no output."""
+
+    def __init__(self, path: Path, limit: int) -> None:
+        super().__init__(io.FileIO(path, "rb"))
+        self.remaining = limit
+
+    def read(self, size: int | None = -1, /) -> bytes:
+        # Also bound reads that ask for the entire tail of the archive.
+        request = self.remaining + 1 if size is None or size < 0 else min(size, self.remaining + 1)
+        result = super().read(request)
+        if len(result) > self.remaining:
+            raise ArchiveSampleLimit("Compressed input exceeds the bounded sample read limit.")
+        self.remaining -= len(result)
+        return result
+
+
+class ArchiveSampleLimit(OSError):
+    pass
+
+
+def read_sample(path: Path, member: str | None) -> tuple[dict[str, object], bytes]:
+    """Read one bounded plain or compressed prefix without extracting archive members."""
+    if not path.is_file():
+        raise OSError(f"Source sample requires a regular file: {path}")
     with path.open("rb") as source:
         magic = source.read(4)
     container = "plain"
@@ -35,14 +64,18 @@ def sample(path: Path, member: str | None = None, header: bool | None = None) ->
             if (
                 offset < 0
                 or len(tail) - offset < 22
-                or struct.unpack_from("<I", tail, offset + 12)[0] > 8 * 1024 * 1024
+                or (offset >= 20 and tail[offset - 20 : offset - 16] == b"PK\x06\x07")
+                or struct.unpack_from("<I", tail, offset + 12)[0] > ZIP_DIRECTORY_BYTES
             ):
                 return {
                     "container": container,
                     "layout": "unsupported",
                     "reason": "ZIP directory is absent or exceeds 8 MiB sample limit.",
-                }
-            with zipfile.ZipFile(path) as archive:
+                }, b""
+            with (
+                BoundedArchiveReader(path, ZIP_DIRECTORY_BYTES + COMPRESSED_SAMPLE_BYTES) as raw,
+                zipfile.ZipFile(raw) as archive,
+            ):
                 members = [i for i in archive.infolist() if not i.is_dir()]
                 if member is None and len(members) != 1:
                     return {
@@ -50,25 +83,67 @@ def sample(path: Path, member: str | None = None, header: bool | None = None) ->
                         "layout": "requires_member",
                         "members": [i.filename for i in members[:20]],
                         "reason": "Choose --member explicitly; layouts are not assumed identical.",
-                    }
+                    }, b""
                 selected_member = member or members[0].filename
-                with archive.open(selected_member) as source:
+                matches = [item for item in members if item.filename == selected_member]
+                if len(matches) != 1:
+                    return {
+                        "container": container,
+                        "layout": "unsupported",
+                        "reason": "ZIP member is absent or ambiguous. Choose an exact listed member.",
+                    }, b""
+                address = PurePosixPath(selected_member)
+                if address.is_absolute() or ".." in address.parts or "\\" in selected_member:
+                    return {
+                        "container": container,
+                        "layout": "unsupported",
+                        "reason": "Unsafe ZIP member name.",
+                    }, b""
+                if matches[0].compress_type not in {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}:
+                    return {
+                        "container": container,
+                        "layout": "unsupported",
+                        "reason": "The bounded sampler supports only stored or deflated ZIP members.",
+                    }, b""
+                with archive.open(matches[0]) as source:
                     content = source.read(SAMPLE_BYTES)
         elif magic.startswith(b"\x1f\x8b"):
             container = "gzip"
-            with gzip.open(path, "rb") as source:
+            with (
+                BoundedArchiveReader(path, COMPRESSED_SAMPLE_BYTES) as raw,
+                gzip.GzipFile(fileobj=raw) as source,
+            ):
                 content = source.read(SAMPLE_BYTES)
             if len(content) > 262 and content[257:262] == b"ustar":
                 return {
                     "container": "tar_gzip",
                     "layout": "unsupported",
                     "reason": "Tar member selection is not implemented by the bounded sampler; raw import remains supported.",
-                }
+                }, b""
         else:
             with path.open("rb") as source:
                 content = source.read(SAMPLE_BYTES)
+        return {"container": container, "member": selected_member}, content
+    except ArchiveSampleLimit as error:
+        return {"container": container, "layout": "unsupported", "reason": str(error)}, b""
+    except (OSError, zipfile.BadZipFile, EOFError, RuntimeError, NotImplementedError, zlib.error):
+        return {
+            "container": container,
+            "layout": "unsupported",
+            "reason": "Binary or unreadable text sample; importing raw bytes is still supported.",
+        }, b""
+
+
+def sample(path: Path, member: str | None = None, header: bool | None = None) -> dict[str, object]:
+    """Legacy evidence contract, including a declared CSV header in representative_rows."""
+    metadata, content = read_sample(path, member)
+    if "reason" in metadata:
+        return metadata
+    container = metadata["container"]
+    selected_member = metadata["member"]
+    try:
         text = content.decode("utf-8-sig")
-    except (UnicodeError, OSError, zipfile.BadZipFile, EOFError):
+    except UnicodeError:
         return {
             "container": container,
             "layout": "unsupported",
@@ -95,7 +170,7 @@ def sample(path: Path, member: str | None = None, header: bool | None = None) ->
             walk(record)
             layout = "jsonl"
             rows = [record]
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, RecursionError):
             pass
     else:
         try:

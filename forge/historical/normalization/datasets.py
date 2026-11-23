@@ -16,7 +16,14 @@ from forge.historical.archives.storage.acquire import root_key
 from forge.historical.archives.storage.files import disk
 from forge.historical.engine.managed import checksum, resolve, supervised
 from forge.historical.normalization.service import write_job
-from forge.shared.database.testing import TestingDatabaseError, testing_connection, testing_dsn
+from forge.shared.database.connection import (
+    DatabaseError,
+    database_connection,
+    database_dsn,
+    database_purpose,
+    registry_id,
+    require_registry,
+)
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -251,7 +258,7 @@ async def pin_raw_inputs(
         if expected is not None:
             raise ArchiveSelectionError(str(error)) from error
         raise
-    async with testing_connection(testing_dsn(paths.root)) as c:
+    async with database_connection(database_dsn(paths.root)) as c:
         async with c.transaction():
             if expected is None:
                 await raw_inputs(c, paths, {"raw_sha256": hashes})
@@ -315,7 +322,7 @@ async def register_verified(
     )
     receipt: dict[str, Any] = {
         "schema_version": 1,
-        "environment": "testing",
+        "environment": database_purpose(),
         "publication": "committed",
         "registration": "pending",
         "evidence": ordered,
@@ -334,8 +341,12 @@ async def register_verified(
         database_ids: dict[str, int] = {}
         file_states: dict[str, str] = {}
         publications: dict[str, dict[str, Any]] = {}
-        async with testing_connection(testing_dsn(paths.root)) as c:
+        async with database_connection(database_dsn(paths.root)) as c:
             async with c.transaction():
+                identity = await registry_id(c)
+                if execution is not None:
+                    require_registry(execution, identity)
+                receipt["registry_id"] = identity
                 for evidence in ordered:
                     await c.execute(
                         "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
@@ -371,7 +382,7 @@ async def register_verified(
         if len(database_ids) == 1:
             receipt["catalogue_dataset_id"] = next(iter(database_ids.values()))
     except (MarketForgeError, OSError, ValueError) as error:
-        receipt["registration"] = "pending" if isinstance(error, TestingDatabaseError) else "failed"
+        receipt["registration"] = "pending" if isinstance(error, DatabaseError) else "failed"
         receipt["error"] = str(error)
     write_job(receipt_directory / "registration-result.json", receipt)
     return receipt

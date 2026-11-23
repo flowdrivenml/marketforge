@@ -6,14 +6,15 @@ import re
 from pathlib import Path
 
 from forge.shared.errors import MarketForgeError
+from forge.shared.paths import require_migrated
 
 
 class ConfigurationNameError(MarketForgeError, ValueError):
     """Raised when a configuration name or location is invalid."""
 
 
-def resolve_config_file(directory: Path, name: str) -> Path:
-    """Resolve a configuration name without allowing library escape."""
+def config_filename(name: str) -> str:
+    """Return the TOML entry name for a managed configuration reference."""
     stem = name.removesuffix(".toml")
 
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", stem) is None:
@@ -23,12 +24,34 @@ def resolve_config_file(directory: Path, name: str) -> Path:
             "Directory paths are not accepted."
         )
 
+    return f"{stem}.toml"
+
+
+def resolve_config_file(directory: Path, name: str) -> Path:
+    """Resolve a configuration name without allowing library escape."""
+    filename = config_filename(name)
     root = directory.resolve()
-    destination = (root / f"{stem}.toml").resolve()
+    destination = (root / filename).resolve()
 
     if destination.parent != root:
         raise ConfigurationNameError(f"Configuration {name!r} points outside its managed library.")
 
+    if root.parent.name == "data_engineering" and root.parent.parent.name == "workflows":
+        config_root = root.parents[2]
+        legacy = {
+            "acquisition": "acquisition",
+            "import": "acquisition/import",
+            "pipeline": "pipeline",
+            "normalization": "historical/normalization",
+            "merge": "historical/merge",
+            "conversion": "historical/conversion",
+        }.get(root.name)
+        if legacy:
+            require_migrated(destination, config_root / legacy / destination.name)
+            if root.name == "normalization":
+                require_migrated(
+                    destination, config_root / "historical/normalization_jobs" / destination.name
+                )
     return destination
 
 

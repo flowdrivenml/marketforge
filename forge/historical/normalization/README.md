@@ -29,7 +29,7 @@ Rust-supported family references in submitted JSON remain unchanged.
 profiles and executable. It never reconstructs recipes or rewrites user edits.
 The Rust compiler performs nonexecuting validation; Rust owns normalization,
 reconciliation, resource accounting, the optional terminal UI and publication.
-Configuration remains `data/.config/historical/general.toml`.
+Configuration remains `data/.config/engine/normalize.toml`.
 
 `datasets.py` verifies committed destinations, checksums, manifest semantics and
 real Parquet inventory before short, idempotent catalogue transactions. Clean and

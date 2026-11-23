@@ -43,7 +43,7 @@ pub struct Args {
     pub dry_run: bool,
     #[arg(long, default_value = ".")]
     pub project_root: PathBuf,
-    #[arg(long, default_value = "data/.config/historical/general.toml")]
+    #[arg(long, default_value = "data/.config/engine/normalize.toml")]
     pub config: PathBuf,
     #[arg(long)]
     pub output_root: Option<PathBuf>,

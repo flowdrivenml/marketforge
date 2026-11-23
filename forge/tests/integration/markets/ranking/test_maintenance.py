@@ -272,7 +272,7 @@ allow_partial_universe=true
         yield database
 
     monkeypatch.setattr(workflow, "collect", collect)
-    monkeypatch.setattr(workflow, "testing_connection", connect)
+    monkeypatch.setattr(workflow, "database_connection", connect)
     async with ranking_lock(database):
         created = await ensure_ranking(
             database, "fixture", tmp_path, policy, HttpSettings(), dry_run=False

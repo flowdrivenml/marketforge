@@ -1,16 +1,21 @@
-# Develop MarketForge
+# Developer overview
 
-This handbook is for contributors familiar with a shell, Git, and either Python or Rust. Start with a small local fixture. The [Bybit Quick Start](../getting-started/quickstart.md) introduces the market-data workflow if acquisition, trades, and L2 depth are new to you.
+Forge is the Python orchestration layer. It owns request selection, catalogue and registry access, managed storage, job preparation, and run evidence. The Rust Engine owns source interpretation, event processing, and operation-specific publication. Changes to a public contract must account for its writer, validator, and readers.
 
-| I want to… | Start here |
+## Locate the change
+
+| Change | Where to start |
 | --- | --- |
-| Set up a checkout and prove it works | [Local development](setup.md) |
-| Make a small, reviewable change | [First contribution](first-contribution.md) |
-| Trace a request through Forge, Engine, and storage | [Architecture](architecture.md) and [Historical operation lifecycles](operations.md) |
-| Add or change a provider, profile, reader, or processing step | [Extension decision guide](extending.md) and [Source integration](sources.md) |
-| Change a CLI, registry operation, or published contract | [Orchestration and persistence](orchestration.md) |
-| Select a test or maintain a fixture | [Testing](testing.md) |
-| Investigate a failure or quantify a regression | [Debugging](debugging.md) and [Performance](performance.md) |
-| Review impact and prepare a contribution | [Compatibility and contributions](compatibility.md) |
+| CLI, TUI, registry, acquisition, preparation, or recovery | [Forge architecture](forge.md) |
+| Source decoding, canonical values, reconciliation, or depth reconstruction | [Normalization Engine](normalize.md) |
+| Timeline ordering or materialization across publications | [Merge Engine](merge.md) |
+| Currency references or conversion output | [Conversion Engine](convert.md) |
+| A stored job, manifest, or registry contract | [Orchestration and persistence](orchestration.md) and [compatibility](compatibility.md) |
 
-The handbook explains implementation and verification. The [technical reference](../reference/index.md) is the place to look up the wire and storage contracts.
+The [system overview](architecture.md) traces the boundaries between these components. The [public reference](../reference/index.md) defines the user-visible contracts they implement.
+
+## Set up and verify a change
+
+Use [local development setup](setup.md) and the [first contribution walkthrough](first-contribution.md) to check your environment. Then choose an [extension point](extending.md) and keep a representative fixture close to the code it exercises. The [Bybit listing walkthrough](sources.md#walkthrough-accept-a-revised-bybit-directory-listing) shows how to carry one provider change through discovery, validation, tests, and documentation.
+
+Use the [testing guide](testing.md) to choose fixture and database coverage. For a failure, [trace retained evidence](debugging.md) before [measuring performance](performance.md). Review [compatibility and contribution checks](compatibility.md) before handing off a change.

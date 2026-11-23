@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from psycopg import AsyncConnection
@@ -60,7 +60,7 @@ def pinned_preparation_ranking(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     monkeypatch.setattr("forge.historical.normalization.batch.ranking_positions", snapshot)
     monkeypatch.setattr("forge.historical.engine.managed.supervised", validator)
     monkeypatch.setattr("forge.historical.engine.managed.resolve", executable)
-    config = tmp_path / "data/.config/historical/general.toml"
+    config = tmp_path / "data/.config/engine/normalize.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text("schema_version=1\n")
 
@@ -201,7 +201,7 @@ async def test_concrete_identity_without_profiles_or_member_selection(tmp_path: 
     }
     assert task["input_path"] == str(paths.raw_dir / "complete.zip")
     assert resolved.instrument_id == 3
-    assert not (paths.config_dir / "historical/profiles").exists()
+    assert not (paths.config_dir / "engine/normalize/profiles").exists()
 
 
 @pytest.mark.asyncio
@@ -332,8 +332,8 @@ def test_manual_prepare_entrypoint_uses_current_batch(
     (tmp_path / "forge/pyproject.toml").touch()
     (tmp_path / "engine").mkdir()
     row = archive(paths)
-    paths.normalization_config_dir.mkdir(parents=True)
-    (paths.normalization_config_dir / "legacy.toml").write_text("""job_id=7
+    paths.normalization_recipe_dir.mkdir(parents=True)
+    (paths.normalization_recipe_dir / "legacy.toml").write_text("""job_id=7
 dataset_id=8
 content_type="trades"
 [[inputs]]
@@ -366,12 +366,16 @@ archive_member="second.csv"
     ) -> list[dict[str, object]]:
         return [row]
 
-    monkeypatch.setattr("forge.historical.normalization.batch.testing_connection", connect)
+    monkeypatch.setattr(
+        "forge.historical.normalization.batch.registry_id",
+        AsyncMock(return_value="registry-fixture"),
+    )
+    monkeypatch.setattr("forge.historical.normalization.batch.database_connection", connect)
 
     def dsn(root: Path) -> str:
         return "fixture"
 
-    monkeypatch.setattr("forge.historical.normalization.batch.testing_dsn", dsn)
+    monkeypatch.setattr("forge.historical.normalization.batch.database_dsn", dsn)
     monkeypatch.setattr("forge.historical.normalization.batch.ranking_positions", ranking)
     monkeypatch.setattr("forge.historical.normalization.batch.used_ids", occupied)
     monkeypatch.setattr("forge.historical.normalization.batch.scan", scan)
@@ -464,8 +468,12 @@ end=2026-10-28T00:00:00Z
     ) -> list[dict[str, object]]:
         return [row] if after == 0 else []
 
-    monkeypatch.setattr("forge.historical.normalization.batch.testing_connection", connect)
-    monkeypatch.setattr("forge.historical.normalization.batch.testing_dsn", dsn)
+    monkeypatch.setattr(
+        "forge.historical.normalization.batch.registry_id",
+        AsyncMock(return_value="registry-fixture"),
+    )
+    monkeypatch.setattr("forge.historical.normalization.batch.database_connection", connect)
+    monkeypatch.setattr("forge.historical.normalization.batch.database_dsn", dsn)
     # Preparation reads persisted ranking evidence without refreshing it.
     monkeypatch.setattr("forge.historical.normalization.batch.used_ids", occupied)
     monkeypatch.setattr("forge.historical.normalization.batch.scan", scan)
@@ -540,7 +548,7 @@ def test_checked_in_forge_example_uses_current_task_shape() -> None:
         json.loads(
             (
                 Path(__file__).resolve().parents[5]
-                / "docs/historical/normalize-batch-v4.example.json"
+                / "docs/content/examples/forge/normalize-batch-v4.example.json"
             ).read_text()
         )
     )

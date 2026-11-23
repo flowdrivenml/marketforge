@@ -75,15 +75,12 @@ class Links(HTMLParser):
             self._heading_parts = None
 
 
+HISTORICAL_EXCHANGES = ("binance", "bybit", "bitget", "okx", "gateio")
+
+
 def validate_request(request: ArchiveRequest) -> None:
     """Check archive capability without requiring an HTTP client."""
-    if request.exchange not in {
-        "binance",
-        "bybit",
-        "bitget",
-        "okx",
-        "gateio",
-    }:
+    if request.exchange not in HISTORICAL_EXCHANGES:
         raise UnsupportedRequestError("Unsupported historical exchange.")
     if not re.fullmatch(r"[A-Za-z0-9_.:/-]+", request.scope.identifier):
         raise UnsupportedRequestError("Unsupported source scope identifier.")

@@ -6,12 +6,13 @@ import json
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from forge.cli.environment import add_database_options
 from forge.cli.market_filters import configure_identity_filters
 from forge.markets.capabilities import EXCHANGES, MARKETS
 from forge.markets.models import Exchange, Market, MarketDataError
 from forge.markets.repository import browse
 from forge.markets.service import collect
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.terminal.markets import MarketCollectionDisplay, render_market_result
 from forge.startup.context import ApplicationContext
@@ -63,12 +64,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
             action="store_true",
             help="Suppress collection progress; retain the final result and failures.",
         )
-        child.add_argument(
-            "--testing",
-            action="store_true",
-            required=True,
-            help="Use only the guarded testing database; no production fallback.",
-        )
+        add_database_options(child)
         if action == "show":
             child.add_argument("reference")
         child.add_argument(
@@ -114,7 +110,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     options = Options.model_validate(vars(arguments))
-    dsn = testing_dsn(context.paths.root)
+    dsn = database_dsn(context.paths.root)
 
     display = MarketCollectionDisplay(
         context.error_console, silent=options.silent or options.as_json
@@ -131,7 +127,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
                 symbol=options.instrument,
                 progress=display.update,
             )
-        async with testing_connection(dsn) as c:
+        async with database_connection(dsn) as c:
             rows = await browse(
                 c,
                 exchanges=list(options.exchanges) if options.exchanges else None,

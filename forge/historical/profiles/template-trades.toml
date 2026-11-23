@@ -1,0 +1,47 @@
+[source]
+container = "plain"
+format = "csv"
+record_format = "rows"
+header = false
+ordering = "chronological"
+granularity = "daily"
+
+# Adjust source keys and encodings to match your sample. Quote dotted JSON paths.
+[fields.timestamp]
+type = "integer"
+position = 1
+encoding = "unix_nanoseconds"
+
+[fields.price]
+type = "decimal"
+position = 2
+
+[fields.size]
+type = "decimal"
+position = 3
+
+[fields.side]
+type = "string"
+position = 4
+
+# Select the target and quantity units before mapping canonical fields.
+[normalization]
+target = "trade"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.price]
+field = "price"
+
+[normalization.quantity]
+field = "size"
+
+[normalization.side]
+transform = "map"
+field = "side"
+
+[normalization.side.values]
+b = "buy"
+s = "sell"

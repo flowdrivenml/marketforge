@@ -114,11 +114,16 @@ def test_combined_filters_and_display_limit(
             "match": match,
         }
 
-    monkeypatch.setattr(markets, "testing_dsn", dsn)
-    monkeypatch.setattr(markets, "testing_connection", connection)
+    @asynccontextmanager
+    async def lock(_: object, *, shared: bool = False) -> AsyncGenerator[None]:
+        yield
+
+    monkeypatch.setattr(rankings, "ranking_lock", lock)
+    monkeypatch.setattr(markets, "database_dsn", dsn)
+    monkeypatch.setattr(markets, "database_connection", connection)
     monkeypatch.setattr(markets, "browse", browse)
-    monkeypatch.setattr(rankings, "testing_dsn", dsn)
-    monkeypatch.setattr(rankings, "testing_connection", connection)
+    monkeypatch.setattr(rankings, "database_dsn", dsn)
+    monkeypatch.setattr(rankings, "database_connection", connection)
     monkeypatch.setattr(rankings, "latest_snapshot", latest)
     monkeypatch.setattr(rankings, "show", show)
     for identifier in (command, str(SNAPSHOT)) if command != "list" else ("list",):

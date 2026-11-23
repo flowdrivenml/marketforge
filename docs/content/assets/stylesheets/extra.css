@@ -32,3 +32,13 @@
 .md-typeset blockquote { border-inline-start: 3px solid var(--mf-notice); color: var(--md-default-fg-color); padding: 0.3rem 0.9rem; }
 .md-typeset table:not([class]) { border-color: var(--mf-border); }
 .md-typeset a:hover { text-decoration: underline; }
+
+.md-header :focus-visible,
+.md-tabs :focus-visible,
+.md-sidebar :focus-visible,
+.md-path :focus-visible,
+.md-content :focus-visible,
+.md-footer :focus-visible {
+  outline: 2px solid var(--md-accent-fg-color);
+  outline-offset: 2px;
+}

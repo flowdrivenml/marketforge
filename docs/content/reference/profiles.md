@@ -1,548 +1,134 @@
-# Normalization profile schema
+# Create a normalization profile
 
-## Creating Historical Normalization Profiles
+For processing budgets, integrity, and reconciliation, see [Normalization runtime configuration](../configuration/normalization-runtime.md).
 
-A historical normalization profile tells MarketForge how to interpret a particular source format and convert its records into canonical trades or order-book events.
+## What a profile does
 
-Profiles are written manually as **self-contained TOML files using `schema_version = 2`**. Each file contains the source format, raw field definitions, and normalization mappings. The production Rust loader validates and compiles these declarations. [^profile-schema]
+A profile tells the Rust Engine how to read one source layout and interpret its records as canonical trades or order-book events. Acquisition recipes select what to acquire. [Normalization runtime settings](../configuration/normalization.md) control execution. The profile defines what the raw values mean.
 
-A profile describes a reusable interpretation of data. The concrete instrument, input files, historical contract specifications, and output locations are supplied separately.
+<a id="profile-identity-and-installation"></a>
+A profile ID has four components, `exchange.instrument_type.market_category.data_type`. The first three match the venue and market, and the final component is `trades` or `depth`. Name the file `<id>.toml`. Installation places it under `data/.config/engine/normalize/profiles/trades/` or `depth/`, according to the suffix. Use the execution venue for data supplied by an external vendor.
 
-| Configuration | Responsibility |
+## 1. Inspect a small source sample
+
+Run from the project root. For example, inspect the bundle’s headerless trade CSV.
+
+```bash
+mf normalize profiles sample --file docs/content/examples/catalogue/synthetic-trades.csv --no-header | cpout
+```
+
+Pass `--header` for named CSV columns or `--no-header` for positional columns. If neither is set, the preview shows the first record as data and marks header status unknown. Use `--member` to select a stored or deflated ZIP entry. The inspector also accepts plain and gzip-compressed CSV and JSONL. For TAR.GZ and workbook inputs, inspect a small extracted text example or use a workbook viewer.
+
+The **Source structure** table shows inferred representations, up to three distinct observed examples, and missing counts. JSONL also counts explicit nulls. Arrays stay grouped. Use `--fields` to skip the record preview or `--rows 10` to see more records. Human output defaults to five data records and accepts 1–20, within a 65,536-byte decoded prefix and a 64-field display limit. The sample covers the beginning of the input. It cannot establish total records or whole-file types.
+
+For CSV, use the displayed one-based position when the profile declares positional fields. Resolve duplicate or empty headers before relying on name-based mappings. For nested JSONL, a row labeled `data.ts` maps to `[fields."data.ts"]` in TOML. The quotes keep the dotted path as one TOML key, and the Engine follows the nested JSON components. A literal JSON key named `"data.ts"` is ambiguous for this lookup and is omitted. Suggested types reflect the observed values. Choose actual field types and encodings using the source specification, then use `mf normalize profiles new PROFILE_ID` and `mf normalize profiles validate --file PATH`.
+
+Write down the source facts before choosing mappings.
+
+| Check | What to establish |
 | --- | --- |
-| Profile | Source layout, timestamp and quantity units, field mappings, trade-side interpretation, and order-book event semantics. |
-| Registration and instrument metadata | Source provenance, concrete instrument identity, historical specifications, and coverage. |
-| Normalization job | Selected inputs, selected profile, resolved instruments, and output destinations. |
-| Runtime configuration | Workers, memory budgets, Parquet sizing, and other execution settings. |
+| Packaging and layout | Outer wrapper, inner file type, and how records are organized. Identify the real header, column positions, JSON paths, or worksheet columns. |
+| Time and order | Confirm the timestamp unit or text encoding, and whether file order must be preserved. |
+| Price, size and side | Identify the relevant fields, whether size is in base units, quote units or contracts, and what side tokens or signs mean. |
+| Depth events | Find the initialization snapshot and subsequent updates. Confirm how to distinguish them, whether updates replace or change quantities, what zero means, and whether sequence numbers carry continuity guarantees. |
 
-Create a profile only after inspecting representative source records. A syntactically valid declaration can still assign the wrong timestamp unit, reverse trade sides, or interpret contract counts as asset quantities.
+A sample shows the shape and actual values. Use the vendor’s specification to confirm facts the sample cannot establish, such as quantity units or sequence resets. Then choose which raw fields will supply each canonical value.
 
-## Profile Names and Locations
+## 2. Create a trade profile
 
-### Profile identity
-
-Every profile ID has exactly four components:
-
-```text
-exchange.instrument_type.market_category.data_type
-```
-
-Examples:
-
-```text
-bybit.spot.spot.trades
-binance.perpetual.linear.trades
-binance.perpetual.inverse.depth
-okx.future.inverse.depth
-```
-
-The final component is `trades` or `depth`. Use `depth` in profile IDs even where other parts of acquisition use the term `order_book_l2`.
-
-The filename must exactly match the declared ID:
-
-```text
-binance.spot.spot.trades.toml
-```
-
-The corresponding metadata must agree:
-
-```toml
-id = "binance.spot.spot.trades"
-exchange = "binance"
-instrument_type = "spot"
-market_category = "spot"
-```
-
-Native acquisition includes `bybit`, `binance`, `okx`, `bitget`, and `gateio`. For a user-supplied dataset, declare the execution venue in the catalogue and use its code in the profile. The supported instrument/category combinations are: [^profile-schema] [^shared-models]
-
-| `instrument_type` | Valid `market_category` |
-| --- | --- |
-| `spot` | `spot` |
-| `perpetual` | `linear`, `inverse` |
-| `future` | `linear`, `inverse` |
-| `option` | `option` |
-| `equity` | `equity` |
-
-IDs cannot contain an additional version or variant component. For example, these are invalid:
-
-```text
-binance.spot.spot.trades.v2
-binance.spot.spot.trades.custom
-```
-
-### Catalogue directories
-
-The orchestration catalogue uses these directories relative to the project root: [^profile-cli]
-
-```text
-data/.config/historical/profiles/trades/
-data/.config/historical/profiles/depth/
-```
-
-For example:
-
-```text
-data/.config/historical/profiles/trades/binance.spot.spot.trades.toml
-data/.config/historical/profiles/depth/binance.spot.spot.depth.toml
-```
-
-Keep installed profiles directly inside the appropriate directory so the orchestration discovery command finds them.
-
-Prepare new definitions in a separate working directory and validate them before installation. Profile files must be regular files, must not be symlinks, and must not exceed 1 MiB.
-
-### One interpretation per profile ID
-
-The ID represents the exchange, instrument type, market category, and data type. It does not provide a general namespace for multiple independently named source layouts.
-
-If an installed profile already uses an ID, `profiles add` compares the compiled interpretations. It reuses an equivalent definition and rejects a different interpretation under the same ID.
-
-Consequently, an arbitrary new layout cannot coexist with an existing layout merely by adding `.custom` to its ID. Changes to an installed interpretation require a deliberate catalogue change; the current CLI does not provide a profile overwrite command. [^profile-cli]
-
-## Structure of a Profile
-
-A schema-2 profile has three main sections after its identity metadata:
-
-| Section | Meaning |
-| --- | --- |
-| `[source]` | Packaging, physical format, record layout, ordering, and optional source contracts. |
-| `[fields.<name>]` | The names, types, positions, and relevant encodings of raw fields. |
-| `[normalization]` | Mappings from raw fields to canonical values and event operations. |
-
-The required top-level metadata looks like this:
-
-```toml
-schema_version = 2
-kind = "profile"
-id = "binance.spot.spot.trades"
-format_code = "BINANCE-T1"
-exchange = "binance"
-instrument_type = "spot"
-market_category = "spot"
-```
-
-This is only the metadata portion of a profile. The source, fields, and normalization sections are also required.
-
-Use ordinary TOML tables for mappings. A field reference is written as:
-
-```toml
-[normalization.price]
-field = "price"
-```
-
-The compiler translates this into its internal runtime representation. User-authored schema-2 files should use `field`, rather than copying internal `source` mappings or generated `raw_schema` objects from resolved jobs.
-
-For multiple depth operations, use `[[normalization.rules]]`. Do not use a top-level `[[rules]]` array in a schema-2 profile. [^profile-schema]
-
-### Format codes
-
-The format code identifies the source format used in profile/task matching. Its prefix must match the exchange, and its letter must match the data type:
-
-| Exchange | Trades | Depth |
-| --- | --- | --- |
-| Bybit | `BYBIT-T<number>` | `BYBIT-B<number>` |
-| Binance | `BINANCE-T<number>` | `BINANCE-B<number>` |
-| OKX | `OKX-T<number>` | `OKX-B<number>` |
-| Bitget | `BITGET-T<number>` | `BITGET-B<number>` |
-| Gate.io | `GATE-T<number>` | `GATE-B<number>` |
-
-The number must be positive and cannot start with zero. Gate.io uses the prefix `GATE`.
-
-Use the code assigned to the actual source format. A code that satisfies this naming rule does not establish compatibility with a particular exchange archive. [^profile-schema]
-
-## Describing the Source
-
-### Required source settings
-
-For a plain CSV trade file:
-
-```toml
-[source]
-container = "plain"
-format = "csv"
-record_format = "rows"
-header = true
-ordering = "chronological"
-granularity = "daily"
-```
-
-The supported declaration values are: [^profile-schema] [^shared-models]
-
-| Setting | Values and requirements |
-| --- | --- |
-| `container` | `plain`, `gzip`, `zip`, `tar_gzip`. |
-| `format` | `csv`, `jsonl`, `xlsx`. Actual execution support also depends on the data type and layout. |
-| `record_format` | `rows`, `events`, `snapshot_rows`, `book_rows`. Trades require `rows`; depth requires one of the other values. |
-| `header` | Boolean. Required for CSV and XLSX. |
-| `ordering` | `chronological` or `timestamp_sortable`. `not_chronological` is also accepted as an alias for `timestamp_sortable`. |
-| `granularity` | `daily`, `hourly`, `monthly`. |
-
-`container` describes the outer packaging. `format` describes the records inside that packaging. For example, a ZIP archive containing CSV records uses `container = "zip"` and `format = "csv"`.
-
-Trade processing supports CSV and JSONL. JSONL trade mappings use named JSON paths such as `hd.ts_event` and omit `header` and field positions.
-
-Depth supports specific JSONL, positional CSV, and fixed XLSX paths. In particular, do not assume that `header = true` enables arbitrary headered CSV depth input, or that `decode = "json"` enables arbitrary JSON arrays embedded in CSV cells. Start from an existing profile for those layouts. [^runtime]
-
-### Ordering
-
-Use `ordering = "chronological"` when the source order is the order the engine must preserve.
-
-Use a sortable declaration only when the source has a supported sorting path. Stateful order-book updates depend on event order and sequence continuity. The current runtime rejects timestamp sorting for ordinary stateful depth input; its supported workbook snapshot path has separate sorting behavior. [^runtime]
-
-### Optional source metadata
-
-The source table also accepts these settings:
-
-| Setting | Accepted declaration |
-| --- | --- |
-| `archive_day_boundary` | `UTC` or `UTC+8`. |
-| `daily_packaging` | `numbered_zip_chunks`. |
-| `maximum_depth_per_side` | A positive integer. |
-| `workbook_sheets` | XLSX only; the current supported layout requires `1`. |
-| `trade_id_scope` | A supported native trade identity scope. |
-| `trade_id_reset_domain` | Required or forbidden depending on the chosen identity scope. |
-
-Declare these settings only when their meaning is established for the source. Source depth metadata is not a general instruction to truncate canonical output. [^profile-schema]
-
-## Defining Raw Fields
-
-### Names and positions
-
-Declare a table for each raw field that the profile needs to describe:
-
-```toml
-[fields.time]
-type = "integer"
-position = 4
-encoding = "unix_milliseconds"
-```
-
-The table name identifies the raw field. The normalization mapping references that exact name:
-
-```toml
-[normalization.event_timestamp]
-field = "time"
-```
-
-For headered trade CSV, field references must match actual CSV header names.
-
-For headerless CSV, declare every column with its position, including columns that are not mapped into canonical output. Positions are **1-based, unique, and contiguous**. If any field has a position, every declared field must have one, covering exactly `1` through the number of fields. [^profile-schema] [^trade-rules]
-
-For example, this describes three columns in their physical order:
-
-```toml
-[fields.id]
-type = "integer"
-position = 1
-
-[fields.price]
-type = "decimal"
-position = 2
-
-[fields.qty]
-type = "decimal"
-position = 3
-```
-
-Writing field tables in a particular textual order does not establish headerless CSV column order. Use `position` explicitly.
-
-### Field types
-
-The accepted type strings are:
-
-```text
-decimal
-integer
-string
-array
-boolean
-integer/string
-uuid/string
-integer/bool
-string/integer
-signed_integer
-signed_decimal
-```
-
-Choose the type that describes the source representation. A descriptive type declaration does not introduce an arbitrary conversion operation. [^profile-schema]
-
-Besides `type`, permitted field metadata keys include:
-
-```text
-encoding
-position
-precision
-fractional_digits
-observed_effective_precision
-values
-level_format
-ordering
-decode
-update_precision
-snapshot_precision
-level_fields
-```
-
-Use only metadata relevant to the existing decoder. For example, `values` can describe known field values, but executable snapshot/update selection still requires an `event_filter`.
-
-### Nested JSON fields
-
-For nested JSON objects, use the dotted path as the field name and quote it in the TOML table header:
-
-```toml
-[fields."data.ts"]
-type = "integer"
-encoding = "unix_milliseconds"
-
-[normalization.event_timestamp]
-field = "data.ts"
-```
-
-The quotes make `data.ts` one field name in the TOML field map.
-
-The depth JSON reader resolves dotted object paths. This is a simple path mechanism; it does not provide JSONPath wildcards, array-index expressions, or computed selectors. [^depth-rules]
-
-### Timestamp encoding
-
-Timestamp encoding belongs on the raw timestamp field:
-
-```toml
-[fields.timestamp]
-type = "integer"
-encoding = "unix_microseconds"
-```
-
-The supported values are: [^profile-schema] [^shared-models]
-
-| Encoding | Source unit |
-| --- | --- |
-| `unix_seconds` | Seconds since the Unix epoch. Fractional seconds are supported when exactly representable in nanoseconds. |
-| `unix_milliseconds` | Integer milliseconds since the Unix epoch. |
-| `unix_microseconds` | Integer microseconds since the Unix epoch. |
-| `unix_nanoseconds` | Integer nanoseconds since the Unix epoch. |
-| `iso8601_nanoseconds` | String with an explicit UTC offset or `Z` and up to nine fractional digits. |
-
-The engine converts these values into canonical nanoseconds. If either timestamp uses ISO 8601, declare that encoding for both the event timestamp and the receive timestamp when a receive timestamp is mapped.
-
-Choose the unit from the source specification and verified sample records. Do not infer it solely from an exchange name or assume that all archives from an exchange use the same unit.
-
-In schema 2, do not add `timestamp_encoding` to `[normalization]`. The compiler derives it from the field referenced by `event_timestamp.field`.
-
-### Quantity encoding
-
-Every normalization section must declare the unit of the raw quantity:
-
-```toml
-[normalization]
-target = "trade"
-quantity_encoding = "base"
-```
-
-| Encoding | Meaning |
-| --- | --- |
-| `base` | Quantity is expressed in base-asset units. |
-| `quote` | Quantity is expressed in quote-asset units. |
-| `contracts` | Quantity counts contracts. |
-
-For trades, base quantity can be converted to quote quantity using price, and quote quantity can be converted to base quantity using price.
-
-Contract normalization requires authoritative instrument metadata, including a positive contract value and its denomination. Supply those specifications through instrument metadata and the job-building process. A reusable profile should not contain an invented multiplier.
-
-Spot profiles cannot use `quantity_encoding = "contracts"`. [^profile-schema] [^shared-models]
-
-## Complete Trade Profile Example
-
-This example describes the following **synthetic CSV**, using a Binance identity to demonstrate the supported schema. `BINANCE-T99` is an illustrative format code, not a claim about an official Binance archive format.
+The fictional source below has one execution with four columns and no header.
 
 ```csv
-id,price,qty,time,is_buyer_maker
-10001,100,0.5,1767225600000,false
-10002,101,0.25,1767225601000,true
+1730125800000000000,233.62,10,B
 ```
 
-Save the definition as `binance.spot.spot.trades.toml` in your draft directory:
+Save this complete definition as `example_exchange.equity.equity.trades.toml`, or copy the [example profile](../examples/catalogue/example_exchange.equity.equity.trades.toml).
 
 ```toml
 schema_version = 2
 kind = "profile"
-id = "binance.spot.spot.trades"
-format_code = "BINANCE-T99"
-exchange = "binance"
-instrument_type = "spot"
-market_category = "spot"
+id = "example_exchange.equity.equity.trades"
+format_code = "EXAMPLE-EXCHANGE-T1"
+exchange = "example_exchange"
+instrument_type = "equity"
+market_category = "equity"
 
 [source]
 container = "plain"
 format = "csv"
 record_format = "rows"
-header = true
+header = false
 ordering = "chronological"
 granularity = "daily"
-trade_id_scope = "source_local"
 
-[fields.id]
+[fields.timestamp]
 type = "integer"
 position = 1
+encoding = "unix_nanoseconds"
 
 [fields.price]
 type = "decimal"
 position = 2
 
-[fields.qty]
+[fields.size]
 type = "decimal"
 position = 3
 
-[fields.time]
-type = "integer"
+[fields.side]
+type = "string"
 position = 4
-encoding = "unix_milliseconds"
-
-[fields.is_buyer_maker]
-type = "boolean"
-position = 5
 
 [normalization]
 target = "trade"
 quantity_encoding = "base"
 
 [normalization.event_timestamp]
-field = "time"
+field = "timestamp"
 
 [normalization.price]
 field = "price"
 
 [normalization.quantity]
-field = "qty"
+field = "size"
 
 [normalization.side]
-field = "is_buyer_maker"
 transform = "map"
+field = "side"
 
 [normalization.side.values]
-true = "sell"
-false = "buy"
-
-[normalization.trade_id]
-field = "id"
+b = "buy"
+s = "sell"
 ```
 
-This interpretation produces a buy trade of `0.5` base units at price `100`, followed by a sell trade of `0.25` base units at price `101`. Their derived quote quantities are `50` and `25.25`.
+<a id="schema-version"></a>
+<a id="required-trade-mappings"></a>
 
-The example declares its IDs as source-local. That declaration belongs to the synthetic example; use the established identity contract for a real feed.
+1. **Identity.** Use schema 2 and `kind = "profile"`. Set the venue, instrument type and market category together with the ID and [format code](profile-fields.md#format_code).
+2. **`[source]`.** `plain` is the wrapper, `csv` is the physical format, and `rows` describes the record layout. Set each independently to match the input.
+3. **`[fields.*]`.** Positions are one-based. Here the third column is named `size` in the profile. Timestamp `encoding` controls decoding. Optional precision metadata describes the source.
+4. **`[normalization]`.** Map `size` to canonical quantity and declare its vendor units. The side lookup lowercases the source token before matching `b` or `s`.
 
-An existing `binance.spot.spot.trades` profile may have a different interpretation. The installation command will reject that conflict, as described below.
+The row represents a buy at timestamp `1730125800000000000` ns, priced at 233.62 with 10 base units and 2336.20 quote units. The source provides no native trade ID.
 
-### Required trade mappings
+## 3. Create a depth profile
 
-A trade profile requires mappings for:
-
-| Mapping | Purpose |
-| --- | --- |
-| `event_timestamp` | Exchange event time. |
-| `price` | Trade price. |
-| `quantity` | Raw quantity, interpreted using `quantity_encoding`. |
-| `side` | Canonical buy, sell, or explicitly unknown aggressor. |
-
-`trade_id` and `sequence` are optional mappings. The implemented optional trade flag is `optional.is_rpi`. A trade profile compiles to exactly one trade normalization. [^trade-rules] [^runtime]
-
-### Trade-side transformations
-
-For existing buy/sell text:
-
-```toml
-[normalization.side]
-field = "side"
-transform = "casefold"
-```
-
-The current implementation accepts `buy`, `Buy`, `BUY`, `sell`, `Sell`, and `SELL`. Do not depend on whitespace trimming or arbitrary mixed-case normalization.
-
-For a coded or Boolean field, use `transform = "map"` with explicit values, as in the complete example. Mapping keys must be lowercase; use `buy`, `sell`, and `unknown` as the canonical values. An absent or unmapped source side is invalid.
-
-For signed quantities, apply the magnitude and side interpretations separately:
-
-```toml
-[normalization.quantity]
-field = "size"
-transform = "abs"
-
-[normalization.side]
-field = "size"
-transform = "sign_to_side"
-positive = "buy"
-negative = "sell"
-```
-
-Both mappings read the original raw value. The quantity mapping takes its magnitude, while the side mapping interprets its sign. Zero cannot establish a sign-based trade side.
-
-These transformations are a fixed supported vocabulary. Fields do not accept arbitrary expressions, multiplication formulas, defaults, or custom functions. [^trade-rules]
-
-### Optional trade flags
-
-A Boolean-like RPI field can be mapped as:
-
-```toml
-[normalization.optional.is_rpi]
-field = "RPI"
-transform = "bool"
-```
-
-A source code can be tested for equality instead:
-
-```toml
-[normalization.optional.is_rpi]
-field = "source"
-transform = "equals"
-value = 1
-```
-
-The referenced raw field must also be declared under `[fields]`. [^trade-rules]
-
-### Trade ID scope
-
-A native trade ID mapping and an identity scope answer different questions. The mapping identifies the source column; the scope declares where the values are reliable identities.
-
-Supported contracts are: [^trade-rules]
-
-| `trade_id_scope` | Meaning | `trade_id_reset_domain` |
-| --- | --- | --- |
-| `global` | IDs have the declared global uniqueness contract. | Omit. |
-| `instrument_scoped` | Identity is scoped to the concrete instrument and declared reset domain. | Required, nonempty. |
-| `ordered_run` | Identity is established within a checked, non-reset run of one concrete stream. | Required, nonempty. |
-| `source_local` | IDs are local to a source and do not establish cross-source uniqueness. | Omit. |
-| `unreliable` | IDs are not reliable event identities. | Omit. |
-
-For example, when supported by the source contract:
-
-```toml
-[source]
-# Include the other required source settings here.
-trade_id_scope = "instrument_scoped"
-trade_id_reset_domain = "instrument_lifetime"
-```
-
-An explicit identity contract requires a native `[normalization.trade_id]` field mapping. A reset domain without a scope is invalid.
-
-Only declare a scope supported by source evidence. Equal timestamps, prices, or quantities do not establish that two observations represent the same trade.
-
-## Complete Depth Profile Example
-
-This example describes a **synthetic JSONL stream** containing snapshots and absolute level updates. `BINANCE-B99` is illustrative.
+This JSONL feed starts with a snapshot, then sends an update. Save both lines or use the [input sample](../examples/catalogue/incremental/synthetic-depth.jsonl).
 
 ```jsonl
-{"type":"snapshot","timestamp":1767225600000,"bids":[["99","2"],["98","1"]],"asks":[["101","3"]]}
-{"type":"delta","timestamp":1767225601000,"bids":[["99","0"]],"asks":[["101","4"]]}
+{"timestamp":1730125800000000000,"type":"snapshot","bids":[[233.61,10]],"asks":[[233.63,12]]}
+{"timestamp":1730125800000000001,"type":"delta","bids":[[233.61,4]],"asks":[[233.63,0],[233.64,8]]}
 ```
 
-Save the definition as `binance.spot.spot.depth.toml` in your draft directory:
+Save the matching profile as `example_exchange.equity.equity.depth.toml`, or copy the [example profile](../examples/catalogue/incremental/example_exchange.equity.equity.depth.toml).
 
 ```toml
 schema_version = 2
 kind = "profile"
-id = "binance.spot.spot.depth"
-format_code = "BINANCE-B99"
-exchange = "binance"
-instrument_type = "spot"
-market_category = "spot"
+id = "example_exchange.equity.equity.depth"
+format_code = "EXAMPLE-EXCHANGE-B1"
+exchange = "example_exchange"
+instrument_type = "equity"
+market_category = "equity"
 
 [source]
 container = "plain"
@@ -551,12 +137,12 @@ record_format = "events"
 ordering = "chronological"
 granularity = "daily"
 
-[fields.type]
-type = "string"
-
 [fields.timestamp]
 type = "integer"
-encoding = "unix_milliseconds"
+encoding = "unix_nanoseconds"
+
+[fields.type]
+type = "string"
 
 [fields.bids]
 type = "array"
@@ -568,238 +154,59 @@ level_format = ["price", "quantity"]
 
 [normalization]
 quantity_encoding = "base"
-
-[normalization.event_timestamp]
-field = "timestamp"
-
-[normalization.bids]
-field = "bids"
-
-[normalization.asks]
-field = "asks"
+event_timestamp = { field = "timestamp" }
+bids = { field = "bids" }
+asks = { field = "asks" }
 
 [[normalization.rules]]
 target = "l2_snapshot"
-
-[normalization.rules.event_filter]
-field = "type"
-equals = "snapshot"
-
-[normalization.rules.snapshot]
-type = "single_event"
+event_filter = { field = "type", equals = "snapshot" }
+snapshot = { type = "single_event" }
 
 [[normalization.rules]]
 target = "l2_update"
-
-[normalization.rules.event_filter]
-field = "type"
-equals = "delta"
-
-[normalization.rules.update_semantics]
-type = "absolute_level"
-zero_quantity = "delete"
-nonzero_quantity = "set"
+event_filter = { field = "type", equals = "delta" }
+update_semantics = { type = "absolute_level", zero_quantity = "delete", nonzero_quantity = "set" }
 ```
 
-The snapshot initializes the book. The second event removes the bid at `99` and sets the ask at `101` to quantity `4`. The bid at `98` remains at quantity `1`.
+<a id="snapshot-and-update-semantics"></a>
 
-This is an unsequenced example because its records contain no native sequence counter.
+Use either one `target` or an array of rules. Here each rule selects a different raw `type`. Both inherit the common timestamp and side mappings and cannot override them. Each bid or ask entry is a positional pair of price and quantity.
 
-### Common mappings and operation-specific rules
+The snapshot initializes the book. The delta sets the bid size at 233.61 to 4, deletes the ask at 233.63 because its size is zero, and adds an ask at 233.64. The resulting book is **bid 233.61 × 4** and **ask 233.64 × 8**. This sample relies on chronological source order and has no native sequence. A relative feed needs its own supported rule. Independent bounded observations describe the recorded levels and cannot establish continuous reconstruction. If the source supplies standalone snapshots, start with the [single-target example](../examples/catalogue/example_exchange.equity.equity.depth.toml) instead.
 
-Mappings directly under `[normalization]` are shared by every rule. In the example, timestamp, bids, asks, and quantity encoding are common.
+## 4. Validate, check, and install
 
-Each `[[normalization.rules]]` entry adds operation-specific settings. A rule cannot override a mapping already declared in the common section, even by repeating the same value.
+With the [managed normalizer installed](../getting-started/installation.md), create a draft with `new` and replace its starter values, or copy a complete example to a scratch directory. This sequence shows the trade draft. Use the depth filename and definition for depth.
 
-Choose one of these structures:
-
-- A single `normalization.target`.
-- A nonempty `normalization.rules` array.
-
-Do not declare both. The catalogue also rejects duplicate targets: a depth profile can have one `l2_snapshot` rule and one `l2_update` rule, rather than several snapshot rules distinguished only by filters. [^profile-schema]
-
-### Event filters and rule order
-
-For JSON/event depth processing, every record must match exactly one normalization rule.
-
-Filters require a declared source field and exactly one of:
-
-```toml
-[normalization.rules.event_filter]
-field = "type"
-equals = "snapshot"
+```bash
+id=example_exchange.equity.equity.trades
+draft="data/.config/engine/normalize/profile-drafts/$id.toml"
+mf normalize profiles new "$id" | cpout
+nvim "$draft"
+mf normalize profiles validate --file "$draft" | cpout
 ```
 
-or:
+Validation asks the Rust compiler to check the definition and candidate catalogue. To check interpretation, use an isolated workspace with its own profile directory and the testing registry. Install the draft there, then follow the [small recording check](../examples/catalogue/index.md) to register and normalize the sample and inspect the emitted records. Compare the exact timestamp, side, and units for trades and the initial and final levels for depth.
 
-```toml
-[normalization.rules.event_filter]
-field = "type"
-in = ["delta", "update"]
+Install the checked definition in the intended workspace using the same command. Use `--testing` for the testing registry as shown. Profiles are installed in the workspace’s data root, so keep the testing data root separate when checking a draft. The database flag alone selects the registry. The venue must already exist in the selected registry. Installation reuses an equivalent definition without replacing its bytes and rejects a conflicting interpretation under the same ID. Extra ID suffixes cannot create another version.
+
+```bash
+mf normalize profiles add "$id" --from "$draft" --testing | cpout
 ```
 
-The actual filter value must be a string, and matching is exact.
+## 5. Other supported layouts
 
-Rule order does not provide first-match precedence. A record matching both rules is an error, and a record matching neither rule is also an error. Use disjoint filters that cover the records intended for that profile. [^depth-rules]
-
-### Array and object level layouts
-
-A depth mapping must use either both bid/ask arrays or all three scalar mappings: `price`, `quantity`, and `side`.
-
-For positional array levels, the supported declarations are:
-
-```toml
-level_format = ["price", "quantity"]
-```
-
-or:
-
-```toml
-level_format = ["price", "quantity", "order_count"]
-```
-
-The compiler derives the array extraction indexes.
-
-For levels represented as objects, such as `{"p":"99","q":"2"}`, declare the property names:
-
-```toml
-[fields.bids]
-type = "array"
-
-[fields.bids.level_fields]
-price = "p"
-quantity = "q"
-
-[normalization.bids]
-field = "bids"
-```
-
-Provide the corresponding declaration for asks. `level_fields` requires `price` and `quantity` and can include `order_count`. When both sides share the same array, put a separate `level_fields` table under each normalization side. [^profile-schema] [^depth-rules]
-
-### Snapshot and update semantics
-
-Supported snapshot types include:
-
-| Snapshot type | Intended representation |
+| If your source uses… | See the field reference |
 | --- | --- |
-| `single_event` | A complete snapshot in one event. |
-| `single_row` | A supported snapshot contained in one row. |
-| `group_rows` | A snapshot assembled from several rows; requires `group_by`. |
-| `bounded_observation` | One top-N state per chronological JSONL message. Set `levels_per_side` to the same value as `source.maximum_depth_per_side`. With `sequence_start` mapped, `sequence_order = "nondecreasing"` allows repeats and jumps and rejects decreases. |
-
-For grouped rows:
-
-```toml
-[normalization.rules.snapshot]
-type = "group_rows"
-group_by = "timestamp"
-```
-
-Here, `group_by` is a raw field name, and that field must be declared.
-
-For absolute updates, the supplied quantity replaces the existing level quantity; zero deletes the level. For relative updates, the supplied quantity changes the existing level quantity.
-
-The implemented scalar CSV relative-update path uses settings such as:
-
-```toml
-[normalization.rules.update_semantics]
-type = "relative_level"
-action_source = "action"
-add_action = "add"
-subtract_action = "subtract"
-emit = "resulting_absolute_level"
-zero_result = "delete"
-nonzero_result = "set"
-```
-
-`action_source` must name a declared field, and action values must match the actual source.
-
-Relative updates are not generally implemented for array-based JSON events. Use an existing supported scalar profile for that case. [^depth-rules]
-
-### Sequence declarations
-
-Declare native sequence fields only when their continuity meaning is established.
-
-The runtime derives its sequence policy from the presence of these mappings: [^runtime]
-
-| `sequence_start` | `sequence_count` | Policy |
-| --- | --- | --- |
-| Absent | Absent | Unsequenced. |
-| Present | Absent | Consecutive sequence. |
-| Present | Present | Ranged sequence. |
-| Absent | Present | Invalid configuration. |
-
-For a consecutive sequence:
-
-```toml
-[normalization.sequence_start]
-field = "update_id"
-```
-
-For a source that supplies merged sequence ranges:
-
-```toml
-[normalization.sequence_start]
-field = "begin_id"
-
-[normalization.sequence_count]
-field = "merged_count"
-```
-
-All rules in a depth task must imply the same sequence policy. Do not add empty sequence mappings as placeholders; their presence changes runtime behavior.
-
-Optional `normalization.book` metadata has its own restricted vocabulary. It does not replace the executable sequence mappings or provide general depth truncation controls. Copy such declarations from a compatible existing profile and validate them against the compiler. [^profile-schema]
-
-## Instrument Identity and Specialized Formats
-
-### Mixed-instrument inputs
-
-A profile exposes native identity where the supported reader requires it. For depth records containing a native symbol:
-
-```toml
-[fields."data.s"]
-type = "string"
-
-[normalization.instrument]
-field = "data.s"
-lookup = "catalog"
-```
-
-The concrete instruments and their historical specifications must still be available to the job. `lookup = "catalog"` does not fetch missing specifications from an exchange.
-
-Family routing supports specific CSV and JSONL identity paths. The current runtime rejects mixed-instrument XLSX family routing. Trade CSV identity extraction has its own supported header recognition. JSONL trades can map the catalogue symbol explicitly with `normalization.instrument` using `lookup = "catalog"`. [^depth-rules] [^runtime]
-
-### XLSX profiles
-
-XLSX support has a fixed layout. The current compiler requires one worksheet with headers, exactly the field names `timestamp`, `asks`, and `bids`, a timestamp encoded as `unix_seconds`, and supported ascending timestamp sorting.
-
-The ordering declaration is:
-
-```toml
-[normalization.input_ordering]
-order = "ascending"
-sort_by = "timestamp"
-```
-
-Use the existing workbook profile as the starting point. Adding field declarations does not enable arbitrary worksheets or column layouts. [^profile-schema]
-
-### Gate.io feed variants
-
-Gate.io depth profiles can contain `snapshot` and `incremental` feed variants.
-
-Each variant provides its own complete `source`, `fields`, and `normalization` sections under `feeds.snapshot` or `feeds.incremental`. These sections are not partial overlays that inherit missing declarations from the default.
-
-The top-level profile still requires its own source, fields, and normalization. Feed selection is a supported Gate.io depth feature, rather than a general variant mechanism for every exchange. [^profile-schema]
-
-
-[^profile-schema]: `engine/src/historical/config/catalog/unified.rs`, `engine/src/historical/config/catalog.rs`, and `engine/src/historical/config/catalog/tests.rs`. These define schema-2 authoring, namespace compatibility, source and field validation, normalization compilation, and feed variants.
-
-[^profile-cli]: `forge/historical/profiles/service.py`, `forge/cli/commands/profiles.py`, `forge/cli/commands/engine.py`, `forge/historical/engine/managed.py`, and `forge/shared/paths.py`. These define discovery, profile paths, validation, installation, and managed engine commands.
-
-[^shared-models]: `engine/src/shared/domain/canonical/enums.rs`, `engine/src/shared/io/container.rs`, and `engine/src/shared/normalization/{config,quantity,timestamp}.rs`. These define supported exchanges, containers, and numeric encodings.
-
-[^trade-rules]: `engine/src/shared/formats/trades/{spec,transforms,headers,native_identity}.rs` and `engine/src/shared/normalization/side.rs`. These define trade mappings, transforms, CSV field resolution, and identity contracts.
-
-[^depth-rules]: `engine/src/shared/formats/depth/{spec,json,processor,scalar,csv,transforms}.rs`. These define depth mappings, filters, level extraction, and supported snapshot/update behavior.
-
-[^runtime]: Historical normalization runtime, particularly `resources/classification.rs`, `worker/trades.rs`, `worker/depth.rs`, `worker/ordering.rs`, `sequence_policy.rs`, `family.rs`, and `task.rs`.
+| Headerless CSV or column positions | [Header](profile-fields.md#sourceheader), [position](profile-fields.md#fieldsnameposition) |
+| Nested JSON | [Raw field names and paths](profile-fields.md#fields) |
+| Epoch timestamps or ISO 8601 | [Encoding](profile-fields.md#fieldsnameencoding) |
+| Base, quote or contract quantities | [Quantity encoding](profile-fields.md#normalizationquantity_encoding) |
+| Signed quantities or side tokens | [Side transforms](profile-fields.md#normalizationsidetransform), [quantity transform](profile-fields.md#normalizationquantitytransform) |
+| Tuple or object depth levels | [Positional layout](profile-fields.md#fieldsnamelevel_format), [object members](profile-fields.md#fieldsnamelevel_fields) |
+| Grouped snapshots or bounded observations | [Snapshot modes](profile-fields.md#normalizationsnapshottype), [bounded depth](profile-fields.md#normalizationsnapshotlevels_per_side) |
+| Relative depth updates | [Update semantics](profile-fields.md#normalizationupdate_semanticstype) |
+| Native symbols, execution IDs or sequences | [Instrument](profile-fields.md#normalizationinstrument), [trade ID](profile-fields.md#normalizationtrade_id), [sequence policy](profile-fields.md#sequence-and-book-metadata) |
+| XLSX snapshots | [Fixed workbook layout](profile-fields.md#sourceworkbook_sheets) |
+| Gate.io feed variants | [Complete feed definitions](profile-fields.md#feeds) |

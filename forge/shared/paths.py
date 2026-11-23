@@ -85,12 +85,32 @@ class ProjectPaths:
         return self.root / "data" / ".config"
 
     @property
+    def engine_config_dir(self) -> Path:
+        return self.config_dir / "engine"
+
+    def workflow_dir(self, family: str) -> Path:
+        return self.config_dir / "workflows/data_engineering" / family
+
+    def runtime_config(self, operation: str, retained: Path | None = None) -> Path:
+        if retained is not None:
+            source = retained / f"{operation}.toml"
+            # Version 1 pipeline reports made before runtime separation pin this name.
+            return source if source.exists() else retained / "general.toml"
+        config = self.engine_config_dir / f"{operation}.toml"
+        if operation == "pipeline":
+            return config
+        return require_migrated(
+            config,
+            self.config_dir / "historical/general.toml",
+        )
+
+    @property
     def settings_file(self) -> Path:
-        return self.config_dir / "marketforge.toml"
+        return self.config_dir / "forge/marketforge.toml"
 
     @property
     def pipeline_config_dir(self) -> Path:
-        return self.config_dir / "pipeline"
+        return self.workflow_dir("pipeline")
 
     @property
     def raw_dir(self) -> Path:
@@ -106,15 +126,11 @@ class ProjectPaths:
 
     @property
     def acquisition_config_dir(self) -> Path:
-        return self.config_dir / "acquisition"
-
-    @property
-    def normalization_config_dir(self) -> Path:
-        return self.config_dir / "historical" / "normalization_jobs"
+        return self.workflow_dir("acquisition")
 
     @property
     def normalization_recipe_dir(self) -> Path:
-        return self.config_dir / "historical" / "normalization"
+        return self.workflow_dir("normalization")
 
     @property
     def normalization_jobs_dir(self) -> Path:
@@ -125,12 +141,20 @@ class ProjectPaths:
         for directory in (
             self.config_dir,
             self.acquisition_config_dir,
-            self.pipeline_config_dir,
+            *(
+                self.workflow_dir(family)
+                for family in ("pipeline", "normalization", "merge", "conversion", "import")
+            ),
             self.raw_dir,
             self.datasets_dir,
             self.runs_dir,
-            self.normalization_config_dir,
-            self.normalization_recipe_dir,
             self.normalization_jobs_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
+
+
+def require_migrated(path: Path, legacy: Path) -> Path:
+    """Diagnose a missing migration without ever loading the legacy source."""
+    if not path.exists() and legacy.is_file():
+        raise PathConfigurationError(f"Configuration migration required: {legacy} → {path}")
+    return path

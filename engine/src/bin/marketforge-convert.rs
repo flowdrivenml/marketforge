@@ -38,6 +38,7 @@ use {
 
 thread_local! {
     static CONVERSION_TUI_MODE: Cell<bool> = const { Cell::new(false) };
+    static MANAGED_OUTPUT: Cell<bool> = const { Cell::new(false) };
 }
 
 #[cfg(feature = "monitor-tui")]
@@ -78,6 +79,7 @@ struct Args {
     mode: ExecutionMode,
     workers: Option<usize>,
     tui: bool,
+    validation_plan: Option<PathBuf>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -119,7 +121,49 @@ fn resolve_runtime(args: &Args, job: &ConvertJob) -> Result<ConversionRuntime, S
 // Entry point
 // -----------------------------------------------------------------------------
 
+fn inspect_runtime(path: &Path) -> Result<(), String> {
+    use marketforge_engine::shared::historical::config::{
+        ConversionRuntimeSettings, load_conversion_runtime_settings,
+    };
+    let root = std::env::current_dir().map_err(|e| e.to_string())?;
+    let (resources, parquet) =
+        load_conversion_runtime_settings(path, &root).map_err(|e| e.to_string())?;
+    println!(
+        "{}",
+        serde_json::to_string(&ConversionRuntimeSettings { resources, parquet })
+            .map_err(|e| e.to_string())?
+    );
+    Ok(())
+}
+
 fn main() {
+    let mut arguments = std::env::args_os().skip(1);
+    let first = arguments.next();
+    if first
+        .as_deref()
+        .is_some_and(|arg| arg == "--runtime-schema")
+    {
+        if arguments.next().is_some() {
+            eprintln!("--runtime-schema takes no arguments");
+            std::process::exit(2);
+        }
+        println!(
+            "{}",
+            marketforge_engine::shared::historical::config::conversion_runtime_schema()
+        );
+        return;
+    }
+    if first.is_some_and(|arg| arg == "--runtime-settings") {
+        let result = match (arguments.next(), arguments.next()) {
+            (Some(path), None) => inspect_runtime(Path::new(&path)),
+            _ => Err("--runtime-settings expects exactly one TOML path".to_owned()),
+        };
+        if let Err(error) = result {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+        return;
+    }
     if let Err(error) = run() {
         if error == "conversion interrupted" {
             eprintln!("Conversion interrupted");
@@ -135,6 +179,7 @@ fn execute_conversion_with_progress(
     runtime: &ConversionRuntime,
     mode: ExecutionMode,
     reporter: &ConversionProgressReporter,
+    validation_plan: Option<&Path>,
 ) -> Result<(), String> {
     let result = (|| {
         reporter
@@ -152,6 +197,56 @@ fn execute_conversion_with_progress(
         let source_manifest = &prepared.source;
         if mode == ExecutionMode::Validate {
             let plan = &prepared.plan;
+            if let Some(path) = validation_plan {
+                let streams: Vec<_> = plan
+                    .streams
+                    .iter()
+                    .map(|stream| {
+                        let routes: Vec<_> = stream
+                            .paths
+                            .iter()
+                            .map(|path| {
+                                path.currencies
+                                    .iter()
+                                    .map(|currency| currency.as_str())
+                                    .collect::<Vec<_>>()
+                            })
+                            .collect();
+                        let route_kinds: Vec<_> = stream
+                            .paths
+                            .iter()
+                            .map(|path| match path.edges.as_slice() {
+                                [] => "Identity".to_owned(),
+                                [edge] => format!("{:?}", edge.direction),
+                                _ => "Multi-hop".to_owned(),
+                            })
+                            .collect();
+                        serde_json::json!({
+                            "stream_id": stream.source.stream_id,
+                            "instrument": stream.source.identity.symbol,
+                            "source_quote": stream.source.quote_currency.as_str(),
+                            "target_quote": plan.target_quote.as_str(),
+                            "selected": stream.selected_for_conversion,
+                            "routes": routes,
+                            "route_kinds": route_kinds,
+                        })
+                    })
+                    .collect();
+                let file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(path)
+                    .map_err(|error| {
+                        format!("Cannot write validation plan {}: {error}", path.display())
+                    })?;
+                serde_json::to_writer(
+                    file,
+                    &serde_json::json!({
+                        "schema_version": 1, "streams": streams,
+                    }),
+                )
+                .map_err(|error| error.to_string())?;
+            }
             conversion_println!(
                 "Validated job {} · {:?} · {} streams · {} references · {} physical rows",
                 job.job_id,
@@ -281,6 +376,7 @@ fn run() -> Result<(), String> {
         &runtime,
         args.mode,
         &ConversionProgressReporter::disabled(),
+        args.validation_plan.as_deref(),
     )
 }
 #[cfg(feature = "monitor-tui")]
@@ -380,7 +476,7 @@ fn run_conversion_tui(
         &progress_state,
         move || {
             set_conversion_tui_mode(true);
-            execute_conversion_with_progress(&job, &staging, &runtime, mode, &reporter)
+            execute_conversion_with_progress(&job, &staging, &runtime, mode, &reporter, None)
         },
         |start| {
             marketforge_engine::tui::conversion::execute_conversion_with_tui(
@@ -391,7 +487,7 @@ fn run_conversion_tui(
             )
         },
     );
-    if result.is_ok() {
+    if result.is_ok() && !MANAGED_OUTPUT.with(Cell::get) {
         println!("Source publication {source_id}");
         match mode {
             ExecutionMode::Validate => {
@@ -410,7 +506,7 @@ fn run_conversion_tui(
                 &progress_state,
             ),
         }
-    } else if staged.is_dir() {
+    } else if result.is_err() && staged.is_dir() {
         eprintln!("Conversion staging {}", staged.display());
     }
     if let Err(error) = terminal {
@@ -907,6 +1003,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut mode = None;
     let mut workers = None;
     let mut tui = false;
+    let mut validation_plan = None;
     while let Some(argument) = args.next() {
         match argument.as_str() {
             "--project-root" | "--config" | "--catalog" | "--normalization-root" => {
@@ -914,10 +1011,19 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
                     "{argument} is obsolete for prepared conversion jobs; re-prepare with Forge"
                 ));
             }
+            "--validation-plan" => {
+                if validation_plan.is_some() {
+                    return Err("duplicate --validation-plan argument".to_owned());
+                }
+                validation_plan = Some(PathBuf::from(
+                    args.next().ok_or("missing --validation-plan value")?,
+                ));
+            }
             "--validate" => set_mode(&mut mode, ExecutionMode::Validate)?,
             "--job" => {
                 job = Some(PathBuf::from(args.next().ok_or("missing --job value")?));
             }
+            "--managed-output" => MANAGED_OUTPUT.with(|managed| managed.set(true)),
             "--tui" => {
                 tui = true;
             }
@@ -937,7 +1043,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
                 conversion_println!(
                     "Usage: marketforge-convert --job PATH \
                      [--validate | --materialize | --publish | --run] \
-                     [--workers N] [--tui]"
+                     [--workers N] [--tui] [--managed-output] [--validation-plan PATH]\n       marketforge-convert --runtime-settings PATH | --runtime-schema"
                 );
 
                 std::process::exit(0);
@@ -966,11 +1072,15 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         }
     }
 
+    if validation_plan.is_some() && (mode != Some(ExecutionMode::Validate) || tui) {
+        return Err("--validation-plan requires noninteractive --validate".to_owned());
+    }
     Ok(Args {
         job: job.ok_or("missing required --job argument")?,
         mode: mode.unwrap_or(ExecutionMode::Run),
         workers,
         tui,
+        validation_plan,
     })
 }
 
@@ -1223,6 +1333,7 @@ mod tests {
                         &runtime,
                         mode,
                         &ConversionProgressReporter::new(send),
+                        None,
                     )
                     .unwrap();
                     receive.try_iter().collect::<Vec<_>>()

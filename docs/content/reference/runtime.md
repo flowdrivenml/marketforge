@@ -1,266 +1,300 @@
-# Historical runtime and policies
+# Engine runtime settings and policies
 
-Runtime schema 1 is loaded from `data/.config/historical/general.toml`. The authoritative defaults and validators are in `engine/src/shared/historical/config.rs`. Runtime applies to an Engine invocation independently of the selection recipe.
+Use the [normalization runtime reference](../configuration/normalization-runtime.md) for the normalization TOML, Rust defaults and policy semantics. This page retains the shared entry point for [merge and conversion settings](#merge-and-conversion-runtime) and [pipeline inheritance](#pipeline-runtime).
 
-| Field | Requirement or default |
+## Normalization runtime
+
+<!-- Previous normalization anchors lead to the corresponding sections in the dedicated reference. -->
+
+<a id="runtime-schema"></a><a id="runtime-schema-version"></a>
+<a id="why-does-the-runtime-have-its-own-version"></a><a id="are-unknown-fields-allowed"></a>
+<a id="why-is-strict-validation-useful"></a><a id="main-runtime-sections"></a>
+<a id="important-default-behavior"></a><a id="complete-strict-runtime-example"></a>
+<a id="what-does-this-configuration-establish"></a><a id="important-notes"></a>
+<a id="does-strict-mean-that-every-source-is-historically-complete"></a><a id="does-this-configuration-enable-every-engine-feature"></a>
+
+- [Schema and validation](../configuration/normalization-runtime.md#runtime-configuration-overview)
+
+<a id="resource-management"></a><a id="why-resource-budgets-matter"></a>
+<a id="worker-count"></a><a id="what-does-it-control"></a>
+<a id="does-more-workers-always-mean-faster-processing"></a><a id="what-happens-if-workers-is-zero"></a>
+<a id="how-should-i-choose-the-value"></a><a id="memory-budget"></a>
+<a id="what-does-the-budget-limit"></a><a id="what-is-included-in-memory-accounting"></a>
+<a id="what-is-memory-admission"></a><a id="does-memory-admission-measure-process-rss"></a>
+<a id="does-successful-admission-guarantee-no-out-of-memory-condition"></a><a id="why-not-set-an-extremely-large-budget"></a>
+<a id="scratch-storage"></a><a id="scratch-path"></a>
+<a id="scratch-budget"></a><a id="why-use-scratch-storage"></a>
+<a id="is-scratch-the-same-as-published-output"></a><a id="can-i-use-another-disk"></a>
+<a id="what-if-the-path-already-exists-as-a-file"></a><a id="does-the-loader-create-the-directory-automatically"></a>
+<a id="can-scratch-exhaustion-cause-processing-failure"></a><a id="parquet-row-group-target"></a>
+<a id="what-is-a-parquet-row-group"></a><a id="why-does-row-group-size-matter"></a>
+<a id="does-a-row-group-represent-one-historical-interval"></a><a id="does-changing-row-group-size-change-market-events"></a>
+<a id="parquet-file-target"></a><a id="why-configure-file-size"></a>
+<a id="is-the-target-an-exact-file-size-guarantee"></a><a id="why-does-file-rotation-matter"></a>
+<a id="does-the-target-change-the-publication-identity"></a><a id="resource-validation"></a>
+<a id="merge-and-conversion-alignment"></a><a id="why-require-whole-mib-values"></a>
+<a id="example"></a><a id="does-every-engine-operation-use-identical-resource-validation"></a>
+
+- [Resource management and Parquet](../configuration/normalization-runtime.md#2-resource-management)
+
+<a id="processing-policies"></a>
+
+- [Processing and performance](../configuration/normalization-runtime.md#1-processing-and-performance)
+
+<a id="normalization-safety-limits"></a><a id="why-are-safety-limits-separate-from-budgets"></a>
+<a id="why-are-they-useful"></a><a id="default-normalization-limits"></a>
+<a id="configure-explicit-limits"></a><a id="are-these-fields-required"></a>
+<a id="can-i-set-a-limit-to-zero"></a><a id="record-size-limit"></a>
+<a id="what-does-it-protect"></a><a id="why-might-a-record-be-large"></a>
+<a id="what-happens-when-the-limit-is-exceeded"></a><a id="does-increasing-the-limit-make-the-record-valid"></a>
+<a id="depth-level-limit"></a><a id="what-does-it-control_1"></a>
+<a id="why-is-this-useful"></a><a id="does-this-setting-truncate-the-output"></a>
+<a id="can-i-increase-it"></a><a id="workbook-limits"></a>
+<a id="why-are-xlsx-limits-necessary"></a><a id="what-do-the-limits-control"></a>
+<a id="does-increasing-these-limits-enable-arbitrary-xlsx-formats"></a><a id="detailed-metrics-and-reconciliation-limits"></a>
+<a id="metric-entries"></a><a id="reconciliation-bytes"></a>
+<a id="why-bound-diagnostic-information"></a><a id="does-a-small-metric-limit-suppress-every-integrity-violation"></a>
+
+- [Normalization safety limits](../configuration/normalization-runtime.md#3-normalization-safety-limits)
+
+<a id="diagnostic-collection"></a><a id="what-are-runtime-diagnostics"></a>
+<a id="diagnostic-modes"></a><a id="does-detailed-mode-change-normalized-data"></a>
+<a id="does-disabled-mean-no-errors-are-reported"></a><a id="diagnostic-sampling-interval"></a>
+<a id="accepted-range"></a><a id="why-configure-an-interval"></a>
+<a id="does-a-smaller-interval-always-improve-debugging"></a>
+
+- [Diagnostics](../configuration/normalization-runtime.md#5-diagnostics)
+
+<a id="integrity-evaluation"></a><a id="why-does-marketforge-need-integrity-policies"></a>
+<a id="what-does-an-integrity-policy-decide"></a><a id="what-does-it-not-decide"></a>
+<a id="global-integrity-switch"></a><a id="what-happens-when-enabled"></a>
+<a id="what-if-disabled"></a><a id="important-limitation"></a>
+<a id="does-disabled-mean-the-dataset-is-clean"></a><a id="should-i-disable-it-to-make-a-failed-job-run"></a>
+<a id="integrity-categories"></a><a id="why-distinguish-categories"></a>
+<a id="parse-failures"></a><a id="why-can-this-happen"></a>
+<a id="does-accepting-a-parse-failure-recover-the-record"></a><a id="what-should-i-investigate"></a>
+<a id="invalid-records"></a><a id="why-is-this-different-from-a-parse-failure"></a>
+<a id="can-invalid-records-be-counted"></a><a id="does-an-invalid-record-always-require-immediate-failure"></a>
+<a id="sequence-gaps"></a><a id="why-is-this-important-for-depth"></a>
+<a id="does-every-source-require-consecutive-sequences"></a><a id="can-integrity-configuration-invent-sequence-continuity"></a>
+<a id="timestamp-regressions"></a><a id="why-is-this-important"></a>
+<a id="are-equal-timestamps-regressions"></a><a id="can-timestamp-policy-change-the-outcome"></a>
+<a id="missing-snapshots"></a><a id="what-happens-without-the-snapshot"></a>
+<a id="can-integrity-policy-ignore-initialization-requirements"></a><a id="why"></a>
+<a id="invalid-book-state"></a><a id="why-is-this-different-from-missing-snapshots"></a>
+<a id="can-permissive-loss-settings-allow-an-invalid-book-to-be-published"></a><a id="transformation-failures"></a>
+<a id="possible-causes"></a><a id="why-investigate-the-profile"></a>
+<a id="integrity-rules-and-thresholds"></a><a id="integrity-actions"></a>
+<a id="fail"></a><a id="degrade"></a>
+<a id="important-fail-does-not-become-permissive-with-a-count"></a><a id="when-do-thresholds-matter"></a>
+<a id="integrity-rule-parameters"></a><a id="example-rule"></a>
+<a id="why-have-multiple-limits"></a><a id="does-every-rule-need-all-parameters"></a>
+<a id="maximum-count"></a><a id="example_1"></a>
+<a id="is-the-threshold-inclusive"></a><a id="does-max-count-apply-to-arbitrary-event-loss"></a>
+<a id="maximum-rate"></a><a id="examples"></a>
+<a id="why-use-a-rate"></a><a id="are-rates-rounded-to-percentages-before-comparison"></a>
+<a id="what-if-the-observed-rate-equals-the-limit"></a><a id="minimum-samples"></a>
+<a id="why-is-this-useful_1"></a><a id="does-minimum-samples-disable-absolute-limits"></a>
+<a id="example_2"></a><a id="hourly-and-daily-integrity-windows"></a>
+<a id="why-use-time-windows"></a><a id="hourly-rule"></a>
+<a id="daily-rule"></a><a id="what-if-a-record-has-no-trustworthy-timestamp"></a>
+<a id="why-not-assign-an-arbitrary-time"></a><a id="immediate-vs-final-integrity-evaluation"></a>
+<a id="during-source-processing"></a><a id="during-final-evaluation"></a>
+<a id="why-separate-these-stages"></a><a id="does-delayed-rate-evaluation-mean-violations-are-ignored"></a>
+
+- [Integrity evaluation](../configuration/normalization-runtime.md#6-integrity-policies)
+
+<a id="source-reconciliation"></a><a id="why-do-historical-archives-overlap"></a>
+<a id="why-can-this-happen_1"></a><a id="why-is-reconciliation-necessary"></a>
+<a id="default-reconciliation-behavior"></a><a id="why-separate-trades-and-depth"></a>
+<a id="does-adding-reconciliation-enable-permissive-behavior"></a><a id="trade-reconciliation-policies"></a>
+<a id="strict"></a><a id="prefer-source"></a>
+<a id="example_3"></a><a id="why-not"></a>
+<a id="reliable-trade-identity"></a><a id="why-is-identity-scope-important"></a>
+<a id="can-equal-timestamps-prove-duplicates"></a><a id="what-proves-equivalence"></a>
+<a id="what-if-the-contents-conflict"></a><a id="source-local-and-ambiguous-ids"></a>
+<a id="why-not-deduplicate-them-automatically"></a><a id="does-a-large-numeric-id-imply-global-uniqueness"></a>
+<a id="what-about-nonconsecutive-ids"></a><a id="what-if-the-native-reset-domain-is-ambiguous"></a>
+<a id="why-is-this-necessary"></a><a id="verified-duplicate-suppression"></a>
+<a id="example_4"></a><a id="why-does-this-matter-for-completeness"></a>
+<a id="how-is-it-reported"></a><a id="source-preference"></a>
+<a id="how-source-preference-works"></a><a id="example_5"></a>
+<a id="what-does-earlier-mean"></a><a id="what-does-later-mean"></a>
+<a id="does-filename-order-determine-priority"></a><a id="what-if-starts-are-equal"></a>
+<a id="source-preference-is-not-task-priority"></a><a id="why-distinguish-them"></a>
+<a id="what-determines-ownership"></a><a id="does-processing-concurrency-choose-the-winner"></a>
+<a id="what-about-complex-overlaps"></a><a id="trade-union-and-conflict-ownership"></a>
+<a id="what-if-one-source-contains-unknown-identities"></a><a id="what-happens-to-excluded-observations"></a>
+<a id="why-is-this-important_1"></a>
+
+- [Trade reconciliation](../configuration/normalization-runtime.md#7-trade-reconciliation)
+
+<a id="explicit-event-loss-authorization"></a><a id="why-event-loss-must-be-explicit"></a>
+<a id="default-behavior"></a><a id="meaning"></a>
+<a id="why-is-this-strict"></a><a id="permit-bounded-degraded-loss"></a>
+<a id="example_6"></a><a id="what-does-this-authorize"></a>
+<a id="does-it-guarantee-that-five-events-will-be-excluded"></a><a id="does-it-permit-unlimited-exclusion-below-the-rate-threshold"></a>
+<a id="does-the-resulting-publication-remain-clean"></a><a id="source-preference-loss-parameters"></a>
+<a id="required-permission"></a><a id="why-require-an-explicit-positive-count"></a>
+<a id="what-if-max_excluded_rate-is-omitted"></a><a id="what-if-minimum-samples-is-large"></a>
+<a id="what-about-contiguous-intervals"></a><a id="why-loss-accounting-uses-logical-events"></a>
+<a id="why-distinguish-source-observations-from-rows"></a><a id="what-does-marketforge-count"></a>
+<a id="what-about-parse-failures"></a>
+
+- [Explicit event loss](../configuration/normalization-runtime.md#source-preference-and-loss-limits)
+
+<a id="depth-reconciliation"></a><a id="why-depth-reconciliation-is-different"></a>
+<a id="why-is-overlapping-depth-difficult"></a><a id="what-could-go-wrong"></a>
+<a id="why-not-merge-individual-level-changes"></a><a id="depth-overlap-policies"></a>
+<a id="strict_1"></a><a id="snapshot-recovery"></a>
+<a id="prefer-source_1"></a><a id="example_7"></a>
+<a id="important-distinction"></a><a id="depth-snapshot-recovery"></a>
+<a id="what-does-snapshot-recovery-do"></a><a id="does-this-prove-one-continuous-history"></a>
+<a id="does-snapshot-recovery-discard-unique-observations"></a><a id="does-it-repair-missing-exchange-events"></a>
+<a id="why-is-this-useful_2"></a><a id="depth-source-preference"></a>
+<a id="why-is-switch-boundary-necessary"></a><a id="default-switch-boundary"></a>
+<a id="alternative"></a><a id="snapshot-switch-boundaries"></a>
+<a id="why-use-snapshots"></a><a id="does-any-snapshot-qualify"></a>
+<a id="what-if-no-suitable-snapshot-exists"></a><a id="source-boundary-switching"></a>
+<a id="what-must-be-established"></a><a id="why-is-this-necessary_1"></a>
+<a id="what-about-unsequenced-feeds"></a><a id="can-source-a-be-resumed-after-switching-to-source-b"></a>
+<a id="reconstruction-validation"></a><a id="source-reconstruction"></a>
+<a id="selected-history"></a><a id="validation"></a>
+<a id="why-use-separate-reconstruction"></a><a id="what-happens-when-reconstruction-fails"></a>
+<a id="does-a-generous-loss-allowance-override-book-validity"></a><a id="boundary-snapshots-and-duplicate-evidence"></a>
+<a id="what-does-marketforge-compare"></a><a id="does-json-property-order-matter"></a>
+<a id="what-about-deltas-sharing-snapshot-ids"></a><a id="can-a-terminal-snapshot-be-represented-by-the-next-initialization"></a>
+
+- [Order-book reconciliation](../configuration/normalization-runtime.md#8-order-book-reconciliation)
+
+<a id="timestamp-regression-policies"></a><a id="why-have-separate-timestamp-policies"></a>
+<a id="trades"></a><a id="depth"></a>
+<a id="why-separate-the-policies"></a><a id="timestamp-configuration-structure"></a>
+<a id="trade-policies"></a><a id="depth-policies"></a>
+<a id="why-are-the-lists-different"></a><a id="what-counts-as-a-regression"></a>
+<a id="example_8"></a><a id="why-is-this-important_2"></a>
+<a id="equal-timestamps"></a><a id="source-domains"></a>
+<a id="snapshot-resets"></a><a id="timestamp-precision"></a>
+<a id="trade-timestamp-handling"></a><a id="strict-trade-timestamp-policy"></a>
+<a id="what-does-strict-mean"></a><a id="does-setting-a-positive-bound-make-strict-permissive"></a>
+<a id="preserve-trade-source-order"></a><a id="what-does-preserve-do"></a>
+<a id="does-it-sort-trades-chronologically"></a><a id="does-it-change-timestamps"></a>
+<a id="does-the-regression-bound-still-matter"></a><a id="why-use-preserve"></a>
+<a id="reorder-independent-trades"></a><a id="what-does-it-do"></a>
+<a id="does-it-modify-event-timestamps"></a><a id="how-are-equal-time-trades-ordered"></a>
+<a id="does-it-use-floating-point-trade-ids"></a><a id="is-reordering-in-memory-unbounded"></a>
+<a id="what-happens-if-scratch-is-insufficient"></a><a id="reorder-bounds"></a>
+<a id="why-require-both"></a><a id="example_9"></a>
+<a id="does-a-large-window-guarantee-success"></a><a id="discard-regressing-trades"></a>
+<a id="why-is-this-a-lossy-policy"></a><a id="what-is-required"></a>
+<a id="does-a-rate-alone-authorize-discards"></a><a id="does-discard-remove-arbitrary-bad-records"></a>
+<a id="what-about-verified-duplicates"></a><a id="does-discarding-affect-completeness"></a>
+<a id="trade-timestamp-parameter-reference"></a><a id="important-rules"></a>
+<a id="depth-timestamp-handling"></a><a id="strict-depth-timestamp-policy"></a>
+<a id="why-is-strict-the-default"></a><a id="preserve-depth-native-order"></a>
+<a id="what-does-preserve-do_1"></a><a id="what-else-remains-required"></a>
+<a id="does-preserving-source-order-guarantee-continuous-market-history"></a><a id="what-about-snapshot-only-feeds"></a>
+<a id="depth-snapshot-recovery_1"></a><a id="why-is-recovery-necessary"></a>
+<a id="example_10"></a><a id="what-happens-to-the-affected-deltas"></a>
+<a id="does-snapshot-b-restore-the-missing-events"></a><a id="what-happens-to-omitted-observations"></a>
+<a id="recovery-without-event-loss"></a><a id="why-does-this-matter"></a>
+<a id="does-the-snapshot-prove-all-earlier-data-was-complete"></a><a id="recovery-requiring-event-loss"></a>
+<a id="what-is-required_1"></a><a id="what-if-no-subsequent-snapshot-exists"></a>
+<a id="why-not-continue-applying-updates"></a><a id="mandatory-depth-safeguards"></a>
+<a id="can-i-disable-sequence-continuity"></a><a id="can-i-disable-recovery-snapshots"></a>
+<a id="why_1"></a><a id="does-this-mean-every-source-must-have-a-sequence-field"></a>
+<a id="depth-timestamp-parameter-reference"></a><a id="important-rules_1"></a>
+
+- [Timestamp regression](../configuration/normalization-runtime.md#9-timestamp-regression)
+
+<a id="loss-accounting-and-completeness"></a><a id="why-event-accounting-matters"></a>
+<a id="why-distinguish-events-and-rows"></a><a id="loss-denominator"></a>
+<a id="what-does-it-exclude"></a><a id="why-does-this-matter_1"></a>
+<a id="does-verified-deduplication-degrade-completeness"></a><a id="what-does-degrade-completeness"></a>
+<a id="job-wide-vs-stream-wide-limits"></a><a id="example_11"></a>
+<a id="why_2"></a><a id="are-stream-metrics-still-available"></a>
+<a id="contiguous-loss-intervals"></a><a id="example_12"></a>
+<a id="why-track-spans"></a><a id="do-different-loss-reasons-start-separate-spans"></a>
+<a id="why_3"></a><a id="what-does-the-interval-limit-control"></a>
+
+- [Loss accounting](../configuration/normalization-runtime.md#source-preference-and-loss-limits)
+
+<a id="runtime-evidence-in-publications"></a>
+
+- [Runtime evidence](../configuration/normalization-runtime.md#configuration-file-and-resolution)
+
+<a id="scratch-representation"></a><a id="why-does-marketforge-have-scratch-formats"></a>
+<a id="why-use-separate-scratch-formats"></a><a id="scratch-format"></a>
+<a id="why-use-typed-representations"></a><a id="does-typed_events-change-canonical-publication-schemas"></a>
+<a id="does-every-scratch-format-support-every-source"></a><a id="scratch-codec"></a>
+<a id="zlib"></a><a id="uncompressed"></a>
+<a id="why-provide-both"></a><a id="does-changing-the-codec-change-normalized-values"></a>
+
+- [Scratch representation](../configuration/normalization-runtime.md#1-processing-and-performance)
+
+<a id="merge-runtime-settings"></a><a id="merge-fan-in"></a>
+<a id="normalization-merge-fan-in"></a><a id="what-does-fan-in-control"></a>
+<a id="why-limit-fan-in"></a><a id="does-increasing-fan-in-always-improve-performance"></a>
+<a id="is-merge-fan-in-the-same-as-stream-rank"></a>
+
+- [Normalization merge fan-in](../configuration/normalization-runtime.md#merge-fan-in)
+
+<a id="parquet-compression"></a><a id="does-a-higher-number-always-improve-compression"></a>
+<a id="does-compression-change-market-data-meaning"></a><a id="is-this-the-same-as-scratch-codec"></a>
+
+## Merge and conversion runtime
+
+The [merge runtime reference](../configuration/merge-runtime.md) documents `merge.toml`, including the CLI, loader defaults, partitioning, and runtime evidence.
+
+Conversion preparation reads `data/.config/engine/convert.toml`. Its schema-1 loader shares the I/O resource types and Parquet settings. The conversion document has no partitioning table.
+
+| Conversion field | Loader requirements |
 | --- | --- |
 | `schema_version` | Required integer 1. |
-| `resources`, `integrity_policy` | Required tables. |
-| `merge_fan_in` | Optional integer, default 8. |
-| `diagnostics.mode` | `disabled` (default), `basic`, or `detailed`. |
-| `diagnostics.interval_ms` | Unsigned integer in milliseconds, default 1000. |
-| `merge.partitions_per_worker` | Positive integer, default 4. |
-| `merge.compression_level` | Zstandard integer level 1–22, default 3. |
+| `resources.workers` | Required positive integer. |
+| `resources.memory_limit_mb` | Required positive binary MiB, convertible to unsigned 64-bit bytes. |
+| `resources.max_open_files` | Positive integer, default 64. |
+| `parquet.row_group_target_mb` | Required positive binary MiB, no larger than the file target. |
+| `parquet.file_target_mb` | Required binary MiB, at least the row-group target and convertible to unsigned 64-bit bytes. |
+| `parquet.compression_level` | Zstandard level 1–22, default 3. |
 
-### Resource configuration
+Conversion clamps recipe resource requests to the runtime ceilings and transfers the resulting values and Parquet settings into the prepared job. The direct converter can lower the prepared worker count with `--workers`. See the [conversion workflow](../workflows/conversion.md) for input and execution requirements.
 
-| Parameter | Meaning | Effect |
-|---|---|---|
-| `resources.workers` | Worker count | Processing concurrency |
-| `resources.memory_budget_bytes` | Maximum accounted memory | Global memory admission |
-| `resources.scratch_budget_bytes` | Scratch storage allowance | Reconciliation and report spilling |
-| `resources.scratch_path` | Temporary processing location | Scratch-file destination |
-| `resources.parquet.row_group_target_bytes` | Target row-group size | Parquet batching |
-| `resources.parquet.file_target_bytes` | Target Parquet file size | File rotation |
-| `resources.normalization_limits` | Normalization safety limits | Per-source and per-operation bounds |
+## Pipeline runtime
 
-### Memory accounting
+`data/.config/engine/pipeline.toml` has a required integer
+`schema_version = 1`. It accepts optional `[normalize]` and `[merge]` tables
+with the same nested fields as their operation documents, excluding the
+operation schema version. For example:
 
-MarketForge reserves resources before admitting work.
+```toml
+schema_version = 1
 
-The memory estimate includes:
+[normalize.resources]
+workers = 2
 
-- Active source decoding.
-- Input parsing.
-- Order-book reconstruction.
-- Parquet writer memory.
-- Reconciliation workspaces.
-- Source metadata.
-- Integrity observations.
-- Failure-report retention.
-- Finalization requirements.
-
-The refactored engine spills completed detailed integrity observations rather than retaining all observations in memory.
-
-Memory admission is based on estimated reservations, not directly measured process RSS.
-
-A successful admission does not guarantee that the operating system will never encounter memory pressure.
-
----
-
-## Normalization safety limits
-
-The supplied code references these members of `NormalizationLimits`.
-
-| Parameter | Purpose |
-|---|---|
-| `record_bytes` | Maximum permitted source-record size |
-| `depth_levels` | Order-book level limit |
-| `metric_entries` | Maximum detailed integrity observation entries |
-| `reconciliation_bytes` | Reconciliation memory quota |
-| `open_files` | Open-file budget |
-| `workbook_bytes` | Workbook memory allowance |
-| `workbook_xml_bytes` | Workbook XML allowance |
-| `workbook_rows` | Workbook row allowance |
-
-These limits protect processing against oversized records, unexpectedly large books, excessive report cardinality, and resource exhaustion.
-
-### Limit variations
-
-**Higher limits**
-
-May permit larger records, deeper books, or more extensive integrity observations.
-
-However, they increase potential memory requirements and may cause admission to reject more concurrent work.
-
-**Lower limits**
-
-Reduce worst-case resource exposure but may reject otherwise valid source data.
-
-### Important distinction
-
-A resource-limit failure is not necessarily a data-integrity failure.
-
-For example:
-
-```text
-resource limit: memory bytes
+[merge.parquet]
+compression_level = 5
 ```
 
-means the requested reservation exceeded the configured allowance.
+Each operation TOML is independently validated, then each override is applied
+recursively to its own stage. Unspecified fields inherit the operation file
+and its Rust defaults. Rust validates the resulting TOML before processing.
+Acquire uses Forge HTTP settings and the workflow request. The pipeline executes
+acquire, normalize and merge.
 
-A malformed record or invalid book is a separate category of failure.
+For a new run, Forge retains the effective TOMLs, their checksums, the source
+TOML hashes, compiled settings, profile source files and executable hashes.
+Resume uses the retained files. A prior pipeline snapshot with a shared
+`general.toml` remains readable through its retained report and executables.
 
----
-
-## Integrity policy
-
-Integrity rules determine how the engine responds to source-data problems.
-
-### Global policy switch
-
-```text
-integrity_policy.enabled
+```bash
+mf engine runtime normalize
+mf engine runtime merge
+mf engine runtime convert
+mf --json engine runtime pipeline
 ```
 
-The policy supports an enabled/disabled state.
-
-When disabled, violations can still be recorded and the resulting integrity status can be degraded.
-
-Disabling the policy is not equivalent to proving the data valid, and it does not disable independent structural reconciliation safeguards.
-
-### Integrity categories
-
-The engine tracks seven categories.
-
-| Category | Meaning |
-|---|---|
-| `parse_failure` | Source record cannot be parsed |
-| `invalid_record` | Parsed record violates validity requirements |
-| `sequence_gap` | Missing or discontinuous sequence |
-| `timestamp_regression` | Timestamp moves backward |
-| `missing_snapshot` | Required book initialization is missing |
-| `invalid_book` | Order-book state violates validity requirements |
-| `transformation_failure` | Normalization transformation fails |
-
-### Rule parameters
-
-Each category has a corresponding integrity rule.
-
-| Parameter | Purpose |
-|---|---|
-| `action` | How the engine responds to a violation |
-| `max_count` | Maximum permitted absolute violations |
-| `max_rate` | Maximum violation fraction |
-| `minimum_samples` | Minimum observations before rate enforcement |
-| `windows.hourly` | Optional hourly threshold |
-| `windows.daily` | Optional daily threshold |
-
-### Actions
-
-The supplied implementation demonstrates:
-
-| Action | Behavior |
-|---|---|
-| `Fail` | Violation is immediately fatal |
-| `Degrade` | Violation may be tolerated subject to configured thresholds |
-
-
-### Rate thresholds
-
-Rates are fractions, not percentages.
-
-Examples:
-
-| Value | Meaning |
-|---|---|
-| `0` | Zero tolerated violation rate |
-| `0.0001` | 0.01% |
-| `0.001` | 0.1% |
-| `0.01` | 1% |
-| `0.1` | 10% |
-| `1` | 100% |
-
-The implementation validates that rate thresholds are finite and between zero and one.
-
-It compares violations against eligible observations using decimal arithmetic.
-
-An observed rate equal to the threshold is permitted; exceeding it is not.
-
-### Minimum sample count
-
-A rate threshold is not evaluated until the observation count reaches `minimum_samples`.
-
-This prevents rate checks from making decisions on insufficient samples.
-
-An absolute `max_count` limit can still fail earlier.
-
-### Policy scopes
-
-The final evaluator supports:
-
-- Global violation counts.
-- Global violation rates.
-- Per-file violation rates.
-- Per-stream violation rates.
-- Daily violation rates.
-- Hourly violation rates.
-
-The implementation also tracks observations that cannot be attributed to trustworthy event-time windows.
-
-If a time-window policy requires attribution but eligible observations lack trustworthy timestamps, that can itself cause a policy failure.
-
-### Immediate versus final evaluation
-
-**During source processing**, the engine enforces immediately fatal categories.
-
-**During final evaluation**, it checks counts, rates, time windows, and whole-job integrity conditions.
-
-This separation prevents premature rejection based on incomplete rate denominators.
-
----
-
-## Processing policies
-
-These schema-1 runtime extensions default to strict; old configurations need no migration. Tables do not activate permissive processing. Positive tolerances and loss allowances must be explicit. Processing, integrity acceptance, reconstruction and publication are separate checks: enabled integrity `action="fail"` rejects any occurrence even with a nonzero count threshold. `degrade` degrades on occurrence and fails above any applicable overall/file/count/rate/hourly/daily threshold. Sample floors defer rate checks, not finite count checks. Disabling integrity evaluation bypasses its policy decisions, never archive validation, processing bounds, reconstruction, resource limits or publication checks.
-
-### Reconciliation settings
-
-| Table/key | Default | Meaning |
-|---|---|---|
-| `reconciliation.trades.overlap_policy` | `strict` | `strict` or `prefer_source` |
-| `reconciliation.depth.overlap_policy` | `strict` | `strict`, `snapshot_recovery` or `prefer_source` |
-| `reconciliation.{trades,depth}.prefer_source.selection` | `earlier` | Only `earlier` or `later`; compare actual accepted source coverage starts |
-| `reconciliation.depth.prefer_source.switch_boundary` | `snapshot` | `snapshot` or independently proven `source_boundary` |
-| `reconciliation.{trades,depth}.prefer_source.on_unique_data_loss` | `fail` | `fail` rejects any exclusion; `mark_degraded` explicitly authorizes bounded exclusion |
-| `reconciliation.{trades,depth}.prefer_source.max_excluded_events` | `0` | Job-wide logical event allowance for the relevant content type |
-| `reconciliation.{trades,depth}.prefer_source.max_excluded_rate` | absent | Optional finite fraction in [0,1], enforced job-wide |
-| `reconciliation.{trades,depth}.prefer_source.minimum_samples` | `0` | Rate-check sample floor; count allowance still applies below it |
-| `reconciliation.{trades,depth}.prefer_source.max_excluded_interval_ms` | absent | Maximum contiguous excluded span within each source/stream |
-
-`mark_degraded` requires a positive finite `max_excluded_events`; rate/sample-floor settings alone never authorize unbounded losses. Milliseconds must fit checked signed canonical nanoseconds. Invalid rates, enums, unsupported combinations, unknown keys and overflow fail configuration loading. The default preference table has no effect under strict policy.
-
-Verified equivalence runs before loss decisions. A reliable trade identity plus matching complete contents proves a duplicate; equal timestamps/price/size/side do not. Conflicting contents under a reliable identity fail strict processing. Preference can resolve the conflict only with loss authorization, counting the losing observation conservatively as unverified. Distinct reliable IDs survive overlapping/equal-time boundaries, including nonconsecutive arbitrary-length numeric IDs. Missing or reset-ambiguous identities do not acquire global scope from their shape. Native-domain ambiguity under strict processing fails with the required identity evidence described in the diagnostic.
-
-Preference ranks actual validated coverage starts. Equal starts use canonical physical path plus member identity as a stable reproducibility tie-break, with no quality claim. The ownership sweep covers nested, chained and three-or-more sources; legacy task priorities are not preference authority. Reliable nonconflicting trades are unioned. Unknown identities use explicit conflict-interval ownership and conservative exclusion accounting. Task/worker completion order does not choose a winner.
-
-Depth events are atomic messages/grouped snapshots. Independent level-diff vectors are never spliced without a matching reconstruction state. Source prefixes are reconstructed from scratch spools; selected histories are applied to a separate book and complete state is checked after every event. Identical sequenced boundary snapshots compare decoded evidence, including complete snapshot contents and timestamps; JSON object key order is irrelevant. Canonical-changing terminal snapshots can be represented by the next full initialization. Deltas sharing snapshot IDs remain distinct.
-
-Overlap `snapshot_recovery` retains unique supplied observations in independently initialized source histories and records unproven continuity. It does not exclude unique events or claim one continuous market history. `prefer_source` can exclude observations within explicit limits. Snapshot switches wait for actual authoritative snapshots. `source_boundary` requires matching complete book state and compatible native sequence; unsequenced feeds cannot invent that evidence. Returning to an earlier source requires another valid transition. Unsafe transitions, missing initialization or failed source reconstruction prevent publication even with generous loss settings.
-
-### Timestamp settings
-
-| Table/key | Default | Meaning |
-|---|---|---|
-| `timestamp_regression.trades.policy` | `strict` | `strict`, `preserve`, `reorder`, `discard` |
-| `timestamp_regression.trades.max_regression_ms` | `0` | High-water regression bound for permissive handling; strict never accepts because of tolerance |
-| `timestamp_regression.trades.max_reorder_window_ms` | `0` | Positive reorder bound, at least `max_regression_ms` |
-| `timestamp_regression.trades.max_discarded_events` | `0` | Job-wide discard allowance |
-| `timestamp_regression.trades.max_discarded_rate` | absent | Optional finite [0,1] job-wide discard rate |
-| `timestamp_regression.trades.minimum_samples` | `0` | Rate floor, independent of the finite count allowance |
-| `timestamp_regression.depth.policy` | `strict` | `strict`, `preserve`, `snapshot_recovery` |
-| `timestamp_regression.depth.max_regression_ms` | `0` | Checked high-water bound |
-| `timestamp_regression.depth.require_sequence_continuity` | `true` | Applicable native validation remains mandatory; false is unsupported |
-| `timestamp_regression.depth.require_recovery_snapshot` | `true` | Authoritative initialization remains mandatory; false is unsupported |
-| `timestamp_regression.depth.max_discarded_events` | `0` | Positive allowance required for lossy recovery; enforced job-wide |
-
-Equal timestamps are never regressions. Raw-source evidence compares adjacent accepted observations within a concrete source/native reset domain. Processing uses the relevant high-water timestamp so cumulative backward steps cannot evade a bound. Validated native snapshot resets start a new domain; independent sources are not accidentally compared as one native sequence. Raw anomalies survive deduplication; logical survivor ordering violations are reported separately. Arithmetic is checked at nanosecond precision. Original event/system timestamps are never clamped, shifted or rewritten.
-
-Trade `preserve` retains original native source order, timestamps and original record ordinals. `reorder` chronologically sorts independent executions deterministically, after identity reconciliation, using exact numeric IDs for equal-time ties and source positions as final ties. It uses admitted bounded external runs/scratch, not an unbounded time-window buffer; resource exhaustion fails. Both regression and reorder bounds must be positive. `discard` needs positive regression/count allowances, excludes only eligible regressing survivors, and cannot mask parsing/identity/overlap failures. Duplicate-related raw regressions can resolve after verified deduplication, while a fatal raw integrity rule still fails the job.
-
-Depth `preserve` applies valid native order and checks the book without timestamp sorting. Snapshot-only profiles (including Gate.io inverse perpetual snapshot) use independent authoritative snapshots, without invented sequence fields. `snapshot_recovery` invalidates publication of affected dependent deltas and resumes at an actual validated snapshot with full initialization. Every omitted logical observation is charged conservatively. A regressing authoritative snapshot can recover immediately with zero omission; incremental streams without a subsequent snapshot fail. A snapshot restores state, not omitted history. Native sequence and book validation always remain mandatory where applicable.
-
-### Accounting, quality and output compatibility
-
-The rate denominator is accepted logical source observations minus verified duplicate observations; it includes excluded/unverified observations. It excludes parse/normalization rejections and never counts expanded level rows as separate events. Count/rate bounds apply job-wide per content type; stream/source totals remain in task metrics. Contiguous loss spans continue across reasons and duplicates until an observation is actually retained. Unknown uniqueness is reported as unverified exclusion and charged in full. Known-unique and unverified exclusions both degrade completeness; verified duplicate suppression does not. Exceeding any applicable bound prevents manifest publication.
-
-`source.processing` reports raw/logical regressions, logical input/published events, original/expanded/staged rows, known/unverified exclusions by reason, maximum contiguous spans, recovery/source-switch counts and up to eight bounded decision samples with original source ordinal and selected task when available. Task/source/member/identity contracts remain in the same report; no per-event report inventory is retained. Physical source reads, integrity-rejected rows, normalized rows, suppression, unpublished survivors and committed output remain distinct. On failure committed counters become zero; staged rows and unpublished output remain evidence. Cleanup/report failures append context without replacing the primary failure.
-
-Activated policies use **manifest 5**, preserving canonical Parquet row schemas. Its `processing_quality` records effective policies, actual physical timestamp ordering, reconstruction validity, supplied-observation preservation, continuity, inherited-metadata assertion provenance and unknown external historical coverage. Native-order depth uses event indexes and initialization segments; never replay its price-level rows through timestamp sorting. Depth boundary envelope 3 (`segmented_sources`) permits repeated source IDs for ownership returns; envelope 2 remains unique-source only. Streaming boundary readers validate the full envelope, including suffixes, with bounded decoded state. Trades additionally stream `sources.jsonl`, mapping every canonical row to task/original record ordinal, validated against row ownership before publication.
-
-The managed timestamp-first merger accepts compatible v3 selections and supports some v4/v5 trade layouts when the request pins primary files. A selected trade layout must be timestamp-first with contiguous source ownership and no repeated source spans. v4/v5 depth, native-order data and interleaved trade spans remain outside the managed merge contract. See [supported merge layouts](../workflows/merge.md#supported-layouts). A committed publication does not establish complete exchange history.
-
-
-## Scratch storage
-
-`scratch_format` accepts `json` (default), `typed_trades`, or `typed_events`. Typed events also support depth scratch records. `scratch_codec` accepts `zlib` (default) and `uncompressed`. Scratch encodings are internal working files. Publication readers use the committed Parquet and manifest formats.
+Runtime inspection requires the matching managed Engine builds and does not open
+a database connection. The pipeline workflow recipe supplies the interval,
+requests, ranking name and merge ordering. [Pipeline recipe](../configuration/pipeline.md)

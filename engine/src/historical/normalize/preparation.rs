@@ -301,7 +301,8 @@ mod tests {
         let mut job = batch
             .resolve_job(
                 &batch.jobs[0],
-                &FormatCatalog::load(support::root().join("data/.config/historical")).unwrap(),
+                &FormatCatalog::load(support::root().join("data/.config/engine/normalize"))
+                    .unwrap(),
                 &config,
                 &support::root(),
             )

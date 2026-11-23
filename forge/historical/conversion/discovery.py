@@ -10,8 +10,8 @@ from typing import Any
 from forge.datasets.discovery import read_object
 from forge.historical.archives.config import AcquisitionConfig, ArchiveRequest, ArchiveScope
 from forge.historical.archives.models import archive_scope_document, archive_scope_key
-from forge.historical.conversion.evidence import verify_publication
-from forge.historical.conversion.recipes import LoadedSource, Recipe, source_path
+from forge.historical.conversion.evidence import resolve_binding, verify_publication
+from forge.historical.conversion.recipes import LoadedSource, PublicationSource, Recipe, source_path
 from forge.historical.conversion.registry import (
     Connection,
     Publication,
@@ -29,7 +29,7 @@ from forge.historical.merge.discovery import (
 )
 from forge.historical.merge.service import Recipe as DirectMerge
 from forge.historical.normalization.config import NormalizationRecipe
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn, database_purpose
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -86,7 +86,8 @@ def merge_submission(paths: ProjectPaths, pub: Publication) -> tuple[dict[str, A
     if (
         intent.get("execution_id") != name
         or intent.get("operation") != "merge"
-        or intent.get("environment") != "testing"
+        or intent.get("environment") != database_purpose()
+        or intent.get("registry_id") != execution.get("registry_id")
         or str(intent.get("job_id")) != pub.engine_id
         or intent.get("path") != str(pub.root)
         or intent.get("submission_path") != str(submission)
@@ -354,20 +355,30 @@ def competing(left: Publication, right: Publication) -> bool:
     )
 
 
-async def discover(paths: ProjectPaths, recipe: Recipe, source: LoadedSource) -> dict[str, Any]:
+async def discover(
+    paths: ProjectPaths, recipe: Recipe, source: LoadedSource | PublicationSource
+) -> dict[str, Any]:
     scope = recipe.selection
-    explicit = bool(scope.file_dataset_ids or scope.publication_ids)
-    context = lineage(paths, source)
+    direct = source if isinstance(source, PublicationSource) else None
+    explicit = direct is not None or bool(scope.file_dataset_ids or scope.publication_ids)
+    context = lineage(paths, source) if isinstance(source, LoadedSource) else None
     candidates: list[dict[str, Any]] = []
     allowed: list[tuple[Publication, list[dict[str, Any]], dict[str, Any], set[int]]] = []
     blockers: list[str] = []
-    async with testing_connection(testing_dsn(paths.root)) as connection, connection.transaction():
+    async with (
+        database_connection(database_dsn(paths.root)) as connection,
+        connection.transaction(),
+    ):
         await connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        found = await publications(
-            connection,
-            ids=scope.publication_ids,
-            file_ids=scope.file_dataset_ids,
-            interval=None if explicit else (recipe.interval.start_ns, recipe.interval.end_ns),
+        found = (
+            [await resolve_binding(connection, direct)]
+            if direct
+            else await publications(
+                connection,
+                ids=scope.publication_ids,
+                file_ids=scope.file_dataset_ids,
+                interval=None if explicit else (recipe.interval.start_ns, recipe.interval.end_ns),
+            )
         )
         for pub in found:
             candidate = {"registry_publication_id": pub.id, "engine_publication_id": pub.engine_id}
@@ -375,14 +386,19 @@ async def discover(paths: ProjectPaths, recipe: Recipe, source: LoadedSource) ->
             try:
                 check_scope(recipe, pub)
                 if (
-                    isinstance(source.config, DirectMerge)
-                    and source.config.dataset_ids != pub.parent_ids
+                    context is not None
+                    and isinstance(context.upstream.config, DirectMerge)
+                    and context.upstream.config.dataset_ids != pub.parent_ids
                 ):
                     raise MarketForgeError(
                         "Selected normalized input file IDs differ from the upstream merge recipe."
                     )
                 parent_rows = await parents(connection, pub)
-                hits, proof = await prove_source(connection, paths, pub, context, parent_rows)
+                hits, proof = (
+                    await prove_source(connection, paths, pub, context, parent_rows)
+                    if context is not None
+                    else (set[int](), {"selection": "bound_registry_publication"})
+                )
             except (MarketForgeError, ValueError, OSError, KeyError, TypeError) as error:
                 reason = f"Merge publication {pub.id} ({pub.engine_id}): {error}"
                 candidate.update(reason=reason, eligible=False)
@@ -402,8 +418,14 @@ async def discover(paths: ProjectPaths, recipe: Recipe, source: LoadedSource) ->
             blockers.append(
                 "No complete merge publication has verified upstream lineage for this selection."
             )
-        if context.requests and (
-            missing := sorted(set(context.requests) - set().union(*(item[3] for item in allowed)))
+        if (
+            context is not None
+            and context.requests
+            and (
+                missing := sorted(
+                    set(context.requests) - set().union(*(item[3] for item in allowed))
+                )
+            )
         ):
             blockers.append(f"No verified selection covers upstream request indexes {missing}.")
         if any(competing(a[0], b[0]) for a, b in combinations(allowed, 2)):

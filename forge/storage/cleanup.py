@@ -11,6 +11,7 @@ from psycopg.rows import TupleRow
 
 from forge.historical.archives.operation import failure_message
 from forge.historical.archives.storage.acquire import download_filename, root_key
+from forge.shared.database.connection import registry_id
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.paths import ProjectPaths
@@ -240,6 +241,7 @@ async def preview(
         project_root=str(paths.root),
         data_root=str(paths.data_root),
         raw_root=str(paths.raw_dir),
+        registry_id=await registry_id(c),
         created_at=datetime.now(UTC).isoformat(),
         filters={**filters.model_dump(mode="json"), "archive_id": archive_id},
         overlap=overlap,
@@ -323,6 +325,10 @@ async def apply(
         if reviewed.digest != plan.digest:
             raise MarketForgeError("Supplied plan differs from the saved reviewed preview.")
         plan = reviewed
+        if plan.registry_id != await registry_id(c):
+            raise MarketForgeError(
+                "Preview database identity differs or is missing; review a new preview."
+            )
         receipt_path = source.with_suffix(".apply.json")
         receipts: dict[str, object] = {}
         if receipt_path.is_symlink():

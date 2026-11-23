@@ -36,7 +36,29 @@ def leaves(parser: argparse.ArgumentParser, path: str = "") -> set[str]:
 
 
 def test_explicit_action_inventory_and_shell_quoting() -> None:
-    assert set(BY_KEY) == leaves(build_parser()) - {"tui", "acquisition import format new"}
+    canonical = leaves(build_parser())
+    assert set(BY_KEY) == canonical - {
+        "convert edit",
+        "convert delete",
+        "convert config edit",
+        "convert config set",
+        "convert config unset",
+        "tui",
+        "acquisition import format new",
+        "acquisition sources",
+        "acquisition delete",
+        "normalize list",
+        "normalize show",
+        "normalize edit",
+        "normalize delete",
+        "runs index-legacy",
+        "runs reconcile",
+        "normalize profiles show",
+        "normalize profiles schema",
+        "normalize profiles edit",
+        "normalize profiles new",
+        "normalize profiles guide",
+    }
     assert (
         BY_KEY["convert new"].command(
             {
@@ -48,6 +70,18 @@ def test_explicit_action_inventory_and_shell_quoting() -> None:
         )
         == "mf convert new demo --from-normalize 'source has spaces' --target-quote USDT"
     )
+
+
+def test_convert_action_inventory() -> None:
+    required = {name for name in leaves(build_parser()) if name.startswith("convert ")}
+    actions = {name for name in BY_KEY if name.startswith("convert ")}
+    assert actions == required - {
+        "convert edit",
+        "convert delete",
+        "convert config edit",
+        "convert config set",
+        "convert config unset",
+    }
 
 
 @pytest.fixture

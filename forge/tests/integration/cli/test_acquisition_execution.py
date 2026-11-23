@@ -87,6 +87,7 @@ def test_map_then_fresh_mapping_avoids_http(
     first = capsys.readouterr()
     assert first.err == ""
     document = json.loads(first.out)
+    assert document["run_id"].startswith("acquisition-")
     assert document["requests"][0]["archives_found"] == (0 if empty else 1)
     assert run(workspace, "map") == 0
     second = json.loads(capsys.readouterr().out)
@@ -123,6 +124,7 @@ def test_bulk_mixed_failure_then_verified_reuse(
     assert captured.err == ""
     report = json.loads(captured.out)
     assert report["file_counts"]["completed"] == 1
+    assert report["bytes_written"] == len(gzip.compress(b"time,price\n1,2\n"))
     assert report["file_counts"]["failed"] == 1
     outcomes = Path(report["archive_outcomes"]).read_text()
     assert '"status": "failed"' in outcomes
@@ -132,6 +134,28 @@ def test_bulk_mixed_failure_then_verified_reuse(
     assert second["file_counts"]["reused"] == 1
     assert sum("2026-09-01" in path for path in body_calls) == 1
     assert "signature" not in Path(report["report"]).read_text()
+    assert not captured.out.startswith("\n") and not captured.out.endswith("\n\n")
+    assert "\x1b" not in captured.out
+    assert json.loads(Path(report["report"]).read_text()) == report
+    assert (
+        main(
+            [
+                "--project-root",
+                str(workspace),
+                "acquisition",
+                "download",
+                "request",
+                "--testing",
+                "--silent",
+            ]
+        )
+        == 1
+    )
+    human = capsys.readouterr()
+    assert not human.err
+    for label in ("Acquisition Download", "PARTIAL", "Failed downloads", "Registration", "Report"):
+        assert label in human.out
+    assert '"schema_version"' not in human.out
 
 
 def test_silent_human_results_and_ownership_conflict(
@@ -147,8 +171,9 @@ def test_silent_human_results_and_ownership_conflict(
     )
     output = capsys.readouterr()
     assert code == 0
-    assert "Mapping complete" in output.out
-    assert "Files queued" not in output.err
+    assert "Acquisition Mapping" in output.out and "Empty" in output.out
+    assert '"schema_version"' not in output.out
+    assert not output.err
     with WorkspaceOwnership(build_context(project_root=workspace).paths):
         assert run(workspace, "map") == 2
     captured = capsys.readouterr()
@@ -168,7 +193,7 @@ def test_progress_goes_to_stderr(
         main(["--project-root", str(workspace), "acquisition", "map", "request", "--testing"]) == 0
     )
     captured = capsys.readouterr()
-    assert "Mapping complete" in captured.out
+    assert "Acquisition Mapping" in captured.out
     assert "empty:" in captured.err
 
 
@@ -223,7 +248,7 @@ async def test_bulk_workers_are_concurrent_and_bounded(
             run_acquisition(
                 context,
                 config,
-                dsn=os.environ["MARKETFORGE_DATABASE_URL_TEST"],
+                dsn=os.environ["TEST_DATABASE_KEY"],
                 download=True,
                 silent=True,
                 observer=observe,
@@ -347,7 +372,7 @@ async def test_operation_cancellation_records_and_recovers(
             run_acquisition(
                 context,
                 config,
-                dsn=os.environ["MARKETFORGE_DATABASE_URL_TEST"],
+                dsn=os.environ["TEST_DATABASE_KEY"],
                 download=True,
                 silent=True,
             )
@@ -373,7 +398,7 @@ async def test_operation_cancellation_records_and_recovers(
         recovered = await run_acquisition(
             context,
             config,
-            dsn=os.environ["MARKETFORGE_DATABASE_URL_TEST"],
+            dsn=os.environ["TEST_DATABASE_KEY"],
             download=True,
             silent=True,
         )
@@ -410,7 +435,7 @@ def test_verified_reuse_never_refreshes_expired_url_and_renderer_cannot_fail_ope
 
     async def expire() -> None:
         async with (
-            testing_connection(os.environ["MARKETFORGE_DATABASE_URL_TEST"]) as connection,
+            testing_connection(os.environ["TEST_DATABASE_KEY"]) as connection,
             connection.transaction(),
         ):
             await connection.execute(
@@ -486,7 +511,7 @@ async def test_independent_requests_overlap_and_coalesce_duplicate_acquisitions(
         run_acquisition(
             context,
             config,
-            dsn=os.environ["MARKETFORGE_DATABASE_URL_TEST"],
+            dsn=os.environ["TEST_DATABASE_KEY"],
             download=True,
             silent=True,
             observer=observe,

@@ -5,10 +5,12 @@ import asyncio
 import json
 from pathlib import Path
 
+from forge.cli.environment import add_database_options
 from forge.historical.drafts import create_registration
 from forge.historical.registration.models import load, recipe_path
 from forge.historical.registration.service import apply, inspect, validate
 from forge.shared.ownership import WorkspaceOwnership
+from forge.shared.terminal.acquisition_result import render_external
 from forge.shared.terminal.editor import edit_file
 from forge.startup.context import ApplicationContext
 
@@ -22,7 +24,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
         if action == "new":
             child.add_argument("--from", dest="source", type=Path, required=True)
         if action in {"validate", "plan", "run"}:
-            child.add_argument("--testing", action="store_true", required=True)
+            add_database_options(child)
 
 
 def run(args: argparse.Namespace, context: ApplicationContext) -> int:
@@ -51,5 +53,12 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
     if args.as_json:
         print(json.dumps(result))
     else:
-        context.console.print_json(data=result)
+        render_external(
+            context.console,
+            result,
+            operation="Registration",
+            action=action,
+            name=args.name,
+            root=context.paths.root,
+        )
     return 0

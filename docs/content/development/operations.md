@@ -59,3 +59,18 @@ Forge accepts derivation from merge, normalization or acquisition TOML. The sele
 Each current Rust job carries schema version 1, prepared publication identity and fingerprints, stream identities and currencies, catalogue fingerprint, conversion policy, resources and Parquet settings. The Forge `convert.json` collection indexes separate job files. The Rust CLI consumes one `--job`, with `--validate` available to check the job and its evidence before execution. Current execution uses embedded metadata. A fixed on-disk instrument catalogue is not required by the Engine; Forge can check one when it exists during preparation. Old jobs from the pre-standalone contract require regeneration. [ConvertJob](https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/job/convert.rs) · [Converter entry point](https://github.com/flowdrivenml/marketforge/blob/main/engine/src/bin/marketforge-convert.rs)
 
 Forge's dry run computes proposed jobs without writing or invoking the Engine. Regular preparation retains a report whose `compatibility` field records validation separately from generation. Execution submits retained per-job bytes after pin and compatibility checks. The Engine supports causal input through its ordering-aware processing paths. Output has its own conversion manifest and execution receipt. Forge verifies completed output and reports registration as unavailable. A retry from retained preparation requires intact pinned inputs and available output and staging destinations. [Conversion orchestration](https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/conversion/execution.py)
+
+## Managed historical pipeline
+
+```mermaid
+flowchart TD
+    Scope["Validated pipeline recipe"] --> Plan["Plan and retained run"]
+    Plan --> Raw["Acquire and verify raw revisions"]
+    Raw --> Batch["Prepare normalization batch"]
+    Batch --> Run["Execute and register normalized files"]
+    Run --> Merge["Prepare merge from those file IDs"]
+    Merge --> Result["Execute and register merge"]
+    Batch --> Stop["Optional stop after preparation"]
+```
+
+Resume reads the retained run state and evidence. The preparation stop retains a batch and allows normalization execution to be resumed. Conversion has its own source selection, preparation and executor. [Pipeline guide](../workflows/pipeline.md) · [Retained artifact contracts](../reference/prepared-forge.md)

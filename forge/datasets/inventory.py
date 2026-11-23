@@ -7,7 +7,7 @@ from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 
 from forge.historical.archives.storage.acquire import root_key
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.paths import ProjectPaths
 
 
@@ -133,7 +133,7 @@ FROM files f GROUP BY operation
 
 
 async def inventory(paths: ProjectPaths) -> Inventory:
-    async with testing_connection(testing_dsn(paths.root)) as conn, conn.transaction():
+    async with database_connection(database_dsn(paths.root)) as conn, conn.transaction():
         await conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         await conn.execute("SET LOCAL statement_timeout = '5s'")
         return await summarize(conn)
@@ -185,7 +185,7 @@ def market_from_row(row: tuple[object, ...]) -> Market:
 
 
 async def market_page(paths: ProjectPaths, offset: int) -> tuple[tuple[Market, ...], bool]:
-    async with testing_connection(testing_dsn(paths.root)) as conn, conn.transaction():
+    async with database_connection(database_dsn(paths.root)) as conn, conn.transaction():
         await conn.execute("SET TRANSACTION READ ONLY")
         await conn.execute("SET LOCAL statement_timeout = '5s'")
         items = await (await conn.execute(MARKETS, (26, offset))).fetchall()
@@ -193,7 +193,7 @@ async def market_page(paths: ProjectPaths, offset: int) -> tuple[tuple[Market, .
 
 
 async def raw_inventory(paths: ProjectPaths) -> tuple[int, int | None]:
-    async with testing_connection(testing_dsn(paths.root)) as conn, conn.transaction():
+    async with database_connection(database_dsn(paths.root)) as conn, conn.transaction():
         await conn.execute("SET TRANSACTION READ ONLY")
         await conn.execute("SET LOCAL statement_timeout = '5s'")
         row = await (
@@ -210,7 +210,7 @@ async def raw_inventory(paths: ProjectPaths) -> tuple[int, int | None]:
 async def publication_page(
     paths: ProjectPaths, offset: int, operation: str | None, market: Market | None
 ) -> tuple[list[dict[str, object]], bool]:
-    async with testing_connection(testing_dsn(paths.root)) as conn, conn.transaction():
+    async with database_connection(database_dsn(paths.root)) as conn, conn.transaction():
         await conn.execute("SET TRANSACTION READ ONLY")
         await conn.execute("SET LOCAL statement_timeout = '5s'")
         rows = await (

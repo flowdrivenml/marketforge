@@ -264,7 +264,7 @@ pub fn synthetic(id: &str, units: Units) -> TestResult<()> {
         }
         let m = assertions::committed(&run, &b.jobs[0], &r)?;
         let catalog = marketforge_engine::historical::config::FormatCatalog::load(
-            root().join("data/.config/historical"),
+            root().join("data/.config/engine/normalize"),
         )
         .map_err(|e| e.to_string())?;
         let reloaded = marketforge_engine::historical::config::load_document_with_catalog(
@@ -516,6 +516,127 @@ pub fn binance_linear_prefix() -> TestResult<()> {
             || d("quantity_quote") != expected_price * expected_base
         {
             return Err("Binance sampled first trade differs from independent CSV oracle".into());
+        }
+        Ok(())
+    })();
+    run.finish(&result)?;
+    result
+}
+
+/// Run the exact downloadable authoring examples through the production catalogue and reader.
+pub fn authoring_examples() -> TestResult<()> {
+    use marketforge_engine::historical::config::FormatCatalog;
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+    let _serial = PROFILE_EXECUTION.lock().map_err(|e| e.to_string())?;
+    let examples = root().join("docs/content/examples/catalogue");
+    let mut run = TestRun::new("profiles/authoring_examples")?;
+    let result = (|| {
+        let catalogue_root = run.path.join("catalogue");
+        let mut inputs = vec![];
+        for (kind, file) in [
+            ("trades", "synthetic-trades.csv"),
+            ("depth", "synthetic-depth.jsonl"),
+        ] {
+            let directory = catalogue_root.join("profiles").join(kind);
+            fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+            let profile = format!("example_exchange.equity.equity.{kind}.toml");
+            let source = if kind == "depth" {
+                examples.join("incremental")
+            } else {
+                examples.clone()
+            };
+            fs::copy(source.join(&profile), directory.join(profile)).map_err(|e| e.to_string())?;
+            let fixture = run.path.join(file);
+            fs::copy(source.join(file), &fixture).map_err(|e| e.to_string())?;
+            inputs.push((kind, fixture));
+        }
+        let catalogue = FormatCatalog::load(catalogue_root).map_err(|e| e.to_string())?;
+        for (index, (kind, fixture)) in inputs.into_iter().enumerate() {
+            let number = index + 1;
+            let instrument = json!({
+                "instrument_id": 1, "exchange": "example_exchange", "instrument_type": "equity",
+                "market_category": "equity", "symbol": "AAPL", "base_asset": "AAPL",
+                "quote_asset": "USD", "instrument": {"tick_size": "0.01"}
+            });
+            let mut task = instrument.clone();
+            task["task_id"] = json!(number);
+            task["input_path"] = json!(fixture);
+            task["stream_id"] = json!("examples.equity.AAPL");
+            task["stream_rank"] = json!(1);
+            let batch: PreparedBatch = serde_json::from_value(json!({
+                "schema_version": 4, "kind": "normalization_batch", "status": "prepared",
+                "run_id": "authoring-example", "run_directory": "fixture", "batch_path": "fixture",
+                "ranking_policy": "turnover", "ranking_snapshot": null,
+                "requested_interval": {"start": "2024-10-28T00:00:00Z", "end": "2024-10-29T00:00:00Z"},
+                "instrument_namespace": "marketforge-profile-example", "instruments": [instrument],
+                "jobs": [{"operation": "normalize", "job_id": number, "dataset_id": number,
+                    "tasks": [task], "ordering": {"primary": "event_timestamp_ns", "tie_break": "stream_rank"},
+                    "output": {"content_type": kind, "staging_path": "fixture", "dataset_path": "fixture"}}]
+            })).map_err(|e| e.to_string())?;
+            let runtime = run.runtime_from_general()?;
+            let resolved = run.prepare_with_catalogue(&batch, &runtime, &catalogue)?;
+            let job = &resolved.jobs[0];
+            let output = execute_processing_job(job, &runtime).map_err(|e| e.to_string())?;
+            if output.status != ProcessingStatus::Complete {
+                return Err(format!("{kind}: {output:?}"));
+            }
+            let manifest = assertions::committed(&run, &batch.jobs[0], &output)?;
+            let mut rows = vec![];
+            for file in manifest.files {
+                let source = fs::File::open(job.output.dataset_path.join(file.path))
+                    .map_err(|e| e.to_string())?;
+                let reader = ParquetRecordBatchReaderBuilder::try_new(source)
+                    .and_then(|builder| builder.build())
+                    .map_err(|e| e.to_string())?;
+                for batch in reader {
+                    let batch = batch.map_err(|e| e.to_string())?;
+                    let time = batch
+                        .column_by_name("event_timestamp_ns")
+                        .unwrap()
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap();
+                    for row in 0..batch.num_rows() {
+                        rows.push((
+                            time.value(row),
+                            text(&batch, "side", row).unwrap().to_owned(),
+                            decimal(&batch, "price", row).unwrap(),
+                            decimal(&batch, "quantity_base", row).unwrap(),
+                            decimal(&batch, "quantity_quote", row).unwrap(),
+                        ));
+                    }
+                }
+            }
+            const START: i64 = 1_730_125_800_000_000_000;
+            let expected = if kind == "trades" {
+                vec![(START, "buy", "233.62", "10", "2336.20")]
+            } else {
+                vec![
+                    (START, "bid", "233.61", "10", "2336.10"),
+                    (START, "ask", "233.63", "12", "2803.56"),
+                    (START + 1, "bid", "233.61", "4", "934.44"),
+                    (START + 1, "ask", "233.63", "0", "0"),
+                    (START + 1, "ask", "233.64", "8", "1869.12"),
+                ]
+            };
+            let mut expected: Vec<_> = expected
+                .into_iter()
+                .map(|(time, side, price, base, quote)| {
+                    (
+                        time,
+                        side.to_owned(),
+                        price.parse::<Decimal>().unwrap(),
+                        base.parse::<Decimal>().unwrap(),
+                        quote.parse::<Decimal>().unwrap(),
+                    )
+                })
+                .collect();
+            rows.sort();
+            expected.sort();
+            if rows != expected {
+                return Err(format!("{kind}: expected {expected:?}, got {rows:?}"));
+            }
         }
         Ok(())
     })();

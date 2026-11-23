@@ -81,3 +81,44 @@ def test_user_text_is_not_interpreted_as_markup_or_emoji() -> None:
     console.print(message)
 
     assert output.getvalue() == f"{message}\n"
+
+
+def test_terminal_spacing_shares_one_boundary_across_terminal_streams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from forge.shared.terminal.spacing import terminal_spacing
+
+    class Terminal(StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    output = Terminal()
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(sys, "stderr", output)
+    with terminal_spacing(enabled=True):
+        sys.stderr.write("\x1b[?25l")
+        create_console(PresentationSettings(color="never"), stderr=True).print("Progress ended")
+        create_console(PresentationSettings(color="never")).print("Result")
+        sys.stderr.write("\x1b[?25h")
+    assert output.getvalue() == "\x1b[?25l\nProgress ended\nResult\n\x1b[?25h\n"
+
+
+def test_disabled_and_silent_terminal_spacing(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+
+    from forge.shared.terminal.spacing import terminal_spacing
+
+    class Terminal(StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    output = Terminal()
+    monkeypatch.setattr(sys, "stdout", output)
+    with terminal_spacing(enabled=True):
+        pass
+    assert not output.getvalue()
+    with terminal_spacing(enabled=False):
+        print("{}")
+    assert output.getvalue() == "{}\n"

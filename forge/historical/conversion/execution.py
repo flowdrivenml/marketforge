@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import subprocess
@@ -15,12 +16,26 @@ from pydantic import ValidationError
 from forge.datasets.discovery import read_object
 from forge.datasets.parquet import footer
 from forge.historical.conversion.contract import Conversion, Job
+from forge.historical.conversion.evidence import (
+    check_source_environment,
+    registered_files,
+    resolve_binding,
+)
 from forge.historical.conversion.planning import output_available
+from forge.historical.conversion.recipes import PublicationSource
 from forge.historical.conversion.service import file_pin, retained_collection, validate_prepared_job
 from forge.historical.engine.managed import checksum, inventory, resolve
 from forge.historical.engine.process import Lifecycle, check, joined_io, supervise
+from forge.historical.engine.work import READY_MESSAGE, WorkIndex, convert_key, output_present
 from forge.historical.normalization.execution import run_process, sync_submission
 from forge.historical.normalization.service import write_job
+from forge.shared.database.connection import (
+    database_connection,
+    database_dsn,
+    pinned_registry,
+    require_registry,
+    selected_registry_id,
+)
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -94,6 +109,7 @@ def verify_output(job: Job, pinned: dict[str, Any]) -> dict[str, Any]:
         "conversion-runtime.json": checksum(output / "conversion-runtime.json"),
     }
     total_rows = total_groups = 0
+    partitions: set[str] = set()
     for entry in out["files"]:
         relative = Path(entry["path"])
         path = output / relative
@@ -105,6 +121,7 @@ def verify_output(job: Job, pinned: dict[str, Any]) -> dict[str, Any]:
             or path.suffix != ".parquet"
         ):
             raise MarketForgeError("Invalid primary path in converted manifest.")
+        partitions.add(relative.parts[0])
         physical = footer(path)
         if (physical.size, physical.metadata.num_rows, physical.metadata.num_row_groups) != (
             entry["size_bytes"],
@@ -121,7 +138,62 @@ def verify_output(job: Job, pinned: dict[str, Any]) -> dict[str, Any]:
         out["row_groups"],
     ):
         raise MarketForgeError("Converted output file totals disagree.")
-    return {"manifest": str(manifest_path), "fingerprints": fingerprints, "events": total_rows}
+    return {
+        "manifest": str(manifest_path),
+        "fingerprints": fingerprints,
+        "events": total_rows,
+        "statistics": stats,
+        "output": {key: value for key, value in out.items() if key != "files"},
+        "size_bytes": sum(entry["size_bytes"] for entry in out["files"]),
+        "events_read": receipt["events_read"],
+        **(
+            {"materialized_partitions": len(partitions)}
+            if partitions
+            and all(
+                folder.startswith("partition-") and folder.removeprefix("partition-").isdigit()
+                for folder in partitions
+            )
+            else {}
+        ),
+    }
+
+
+async def verify_reused_conversion(
+    binary: Path,
+    pinned: dict[str, Any],
+    previous: dict[str, Any],
+) -> dict[str, Any]:
+    _, previous_submission = read_pin(
+        previous["submission"],
+        Path(previous["result_path"]).parent,
+        expected="submitted-job.json",
+    )
+    await joined_io(validate_prepared_job, binary, Path(previous["submission"]["path"]))
+    canonical = Job.model_validate_json(previous_submission)
+    publication = await joined_io(verify_output, canonical, pinned)
+    saved = previous["publication"]
+    if any(saved[key] != publication[key] for key in ("manifest", "fingerprints", "events")) or any(
+        publication.get(key) != value for key, value in saved.items()
+    ):
+        raise MarketForgeError("Canonical conversion evidence changed.")
+    return publication
+
+
+async def require_live_prepared_inputs(paths: ProjectPaths, registry: str, ids: set[int]) -> None:
+    with pinned_registry(registry):
+        async with database_connection(database_dsn(paths.root)) as connection:
+            cursor = await connection.execute(
+                """SELECT publication_id FROM historical.publication_invalidations
+                   WHERE publication_id=ANY(%s)
+                   UNION SELECT publication_id FROM historical.publication_supersessions
+                   WHERE publication_id=ANY(%s) AND state IN ('retiring','removed')""",
+                (sorted(ids), sorted(ids)),
+            )
+            invalid = [row[0] for row in await cursor.fetchall()]
+    if invalid:
+        raise MarketForgeError(
+            f"Prepared conversion references retired testing publications: {sorted(invalid)}."
+        )
 
 
 async def execute(
@@ -133,8 +205,16 @@ async def execute(
     lifecycle: Lifecycle = lambda _: None,
 ) -> dict[str, Any]:
     collection, document, report = await joined_io(lambda: retained_collection(source))
+    pins = document["pins"]
+    direct = None
+    if "publication_source" in pins:
+        direct = PublicationSource.model_validate(pins["publication_source"])
+        check_source_environment(direct)
+    require_registry(document, await selected_registry_id(paths.root))
     result = {
         "status": "blocked",
+        "environment": document["environment"],
+        "registry_id": document["registry_id"],
         "execution": "not_started",
         "collection_path": str(collection),
         "report_path": report["report_path"],
@@ -169,14 +249,35 @@ async def execute(
             raise MarketForgeError(
                 "Submitted conversion job disagrees with its pinned inputs and destination."
             )
-        output_available(Path(job.output.dataset_path))
         prepared.append((job, submitted, pinned))
     if result["blockers"]:
-        return result
+        return {**result, "not_attempted_job_ids": [job.job_id for job, _, _ in prepared]}
+    input_ids = {pinned["registry_publication_id"] for _, _, pinned in prepared}
+    if external:
+        input_ids.add(external["registry_publication_id"])
+    await require_live_prepared_inputs(paths, document["registry_id"], input_ids)
+    if direct is not None:
+        with pinned_registry(document["registry_id"]):
+            async with (
+                database_connection(database_dsn(paths.root)) as connection,
+                connection.transaction(),
+            ):
+                await connection.execute(
+                    "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+                )
+                publication = await resolve_binding(connection, direct)
+                await registered_files(connection, publication)
+        if len(prepared) != 1 or any(
+            pinned["registry_publication_id"] != publication.id
+            or job.source.merge_job_id != int(publication.engine_id)
+            or job.source.manifest_sha256 != direct.manifest_sha256
+            or job.source.publication_checksums_sha256 != direct.publication_checksums_sha256
+            for job, _, pinned in prepared
+        ):
+            raise MarketForgeError("Prepared job disagrees with the bound registry publication.")
 
     if tui and not all(os.isatty(fd) for fd in (0, 1, 2)):
         raise MarketForgeError("--tui requires an interactive terminal.")
-    pins = document["pins"]
     binary = resolve(paths, "convert")
     if pins["executable"] != {"path": str(binary), "sha256": checksum(binary)}:
         raise MarketForgeError("Managed converter changed since preparation. Prepare again.")
@@ -185,10 +286,110 @@ async def execute(
             row for row in inventory(paths)["targets"] if row["target"] == "convert"
         )
         if "monitor-tui" not in installation["installation"].get("features", []):
-            raise MarketForgeError("This managed converter was built without monitor-tui.")
+            raise MarketForgeError(
+                "This managed converter was built without monitor-tui. Run mf engine build convert."
+            )
+        help_result = await joined_io(
+            lambda: subprocess.run(
+                [str(binary), "--help"], capture_output=True, text=True, timeout=10
+            )
+        )
+        if "--managed-output" not in help_result.stdout:
+            raise MarketForgeError(
+                "Managed converter cannot hand off the TUI result. Run mf engine build convert and prepare again."
+            )
     completed: list[dict[str, Any]] = []
     for job, submitted, pinned in prepared:
         directory = paths.runs_dir / f"convert-execute-{uuid4().hex}"
+        index = WorkIndex(paths.root, document["registry_id"], "convert", directory.name)
+        key = convert_key(
+            document["registry_id"], pins["executable"]["sha256"], job.model_dump(mode="json")
+        )
+        result_path = directory / "execution-result.json"
+
+        async def recover_candidate(work_key: str, owner: str, intent: Path) -> None:
+            retained = json.loads(await joined_io(intent.read_bytes))
+            if (
+                retained["work_key"] != work_key
+                or owner != intent.parent.name
+                or retained["executable_sha256"] != pins["executable"]["sha256"]
+                or retained.get("registry_id") != document["registry_id"]
+            ):
+                raise MarketForgeError("Retained conversion intent disagrees with work ownership.")
+            recovered_binary = intent.parent / "marketforge-convert"
+            if checksum(recovered_binary) != retained["executable_sha256"]:
+                raise MarketForgeError("Pinned conversion executable changed.")
+            submission, payload = read_pin(
+                retained["submission"], intent.parent, expected="submitted-job.json"
+            )
+            canonical = Job.model_validate_json(payload)
+            if (
+                convert_key(
+                    document["registry_id"],
+                    checksum(recovered_binary),
+                    canonical.model_dump(mode="json"),
+                )
+                != work_key
+            ):
+                raise MarketForgeError("Retained conversion job disagrees with work key.")
+            await joined_io(validate_prepared_job, recovered_binary, submission)
+            publication = await joined_io(verify_output, canonical, retained["input"])
+            retained.update(
+                status="complete",
+                execution="complete",
+                compatibility="validated",
+                disposition="recovered",
+                publication=publication,
+            )
+            recovery_path = intent.with_name("publication-recovery.json")
+            retained["result_path"] = str(recovery_path)
+            write_job(recovery_path, retained)
+            original = WorkIndex(paths.root, document["registry_id"], "convert", owner)
+            await original.complete(work_key, retained, recovery=True)
+
+        try:
+            await index.recover_committed([key], recover_candidate)
+            existing = await index.acquire(
+                {
+                    key: {
+                        "report_path": str(result_path),
+                        "path": job.output.dataset_path,
+                    }
+                }
+            )
+            if key in existing:
+                _, _, previous = existing[key]
+                assert previous is not None
+                publication = await verify_reused_conversion(binary, pinned, previous)
+                receipt = {
+                    **previous,
+                    "publication": publication,
+                    "disposition": "reused",
+                    "reuse_message": READY_MESSAGE,
+                    "engine_execution_skipped": True,
+                    "canonical_result_path": previous["result_path"],
+                    "result_path": str(result_path),
+                    "requested_output_path": job.output.dataset_path,
+                }
+                write_job(result_path, receipt)
+                completed.append(receipt)
+                continue
+        except (
+            MarketForgeError,
+            OSError,
+            ValueError,
+            KeyError,
+            subprocess.TimeoutExpired,
+        ) as error:
+            completed.append(
+                {
+                    "job_id": job.job_id,
+                    "status": "blocked",
+                    "execution": "not_started",
+                    "error": str(error),
+                }
+            )
+            break
         directory.mkdir(parents=True, exist_ok=False)
         executable = directory / "marketforge-convert"
         shutil.copyfile(binary, executable)
@@ -199,8 +400,12 @@ async def execute(
         submission.write_bytes(submitted)
         sync_submission(submission)
         argv = [str(executable), "--job", str(submission), "--run"]
+        if tui:
+            argv.append("--managed-output")
         receipt: dict[str, Any] = {
             "status": "blocked",
+            "work_key": key,
+            "registry_id": document["registry_id"],
             "execution": "not_started",
             "job_id": job.job_id,
             "submission": file_pin(submission, submitted),
@@ -266,13 +471,34 @@ async def execute(
         ) as error:
             receipt["error"] = str(error)
         write_job(directory / "execution-result.json", receipt)
+        if receipt["status"] == "complete":
+            try:
+                await index.complete(key, receipt)
+            except (MarketForgeError, OSError) as error:
+                receipt.update(status="failed", indexing="failed", error=str(error))
+                write_job(directory / "execution-result.json", receipt)
+            else:
+                receipt["indexing"] = "complete"
+        elif not await joined_io(output_present, Path(job.output.dataset_path)):
+            await index.release([key])
         completed.append(receipt)
         if receipt["status"] != "complete":
             break
     return {
         **result,
-        "status": completed[-1]["status"],
+        "status": next(
+            (item["status"] for item in completed if item["status"] != "complete"), "complete"
+        ),
         "execution": completed[-1]["execution"],
         "jobs": completed,
-        "compatibility": completed[-1].get("compatibility", "not_validated"),
+        "not_attempted_job_ids": [job.job_id for job, _, _ in prepared[len(completed) :]],
+        "disposition": "reused"
+        if all(job.get("disposition") == "reused" for job in completed)
+        else "new",
+        "compatibility": "validated"
+        if (
+            len(completed) == len(prepared)
+            and all(item.get("compatibility") == "validated" for item in completed)
+        )
+        else "not_validated",
     }

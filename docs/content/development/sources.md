@@ -18,11 +18,11 @@ Use the sanitized Bybit directory examples as the nearby fixture. For a listing 
 Use a profile when the representation is already supported and the change can be described with existing field, format, timestamp, quantity and operation mappings. Start with the installed profile for the same venue, instrument type, market category and content type. See the [profile authoring workflow](../workflows/catalogue/profiles.md), its [trade](../workflows/catalogue/profile-trades.md) and [depth](../workflows/catalogue/profile-depth.md) examples, and the [authoritative profile reference](../reference/profiles.md).
 
 1. Identify the archive member and raw field shape from a representative sample. State the exact expected canonical timestamp and quantity first. Specify timestamp units and distinguish source event time from system time when the source provides both. For derivative sizes, identify whether the source quantity represents base, quote, or contracts, and verify that effective instrument specifications support the interpretation.
-2. Edit the profile under the identity convention `exchange.instrument_type.market_category.data_type`. The lifecycle in Forge's profile service inspects and validates TOML and manages installation. Rust's `FormatCatalog` loads schema-1 catalogue profiles, validates physical and semantic fields and checks the compiled profile against a task. The task and manifest record provenance that downstream checks can use.
+2. Edit the profile under the identity convention `exchange.instrument_type.market_category.data_type`. The lifecycle in Forge's profile service inspects and validates TOML and manages installation. Rust's `FormatCatalog` loads schema-2 catalogue profiles, validates physical and semantic fields and checks the compiled profile against a task. The task and manifest record provenance that downstream checks can use.
 3. Exercise both compiler validation and execution. With a current managed normalizer and installed profiles, run the schema and catalogue check on the Bybit linear perpetual trade profile from the checkout root.
 
     ```bash
-    uv run --project forge --locked mf acquisition profiles validate bybit.perpetual.linear.trades
+    uv run --project forge --locked mf normalize profiles validate bybit.perpetual.linear.trades
     ```
 
     For a candidate file, use `validate --file PATH` in place of the installed ID. Forge builds a temporary catalogue containing the candidate and runs the normalizer's production profile validation. This check makes no registry changes.
@@ -46,3 +46,21 @@ For a semantic change, start at the worker's downstream boundary. Trade interpre
 | Causal timeline consumption | Preserved sequence order and reconstruction context even when event timestamps regress |
 
 Use the nearby CSV depth pipeline test or a trade fixture to exercise format dispatch. When changing a codec or column reader, exercise invalid bytes, missing fields or members and relevant resource limits. When changing Engine semantics, assert exact values and independently specified state. Add parallel or batch-boundary equivalence coverage where the changed guarantee spans those boundaries. Check merge and conversion consumers if the change touches chronology, provenance fields, event offsets or depth initialization. [Worker code](https://github.com/flowdrivenml/marketforge/tree/main/engine/src/historical/normalize/worker) · [Family processing](https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/family.rs) · [Depth CSV pipeline tests](https://github.com/flowdrivenml/marketforge/blob/main/engine/tests/historical/normalize/depth/depth_csv_pipeline.rs) · [Runtime and integrity policy](../reference/runtime.md)
+
+## Walkthrough: accept a revised Bybit directory listing
+
+Suppose Bybit changes the markup around an existing BTCUSDT archive link while keeping the URL path and filename convention. The owning boundary is listing discovery, since the archive bytes and profile semantics are unchanged.
+
+1. Open `forge/historical/archives/sources/exchanges.py` in `nvim`. Trace the existing Bybit dispatch from `ExchangeSource.discover` to the directory parser. Add support in that branch so all callers use the same adapter and registry integration.
+2. Start with `forge/tests/unit/historical/archives/fixtures/bybit_linear.html`. Keep its `/trading/BTCUSDT` directory and one in-window link such as `BTCUSDT2026-11-02.csv.gz`. Change the markup to the new form. Add an out-of-window link or a neighboring instrument to test isolation.
+3. Test via the existing `httpx.MockTransport` harness in `test_source_regressions.py`. Assert the exact filename, unchanged stable object identity, and nominal interval from November 2 at 00:00 UTC to November 3 at 00:00 UTC for the in-window archive. Check separately that a wrong-instrument-only page produces the existing discovery error and does not masquerade as a successful empty listing.
+4. Run the fixture and negative cases together:
+
+    ```bash
+    uv run --project forge --group dev pytest -q \
+      forge/tests/unit/historical/archives/test_source_regressions.py -k bybit
+    ```
+
+5. If object identity or interval semantics change, review adapter versioning and the discovery-cache and managed-copy tests before accepting the change. A markup-only change keeps the registration shape. Document any new selector in the [acquisition recipe reference](../configuration/acquisition.md) and any changed operator behavior in the [acquisition guide](../workflows/acquisition/historical-data.md).
+
+The same fixture strategy works for altered pagination or feed variants. Keep the provider boundary assertions about identity and interval separate from profile and Engine assertions about decoded events.

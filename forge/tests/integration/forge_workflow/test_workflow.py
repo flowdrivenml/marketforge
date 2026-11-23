@@ -114,16 +114,16 @@ def isolated(
         datasets,
         __import__("forge.historical.normalization.batch", fromlist=["testing_connection"]),
     ):
-        monkeypatch.setattr(module, "testing_connection", connection)
+        monkeypatch.setattr(module, "database_connection", connection)
 
     def selected_dsn(_: Path) -> str:
         return dsn
 
-    monkeypatch.setattr(registration, "testing_dsn", selected_dsn)
-    monkeypatch.setattr("forge.shared.database.testing.testing_connection", connection)
-    monkeypatch.setattr("forge.shared.database.testing.testing_dsn", selected_dsn)
-    monkeypatch.setattr(datasets, "testing_dsn", selected_dsn)
-    monkeypatch.setattr("forge.historical.normalization.batch.testing_dsn", selected_dsn)
+    monkeypatch.setattr(registration, "database_dsn", selected_dsn)
+    monkeypatch.setattr("forge.shared.database.connection.database_connection", connection)
+    monkeypatch.setattr("forge.shared.database.connection.database_dsn", selected_dsn)
+    monkeypatch.setattr(datasets, "database_dsn", selected_dsn)
+    monkeypatch.setattr("forge.historical.normalization.batch.database_dsn", selected_dsn)
     paths = ProjectPaths(tmp_path, tmp_path / "data")
     paths.bin_dir.mkdir()
     shutil.copyfile(ROOT / ".bin/marketforge-normalize", paths.bin_dir / "marketforge-normalize")
@@ -138,9 +138,9 @@ def isolated(
             }
         )
     )
-    (paths.config_dir / "historical").mkdir(parents=True)
+    paths.engine_config_dir.mkdir(parents=True)
     runtime = (
-        (ROOT / "data/.config/historical/general.toml")
+        (ROOT / "engine/src/shared/historical/config/fixtures/runtime.toml")
         .read_text()
         .replace("workers = 8", "workers = 1")
         .replace("memory_budget_bytes = 68719476736", "memory_budget_bytes = 536870912")
@@ -157,7 +157,7 @@ def isolated(
         .replace("workbook_xml_bytes = 268435456", "workbook_xml_bytes = 1048576")
         .replace("workbook_rows = 250000", "workbook_rows = 100")
     )
-    (paths.config_dir / "historical/general.toml").write_text(runtime)
+    (paths.config_dir / "engine/normalize.toml").write_text(runtime)
     (paths.root / "forge").mkdir()
     (paths.root / "forge/pyproject.toml").write_text("")
     (paths.root / "engine").mkdir()
@@ -390,7 +390,7 @@ def test_trade_depth_registration_prepare_edit_execute_retry(
     )
     assert response.returncode == 0, response.stdout
     direct_dataset = tmp_path / "direct-dataset"
-    original_connection = datasets.testing_connection
+    original_connection = datasets.database_connection
     from forge.shared.database.testing import TestingDatabaseError
 
     @asynccontextmanager
@@ -398,12 +398,12 @@ def test_trade_depth_registration_prepare_edit_execute_retry(
         raise TestingDatabaseError("simulated testing database outage")
         yield
 
-    monkeypatch.setattr(datasets, "testing_connection", unavailable)
+    monkeypatch.setattr(datasets, "database_connection", unavailable)
     pending = asyncio.run(datasets.register(paths, direct_dataset))
     assert pending["publication"] == "committed" and pending["registration"] == "pending"
     assert "submitted_sha256" not in json.dumps(pending["execution"])
     before = checksum(direct_dataset / "manifest.json")
-    monkeypatch.setattr(datasets, "testing_connection", original_connection)
+    monkeypatch.setattr(datasets, "database_connection", original_connection)
     retry = asyncio.run(datasets.register(paths, direct_dataset))
     assert retry["registration"] == "registered"
     assert checksum(direct_dataset / "manifest.json") == before
@@ -427,7 +427,7 @@ def test_trade_depth_registration_prepare_edit_execute_retry(
     with pytest.raises(MarketForgeError, match="Different interpretation"):
         asyncio.run(register_profile(paths, "binance.spot.spot.trades", submitted_profile))
     assert (
-        paths.config_dir / "historical/profiles/trades/binance.spot.spot.trades.toml"
+        paths.config_dir / "engine/normalize/profiles/trades/binance.spot.spot.trades.toml"
     ).read_text() == trade
 
 
@@ -513,8 +513,8 @@ def test_databento_recordings(
     paths, connection = isolated
     example = ROOT / "docs/content/examples/bring-your-own-data/databento"
     (paths.root / ".recordings").symlink_to(ROOT / ".recordings", target_is_directory=True)
-    monkeypatch.setattr(catalog, "testing_connection", connection)
-    monkeypatch.setattr(catalog, "testing_dsn", lambda _: "")
+    monkeypatch.setattr(catalog, "database_connection", connection)
+    monkeypatch.setattr(catalog, "database_dsn", lambda _: "")
 
     def cli(*arguments: str) -> dict[str, Any]:
         status = main(["--project-root", str(paths.root), "--json", *arguments])
@@ -527,8 +527,8 @@ def test_databento_recordings(
     for kind in ("trades", "depth"):
         profile = f"xnas.equity.equity.{kind}"
         definition = str(example / f"{profile}.toml")
-        cli("acquisition", "profiles", "validate", "--file", definition)
-        cli("acquisition", "profiles", "add", profile, "--from", definition, "--testing")
+        cli("normalize", "profiles", "validate", "--file", definition)
+        cli("normalize", "profiles", "add", profile, "--from", definition, "--testing")
 
     recipe = str(example / "registration.toml")
     cli("acquisition", "register", "plan", recipe, "--testing")

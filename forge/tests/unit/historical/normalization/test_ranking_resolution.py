@@ -100,7 +100,7 @@ async def test_missing_collects_once_builds_only_requested_policy(
 
     monkeypatch.setattr(workflow, "collect", collect)
     monkeypatch.setattr(workflow, "build", build)
-    monkeypatch.setattr(workflow, "testing_connection", connect)
+    monkeypatch.setattr(workflow, "database_connection", connect)
     monkeypatch.setattr(
         workflow,
         "show",

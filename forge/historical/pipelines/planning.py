@@ -3,9 +3,9 @@
 from pathlib import Path
 from typing import Any
 
-from forge.historical.engine.managed import resolve
+from forge.historical.engine.runtime import runtime_report
 from forge.historical.pipelines.config import PipelineRecipe
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn, database_purpose
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 from forge.storage.models import StorageFilters
@@ -15,17 +15,13 @@ from forge.storage.registry import counts, parameters
 async def plan(paths: ProjectPaths, recipe: PipelineRecipe, source: Path) -> dict[str, Any]:
     blockers: list[str] = []
     inventory: list[dict[str, Any]] = []
-    runtime = paths.config_dir / "historical/general.toml"
-    if not runtime.is_file():
-        blockers.append(f"Historical runtime is unavailable: {runtime}")
-    for engine in ("normalize", "merge"):
-        try:
-            resolve(paths, engine)
-        except MarketForgeError as error:
-            blockers.append(str(error))
+    try:
+        runtime_report(paths, "pipeline")
+    except (MarketForgeError, OSError) as error:
+        blockers.append(str(error))
     try:
         async with (
-            testing_connection(testing_dsn(paths.root)) as connection,
+            database_connection(database_dsn(paths.root)) as connection,
             connection.transaction(),
         ):
             await connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
@@ -56,7 +52,7 @@ async def plan(paths: ProjectPaths, recipe: PipelineRecipe, source: Path) -> dic
         "schema_version": 1,
         "kind": "historical_pipeline_plan",
         "state": "blocked" if blockers else "planned",
-        "environment": "testing",
+        "environment": database_purpose(),
         "source": str(source),
         "recipe": recipe.model_dump(mode="json"),
         "stages": {

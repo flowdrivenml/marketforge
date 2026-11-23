@@ -38,12 +38,12 @@ async def test_file_search_and_inspection(
     def unexpected(*_args: object, **_kwargs: object) -> Never:
         pytest.fail("Discovery and inspection must not hash artifacts")
 
-    monkeypatch.setattr(query, "testing_connection", connection)
+    monkeypatch.setattr(query, "database_connection", connection)
 
     def dsn(_: Path | None) -> str:
         return "fixture"
 
-    monkeypatch.setattr(query, "testing_dsn", dsn)
+    monkeypatch.setattr(query, "database_dsn", dsn)
     monkeypatch.setattr(query, "checksum", unexpected)
     paths = ProjectPaths(tmp_path, tmp_path / "data")
 

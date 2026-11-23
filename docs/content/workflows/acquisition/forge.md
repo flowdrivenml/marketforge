@@ -1,6 +1,6 @@
 # Register and normalize manually supplied data
 
-Raw registration copies and verifies bytes; it does not normalize them. Profiles describe interpretation, registration recipes declare source/provenance and reference existing catalogue metadata, normalization recipes select registered inputs, and prepared JSON is the exact Rust workload contract. Runtime policy remains in `general.toml`.
+Raw registration copies and verifies bytes; it does not normalize them. Profiles describe interpretation, registration recipes declare source/provenance and reference existing catalogue metadata, normalization recipes select registered inputs, and prepared JSON is the exact Rust workload contract. Normalization runtime policy lives in `data/.config/engine/normalize.toml`.
 
 ## Synthetic shared-instrument example
 

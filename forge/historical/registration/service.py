@@ -30,8 +30,15 @@ from forge.historical.metadata.resolution import specification
 from forge.historical.normalization.service import write_job
 from forge.historical.profiles import service as profiles
 from forge.historical.registration.models import Recipe, groups
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.orchestration.registry import begin, complete_call
+from forge.shared.database.connection import (
+    database_connection,
+    database_dsn,
+    database_purpose,
+    registry_id,
+)
 from forge.shared.errors import MarketForgeError
+from forge.shared.identity import RunOperation
 from forge.shared.paths import ProjectPaths
 
 
@@ -73,7 +80,7 @@ async def prerequisites(
             source = profiles.installed(paths, group.profile)
             if not source.is_file():
                 raise MarketForgeError(
-                    f"Profile {group.profile} is missing. Use mf acquisition profiles add."
+                    f"Profile {group.profile} is missing. Use mf normalize profiles add."
                 )
             validated[group.profile] = await disk(profiles.validate, paths, source)
         profile = validated[group.profile]
@@ -108,7 +115,7 @@ async def prerequisites(
 
 
 async def validate(recipe: Recipe, paths: ProjectPaths) -> dict[str, Any]:
-    async with testing_connection(testing_dsn(paths.root)) as c:
+    async with database_connection(database_dsn(paths.root)) as c:
         return (await preflight(c, recipe, paths))[0]
 
 
@@ -174,9 +181,18 @@ async def preflight(
 
 
 async def apply(paths: ProjectPaths, source: Path, *, planning: bool = False) -> dict[str, Any]:
+    if planning:
+        return await _apply(paths, source, planning=True)
+    execution = await begin(
+        paths, RunOperation.ACQUISITION, "register", recipe=source.stem, source=source
+    )
+    return await complete_call(execution, lambda: _apply(paths, source, planning=False))
+
+
+async def _apply(paths: ProjectPaths, source: Path, *, planning: bool) -> dict[str, Any]:
     submitted = await disk(source.read_bytes)
     recipe = Recipe.model_validate(tomllib.loads(submitted.decode()))
-    async with testing_connection(testing_dsn(paths.root)) as c:
+    async with database_connection(database_dsn(paths.root)) as c:
         result, configs, frozen_groups = await preflight(c, recipe, paths)
         run_id = f"register-{uuid4().hex}"
         operation = paths.runs_dir / run_id
@@ -185,7 +201,8 @@ async def apply(paths: ProjectPaths, source: Path, *, planning: bool = False) ->
         result.update(
             {
                 "run_id": run_id,
-                "environment": "testing",
+                "environment": database_purpose(),
+                "registry_id": await registry_id(c),
                 "recipe_sha256": hashlib.sha256(submitted).hexdigest(),
                 "status": "planned" if planning else "applying",
             }
@@ -295,8 +312,9 @@ async def apply(paths: ProjectPaths, source: Path, *, planning: bool = False) ->
         result["status"] = "registered"
         async with c.transaction():
             await c.execute(
-                "INSERT INTO historical.registrations(id,environment,recipe_sha256,evidence) VALUES(%s,'testing',%s,%s)",
-                (run_id, result["recipe_sha256"], Jsonb(result)),
+                "INSERT INTO historical.registrations(id,environment,recipe_sha256,evidence) VALUES(%s,%s,%s,%s)",
+                (run_id, result["environment"], result["recipe_sha256"], Jsonb(result)),
             )
+    result["report_path"] = str(operation / "result.json")
     write_job(operation / "result.json", result)
     return result

@@ -637,7 +637,7 @@ fn actual_gate_snapshot_profile_preserves_one_millisecond_regression_without_seq
             &job,
             &crate::historical::config::FormatCatalog::load(
                 super::super::super::config::selection_test_support::root()
-                    .join("data/.config/historical"),
+                    .join("data/.config/engine/normalize"),
             )
             .unwrap(),
             &config,

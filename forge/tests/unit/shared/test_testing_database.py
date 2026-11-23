@@ -15,29 +15,29 @@ from forge.shared.database.testing import (
 def test_testing_selection_ignores_production_secret(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("MARKETFORGE_DATABASE_URL_TEST", raising=False)
-    monkeypatch.setenv("MARKETFORGE_DATABASE_URL", "postgresql://production/marketforge")
+    monkeypatch.delenv("TEST_DATABASE_KEY", raising=False)
+    monkeypatch.setenv("PRODUCTION_DATABASE_KEY", "postgresql://production/marketforge")
     (tmp_path / "forge").mkdir()
     (tmp_path / "forge/pyproject.toml").touch()
     (tmp_path / "engine").mkdir()
     (tmp_path / ".secrets").mkdir()
     (tmp_path / ".secrets" / "postgres.env").write_text(
-        "MARKETFORGE_DATABASE_URL=postgresql://production/marketforge\n"
+        "PRODUCTION_DATABASE_KEY=postgresql://production/marketforge\n"
     )
-    with pytest.raises(DatabaseSelectionError, match="MARKETFORGE_DATABASE_URL_TEST"):
+    with pytest.raises(DatabaseSelectionError, match="TEST_DATABASE_KEY"):
         load_testing_dsn(tmp_path)
 
 
 def test_environment_file_is_literal_not_executable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("MARKETFORGE_DATABASE_URL_TEST", raising=False)
+    monkeypatch.delenv("TEST_DATABASE_KEY", raising=False)
     (tmp_path / "forge").mkdir()
     (tmp_path / "forge/pyproject.toml").touch()
     (tmp_path / "engine").mkdir()
     (tmp_path / ".secrets").mkdir()
     (tmp_path / ".secrets" / "postgres.env").write_text(
-        "export MARKETFORGE_DATABASE_URL_TEST='$(touch should-not-exist)'\n"
+        "export TEST_DATABASE_KEY='$(touch should-not-exist)'\n"
     )
     assert load_testing_dsn(tmp_path) == "$(touch should-not-exist)"
     assert not (tmp_path / "should-not-exist").exists()

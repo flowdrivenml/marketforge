@@ -145,8 +145,8 @@ async def test_selection_uses_registry_order_and_paths(
             },
         )()
 
-    monkeypatch.setattr(service, "testing_dsn", lambda root: "fixture")
-    monkeypatch.setattr(service, "testing_connection", connect)
+    monkeypatch.setattr(service, "database_dsn", lambda root: "fixture")
+    monkeypatch.setattr(service, "database_connection", connect)
     monkeypatch.setattr(service, "verify", lambda paths, source, **kwargs: evidence[str(source)])
     if expected:
         with pytest.raises(MarketForgeError, match=expected):
@@ -230,8 +230,8 @@ async def test_two_file_ids_share_one_verified_publication(
             },
         }
 
-    monkeypatch.setattr(service, "testing_connection", connect)
-    monkeypatch.setattr(service, "testing_dsn", lambda root: "fixture")
+    monkeypatch.setattr(service, "database_connection", connect)
+    monkeypatch.setattr(service, "database_dsn", lambda root: "fixture")
     monkeypatch.setattr(service, "verify", verify)
     selected = await service.select_inputs(paths, ids=[2, 1])
     assert verification_calls == [root]
@@ -246,7 +246,8 @@ def test_execution_uses_pinned_runtime_and_rejects_changed_preparation(
     paths = ProjectPaths(tmp_path, tmp_path / "data")
     runtime = service.runtime_path(paths)
     runtime.parent.mkdir(parents=True)
-    runtime.write_text("[resources]\nworkers = 2\n")
+    original_runtime = b"[resources]\nworkers = 2\n"
+    runtime.write_bytes(original_runtime)
     binary = tmp_path / "marketforge-merge"
     binary.touch()
     selected = {
@@ -285,12 +286,16 @@ def test_execution_uses_pinned_runtime_and_rejects_changed_preparation(
         else:
             assert "--config-origin" not in argv
         config = Path(argv[argv.index("--config") + 1])
-        assert config == validated[-1] == directory / "general.toml"
-        assert config.read_bytes() == runtime.read_bytes()
+        assert config == validated[-1] == directory / runtime.name
+        assert config.read_bytes() == original_runtime
         return 1, False
 
     monkeypatch.setattr(service, "resolve", lambda *_: binary)
     monkeypatch.setattr(service, "select_inputs", select)
+    monkeypatch.setattr(service, "selected_registry_id", AsyncMock(return_value="registry-fixture"))
+    monkeypatch.setattr(service.WorkIndex, "peek", AsyncMock(return_value={}))
+    monkeypatch.setattr(service.WorkIndex, "acquire", AsyncMock(return_value={}))
+    monkeypatch.setattr(service.WorkIndex, "release", AsyncMock())
     monkeypatch.setattr(service, "validate_job", validate)
     monkeypatch.setattr(service, "effective_runtime", lambda *_: {"resources": {"workers": 2}})
     monkeypatch.setattr(service, "run_process", process)
@@ -305,6 +310,9 @@ def test_execution_uses_pinned_runtime_and_rejects_changed_preparation(
     assert receipt["effective_runtime"]["resources"]["workers"] == 2
     assert receipt["configuration_sha256"] == service.checksum(runtime)
     assert receipt["registration"] == "not_started"
+    runtime.write_text("[resources]\nworkers = 4\n")
+    resumed = service.execute(paths, source, tui=tui)
+    assert resumed["configuration_sha256"] == receipt["configuration_sha256"]
     registration.assert_not_called()
 
     job = service.read_json(source)
@@ -314,6 +322,6 @@ def test_execution_uses_pinned_runtime_and_rejects_changed_preparation(
         service.execute(paths, source)
     job["inputs"][0]["stream_rank"] = 7
     source.write_text(json.dumps(job))
-    runtime.write_text("[resources]\nworkers = 1\n")
+    source.with_name(runtime.name).write_text("[resources]\nworkers = 1\n")
     with pytest.raises(MarketForgeError, match="Prepared merge job.*changed"):
         service.execute(paths, source)

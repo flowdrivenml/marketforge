@@ -13,6 +13,7 @@ from typing import Literal, Self
 from pydantic import AwareDatetime, Field, field_validator, model_validator
 
 from forge.historical.archives.config import AcquisitionInterval
+from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
 from forge.shared.errors import MarketForgeError
 
@@ -176,13 +177,14 @@ class ImportConfig(SettingsModel, frozen=True):
 
 
 def load_import(path: Path) -> ImportConfig:
-    with path.open("rb") as source:
-        config = ImportConfig.model_validate(tomllib.load(source))
-    if config.binding is not None:
-        raise ImportError(
-            "Legacy import is raw-only. Use acquisition register for a verified binding."
-        )
-    return config
+    with configuration_errors(path):
+        with path.open("rb") as source:
+            config = ImportConfig.model_validate(tomllib.load(source))
+        if config.binding is not None:
+            raise ImportError(
+                "Legacy import is raw-only. Use acquisition register for a verified binding."
+            )
+        return config
 
 
 @dataclass(frozen=True)

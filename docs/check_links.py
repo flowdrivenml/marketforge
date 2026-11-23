@@ -1,4 +1,6 @@
 """Check local links and fragments in the built Zensical site."""
+
+import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -21,7 +23,11 @@ class Page(HTMLParser):
 
 
 def main():
-    site = Path(__file__).resolve().parent / "site"
+    root = Path(__file__).resolve().parent
+    with (root / "zensical.toml").open("rb") as config:
+        project = tomllib.load(config)["project"]
+    site = root / project["site_dir"]
+    prefix = urlsplit(project["site_url"]).path.rstrip("/")
     pages = {path: Page(path) for path in site.rglob("*.html")}
     if not pages:
         raise SystemExit("Build the documentation site first.")
@@ -32,8 +38,14 @@ def main():
             if url.scheme or url.netloc:
                 continue
             path = unquote(url.path)
+            if prefix and (path == prefix or path.startswith(prefix + "/")):
+                path = "/" + path.removeprefix(prefix).lstrip("/")
             target = (
-                (site / path.lstrip("/") if path.startswith("/") else source.parent / path)
+                (
+                    site / path.lstrip("/")
+                    if path.startswith("/")
+                    else source.parent / path
+                )
                 if path
                 else source
             ).resolve()

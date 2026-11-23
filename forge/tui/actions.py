@@ -43,7 +43,7 @@ class Action:
     effect: Literal["read", "write", "network", "engine", "editor", "guarded"] = "read"
     testing: bool = False
 
-    def command(self, values: Values) -> str:
+    def command(self, values: Values, *, testing: bool = False) -> str:
         cmd = ["mf", *self.key.split()]
         for field in self.fields:
             value = values.get(field.key, field.default)
@@ -70,8 +70,8 @@ class Action:
                 cmd.append(field.option)
             if field.key != "route":
                 cmd.append(str(value))
-        if self.testing:
-            cmd.append("--testing")
+        if self.testing or self.key in {"database backup", "database restore"}:
+            cmd.append("--testing" if testing else "--production")
         if self.key == "acquisition plan":
             cmd.append("--cache-only")
         if self.key == "datasets migrate-registration":
@@ -220,7 +220,7 @@ ACTIONS = (
         for x in ("new", "edit", "inspect", "validate", "plan", "run")
     ),
     ACT(
-        "acquisition profiles list",
+        "normalize profiles list",
         "Recipes & Profiles",
         tuple(
             opt(k, k.replace("_", " ").title())
@@ -228,7 +228,7 @@ ACTIONS = (
         ),
     ),
     ACT(
-        "acquisition profiles sample",
+        "normalize profiles sample",
         "Recipes & Profiles",
         (
             Field("file", "Raw file", required=True, option="--file"),
@@ -237,18 +237,18 @@ ACTIONS = (
         ),
     ),
     ACT(
-        "acquisition profiles inspect",
+        "normalize profiles inspect",
         "Recipes & Profiles",
         (Field("reference", "Profile ID", required=True),),
     ),
     ACT(
-        "acquisition profiles validate",
+        "normalize profiles validate",
         "Recipes & Profiles",
         (Field("reference", "Installed profile ID"), opt("file", "Profile TOML")),
     ),
     *(
         ACT(
-            f"acquisition profiles {x}",
+            f"normalize profiles {x}",
             "Recipes & Profiles",
             (Field("reference", "Profile ID", required=True), SRC),
             "write",
@@ -315,6 +315,12 @@ ACTIONS = (
         ),
         "write",
     ),
+    ACT("convert list", "Workflows"),
+    ACT("convert show", "Workflows", (REF,)),
+    ACT("convert config show", "Workflows"),
+    ACT("convert config get", "Workflows", (Field("field", "Runtime field", required=True),)),
+    ACT("convert config schema", "Workflows", (opt("field", "Runtime field"),)),
+    ACT("convert config validate", "Workflows"),
     ACT("convert validate", "Workflows", (REF,)),
     ACT("convert prepare", "Workflows", (REF, DRY), "write", True),
     ACT("convert run", "Workflows", (REF,), "engine", True),
@@ -463,6 +469,18 @@ ACTIONS = (
         for x in ("list", "show", "logs", "report")
     ),
     ACT("engine status", "System"),
+    ACT(
+        "engine runtime",
+        "System",
+        (
+            Field(
+                "reference",
+                "Runtime operation",
+                "choice",
+                ("normalize", "merge", "convert", "pipeline"),
+            ),
+        ),
+    ),
     ACT(
         "engine build",
         "System",

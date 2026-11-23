@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shutil
 import tempfile
 import tomllib
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -16,7 +18,7 @@ from forge.historical.engine.managed import checksum, resolve, supervised
 from forge.historical.normalization.service import write_job
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import acquire_file_lock
-from forge.shared.paths import ProjectPaths
+from forge.shared.paths import ProjectPaths, require_migrated
 
 PATTERN = re.compile(
     r"[a-z][a-z0-9_]*\.(spot|perpetual|future|option|equity)\.(spot|linear|inverse|option|equity)\.(trades|depth)"
@@ -24,7 +26,7 @@ PATTERN = re.compile(
 
 
 def catalogue(paths: ProjectPaths) -> Path:
-    return paths.config_dir / "historical" / "profiles"
+    return paths.engine_config_dir / "normalize/profiles"
 
 
 def identity(value: str) -> str:
@@ -35,24 +37,45 @@ def identity(value: str) -> str:
     return value
 
 
+def require_safe_path(paths: ProjectPaths, path: Path) -> Path:
+    """Reject symlinks between the trusted workspace root and a profile."""
+    try:
+        relative = path.relative_to(paths.root)
+    except ValueError:
+        raise MarketForgeError(f"Profile path must be inside the workspace: {path}") from None
+    current = paths.root
+    for part in relative.parts:
+        current /= part
+        if part == ".." or current.is_symlink():
+            raise MarketForgeError(f"Unsafe profile path: {current}")
+    return path
+
+
 def installed(paths: ProjectPaths, profile_id: str) -> Path:
     identity(profile_id)
-    return catalogue(paths) / profile_id.rsplit(".", 1)[1] / f"{profile_id}.toml"
+    relative = Path(profile_id.rsplit(".", 1)[1]) / f"{profile_id}.toml"
+    return require_migrated(
+        require_safe_path(paths, catalogue(paths) / relative),
+        paths.config_dir / "historical/profiles" / relative,
+    )
 
 
 def inspect(path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
         raise MarketForgeError(f"Profile must be a regular bounded TOML file: {path}")
-    value = tomllib.loads(path.read_text())
+    try:
+        value = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeError) as error:
+        raise MarketForgeError(f"Invalid profile TOML: {path}") from error
     profile_id = identity(str(value.get("id", "")))
     if path.name != f"{profile_id}.toml":
-        raise MarketForgeError("Profile filename must exactly match its declared ID.")
+        raise MarketForgeError(f"{path}: profile filename must exactly match its declared ID.")
     tokens = profile_id.split(".")
     for field, token in zip(
         ("exchange", "instrument_type", "market_category"), tokens, strict=False
     ):
         if value.get(field) != token:
-            raise MarketForgeError(f"Profile {field} contradicts namespaced ID.")
+            raise MarketForgeError(f"{path}: profile {field} contradicts namespaced ID.")
     return {
         "id": profile_id,
         "location": str(path),
@@ -63,22 +86,95 @@ def inspect(path: Path) -> dict[str, Any]:
 
 
 def discover(paths: ProjectPaths, **filters: str | None) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
+    root = require_safe_path(paths, catalogue(paths))
+    legacy = paths.config_dir / "historical/profiles"
     for kind in ("trades", "depth"):
-        for path in sorted((catalogue(paths) / kind).glob("*.toml")):
+        for path in sorted((legacy / kind).glob("*.toml")):
+            if PATTERN.fullmatch(path.stem):
+                require_migrated(root / kind / path.name, path)
+    return discover_at(root, **filters)
+
+
+def discover_at(root: Path, **filters: str | None) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    if root.is_symlink():
+        raise MarketForgeError(f"Profile catalogue symlinks are unsupported: {root}")
+    for kind in ("trades", "depth"):
+        directory = root / kind
+        if directory.is_symlink():
+            raise MarketForgeError(f"Profile catalogue symlinks are unsupported: {directory}")
+        for path in sorted(directory.glob("*.toml")):
+            if not PATTERN.fullmatch(path.stem):
+                continue
             entry = inspect(path)
             tokens = entry["id"].split(".")
+            if tokens[-1] != kind:
+                raise MarketForgeError(f"Profile kind contradicts its directory: {path}")
             fields: dict[str, str] = dict(
                 zip(("exchange", "instrument_type", "market_category", "type"), tokens, strict=True)
             )
             if all(value is None or fields[key] == value for key, value in filters.items()):
                 result.append(entry)
-    return result
+    return sorted(result, key=lambda entry: tuple(entry["id"].split(".")))
 
 
-def validate_catalogue(paths: ProjectPaths, historical_root: Path) -> dict[str, Any]:
+def create_draft(paths: ProjectPaths, profile_id: str) -> Path:
+    source = installed(paths, profile_id)
+    entry = inspect(source)
+    if (
+        entry["definition"].get("schema_version") != 2
+        or entry["definition"].get("kind") != "profile"
+    ):
+        raise MarketForgeError("Draft creation requires an installed schema-2 profile.")
+    data = source.read_bytes()
+    if hashlib.sha256(data).hexdigest() != entry["sha256"]:
+        raise MarketForgeError("Installed profile changed during draft creation. Retry.")
+    return write_draft(paths, profile_id, data)
+
+
+def new_draft(paths: ProjectPaths, profile_id: str) -> Path:
+    exchange, instrument, market, kind = identity(profile_id).split(".")
+    if installed(paths, profile_id).exists():
+        raise MarketForgeError("Profile is already installed. Use mf normalize profiles edit.")
+    template = files("forge.historical.profiles").joinpath(f"template-{kind}.toml")
+    body = template.read_text(encoding="utf-8")
+    header = (
+        "# Starting example: verify every source field, encoding and mapping against your records.\n"
+        "# REQUIRED: uncomment format_code and assign your catalogue format code.\n"
+        '# format_code = "REPLACE WITH CATALOGUE FORMAT CODE"\n'
+        "schema_version = 2\n"
+        'kind = "profile"\n'
+        f'id = "{profile_id}"\n'
+        f'exchange = "{exchange}"\n'
+        f'instrument_type = "{instrument}"\n'
+        f'market_category = "{market}"\n\n'
+    )
+    return write_draft(paths, profile_id, (header + body).encode())
+
+
+def write_draft(paths: ProjectPaths, profile_id: str, data: bytes) -> Path:
+    draft = require_safe_path(
+        paths, paths.engine_config_dir / "normalize/profile-drafts" / f"{profile_id}.toml"
+    )
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=draft.parent) as frozen:
+        frozen.write(data)
+        frozen.flush()
+        try:
+            os.link(frozen.name, draft)
+        except FileExistsError:
+            raise MarketForgeError(
+                f"Draft already exists: {draft}. Open it directly with nvim to continue editing."
+            ) from None
+    return draft
+
+
+def validate_catalogue(
+    paths: ProjectPaths, historical_root: Path, executable: Path | None = None
+) -> dict[str, Any]:
     response = supervised(
-        [str(resolve(paths)), "--validate-profiles", str(historical_root)], cwd=paths.root
+        [str(executable or resolve(paths)), "--validate-profiles", str(historical_root)],
+        cwd=paths.root,
     )
     if response.returncode:
         raise MarketForgeError(response.stdout)
@@ -116,10 +212,10 @@ async def register(paths: ProjectPaths, profile_id: str, source: Path) -> dict[s
     """Check the testing venue before installing a standalone profile."""
     from forge.catalog.service import exchange
     from forge.historical.archives.storage.files import disk
-    from forge.shared.database.testing import testing_connection, testing_dsn
+    from forge.shared.database.connection import database_connection, database_dsn
 
     code = identity(profile_id).split(".", 1)[0]
-    async with testing_connection(testing_dsn(paths.root)) as connection:
+    async with database_connection(database_dsn(paths.root)) as connection:
         await exchange(connection, code)
     return await disk(_install, paths, profile_id, source)
 

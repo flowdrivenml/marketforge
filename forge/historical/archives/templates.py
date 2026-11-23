@@ -6,19 +6,20 @@ from pathlib import Path
 from typing import Final
 
 ACQUISITION_TEMPLATE: Final[str] = """\
-# Edit the interval and requests before mapping or downloading.
+# Working example of one day of Bybit BTCUSDT perpetual trades.
+# Replace the dates and request with the data you want.
 version = 1
 
 # Half-open UTC interval: start is included, end is excluded.
 [interval]
 start = 2026-09-01T00:00:00Z
-end = 2026-09-03T00:00:00Z
+end = 2026-09-02T00:00:00Z
 
 # Repeat [[requests]] to select additional archive collections.
 [[requests]]
 exchange = "bybit"
-instrument_type = "spot"
-market_category = "spot"
+instrument_type = "perpetual"
+market_category = "linear"
 data_type = "trades"
 
 [requests.scope]

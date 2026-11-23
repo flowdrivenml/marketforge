@@ -6,83 +6,15 @@ separate workflow.
 
 ## Recipe
 
-Save named recipes under `data/.config/pipeline/`. The version 1 recipe uses
+Save named recipes under `data/.config/workflows/data_engineering/pipeline/`. The version 1 recipe uses
 the acquisition request schema and one half-open UTC interval `[start, end)`.
 Use the existing scopes and feed options for each exchange. Forge resolves
 archive, instrument, job, dataset, and registry identities.
 
-The example is checked in at `data/.config/pipeline/bybit_spot.toml`. To
-inspect or edit it, run `nvim data/.config/pipeline/bybit_spot.toml`.
+The example is checked in at `data/.config/workflows/data_engineering/pipeline/bybit_spot.toml`. To
+inspect or edit it, run `nvim data/.config/workflows/data_engineering/pipeline/bybit_spot.toml`.
 
-```toml
-version = 1
-
-[interval]
-start = 2026-10-27T00:00:00Z
-end = 2026-10-30T00:00:00Z
-
-[normalize]
-ranking_policy = "turnover"
-
-[merge]
-timeline_ordering = "causal"
-
-[[requests]]
-exchange = "bybit"
-instrument_type = "spot"
-market_category = "spot"
-data_type = "trades"
-scope = { kind = "instrument", identifier = "BTCUSDT" }
-
-[[requests]]
-exchange = "bybit"
-instrument_type = "spot"
-market_category = "spot"
-data_type = "order_book_l2"
-scope = { kind = "instrument", identifier = "BTCUSDT" }
-
-[[requests]]
-exchange = "bybit"
-instrument_type = "spot"
-market_category = "spot"
-data_type = "trades"
-scope = { kind = "instrument", identifier = "BTCUSDC" }
-
-[[requests]]
-exchange = "bybit"
-instrument_type = "spot"
-market_category = "spot"
-data_type = "order_book_l2"
-scope = { kind = "instrument", identifier = "BTCUSDC" }
-
-[[requests]]
-exchange = "bybit"
-instrument_type = "spot"
-market_category = "spot"
-data_type = "trades"
-scope = { kind = "instrument", identifier = "ETHUSDT" }
-
-[[requests]]
-exchange = "bybit"
-instrument_type = "spot"
-market_category = "spot"
-data_type = "order_book_l2"
-scope = { kind = "instrument", identifier = "ETHUSDT" }
-
-[[requests]]
-exchange = "bybit"
-instrument_type = "spot"
-market_category = "spot"
-data_type = "trades"
-scope = { kind = "instrument", identifier = "ETHBTC" }
-
-[[requests]]
-exchange = "bybit"
-instrument_type = "spot"
-market_category = "spot"
-data_type = "order_book_l2"
-scope = { kind = "instrument", identifier = "ETHBTC" }
-```
+Use the [maintained sample recipe](https://github.com/flowdrivenml/marketforge/blob/main/data/.config/workflows/data_engineering/pipeline/bybit_spot.toml) as the complete example. See the [recipe reference](../configuration/pipeline.md) for field definitions.
 
 `[normalize]` and `[merge]` are optional. Normalization defaults to turnover
 ranking. Merge accepts `causal` and `chronological`. When omitted, the existing
@@ -93,16 +25,16 @@ trade, depth, or mixed processing from registered files.
 
 Use a configured `marketforge_test` database with the testing identity and
 current migrations. Install the managed normalize and merge engines and use the
-ordinary historical runtime and profiles. The catalogue must supply instrument
+operation runtime files, pipeline runtime and normalization profiles. The catalogue must supply instrument
 identity and applicable historical specifications for the requested archives.
 Forge reads its ordinary application and HTTP configuration.
 
 ```bash
 set -o pipefail
-mf engine build normalize 2>&1 | cpout
-mf engine build merge 2>&1 | cpout
-mf pipeline validate bybit_spot 2>&1 | cpout
-mf pipeline plan bybit_spot --testing 2>&1 | cpout
+mf engine build normalize
+mf engine build merge
+mf pipeline validate bybit_spot
+mf pipeline plan bybit_spot --testing
 ```
 
 Validation checks recipe structure and options. Planning reads existing
@@ -117,8 +49,7 @@ mf pipeline run bybit_spot --testing --tui
 Forge runs processing stages sequentially to preserve their configured engine
 budgets. Acquisition uses the usual HTTP concurrency and source rate limits.
 Preparation and validation are distinct phases. A processing stage completes
-only after engine execution, committed publication verification, and
-registration succeed. Archive discovery, nominal archive intervals, verified
+only once the required outputs are verified and registered. This can come from a new execution or [verified reuse](../reference/cli/merge.md#completed-work-reuse). Archive discovery, nominal archive intervals, verified
 local files, and observed event extents describe different evidence.
 
 Acquisition passes its exact verified local archive IDs, paths, checksums, and
@@ -139,8 +70,8 @@ prints the retained run ID and the resume command.
 
 ```bash
 set -o pipefail
-mf pipeline status RUN_ID 2>&1 | cpout
-mf --json pipeline status RUN_ID 2>&1 | cpout
+mf pipeline status RUN_ID
+mf --json pipeline status RUN_ID
 ```
 
 ```bash

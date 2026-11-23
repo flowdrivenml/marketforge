@@ -11,9 +11,10 @@ from typing import Any
 from rich.console import Console
 from rich.text import Text
 
+from forge.cli.environment import add_database_options
 from forge.historical.authoring import create_pipeline
 from forge.historical.pipelines import service
-from forge.historical.pipelines.config import load_recipe
+from forge.historical.pipelines.config import load_recipe_file
 from forge.historical.pipelines.dashboard import present
 from forge.historical.pipelines.planning import plan
 from forge.shared.config.library import resolve_config_file
@@ -27,14 +28,26 @@ def configure(parser: argparse.ArgumentParser) -> None:
     for action in ("new", "validate", "plan", "run", "resume", "status"):
         child = commands.add_parser(action, allow_abbrev=False)
         child.add_argument(
-            "reference", metavar="RUN_ID" if action in {"resume", "status"} else "NAME"
+            "reference",
+            metavar="RUN_ID" if action in {"resume", "status"} else "NAME",
+            help=(
+                "Retained pipeline run ID."
+                if action in {"resume", "status"}
+                else "Managed pipeline recipe name."
+            ),
         )
         if action in {"plan", "run", "resume"}:
-            child.add_argument("--testing", required=True, action="store_true")
+            add_database_options(child)
         if action in {"run", "resume"}:
-            child.add_argument("--tui", action="store_true")
+            child.add_argument(
+                "--tui", action="store_true", help="Show interactive pipeline progress."
+            )
         if action == "run":
-            child.add_argument("--stop-after", choices=["normalize.prepare"])
+            child.add_argument(
+                "--stop-after",
+                choices=["normalize.prepare"],
+                help="Retain prepared normalization jobs and stop before executing them.",
+            )
         child.set_defaults(service_handler=command)
 
 
@@ -111,7 +124,10 @@ def display(context: ApplicationContext, result: dict[str, Any], *, as_json: boo
     if "report_path" in result:
         console.print(Text(f"Report {result['report_path']}"))
     if result["state"] in {"stopped", "interrupted", "blocked", "failed"} and "run_id" in result:
-        console.print(Text(f"Resume with mf pipeline resume {result['run_id']} --testing --tui"))
+        environment = "--testing" if context.testing else "--production"
+        console.print(
+            Text(f"Resume with mf pipeline resume {result['run_id']} {environment} --tui")
+        )
 
 
 async def run_pipeline(
@@ -164,7 +180,7 @@ def command(args: argparse.Namespace, context: ApplicationContext) -> int:
     else:
         source = resolve_config_file(context.paths.pipeline_config_dir, args.reference)
         submitted = source.read_bytes()
-        recipe = load_recipe(submitted)
+        recipe = load_recipe_file(source, submitted)
         if action == "validate":
             result = {
                 "schema_version": 1,
@@ -177,9 +193,11 @@ def command(args: argparse.Namespace, context: ApplicationContext) -> int:
             result = asyncio.run(plan(context.paths, recipe, source))
         else:
             with WorkspaceOwnership(context.paths):
-                run = service.new(context, source.stem, submitted)
+                run = service.new(context, source.stem, submitted, source=source)
                 result = asyncio.run(
                     run_pipeline(run, context, tui=tui, stop=bool(args.stop_after))
                 )
+    if not args.as_json and (warning := result.get("execution_registry_warning")):
+        context.error_console.print(Text(str(warning), style="mf.warning"))
     display(context, result, as_json=args.as_json)
     return {"failed": 1, "blocked": 2, "interrupted": 130}.get(str(result["state"]), 0)

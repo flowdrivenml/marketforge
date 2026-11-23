@@ -4,12 +4,13 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import tempfile
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, LiteralString, cast
+from typing import Any, Literal, LiteralString, cast
 from uuid import uuid4
 
 from psycopg import AsyncConnection
@@ -45,7 +46,12 @@ from forge.historical.normalization.service import default_output_paths, output_
 from forge.markets.models import obj
 from forge.markets.ranking.service import find_latest_snapshot
 from forge.shared.config.models import HttpSettings
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import (
+    database_connection,
+    database_dsn,
+    database_purpose,
+    registry_id,
+)
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 from forge.storage.coverage import CoverageGroup
@@ -195,6 +201,8 @@ async def plan_batch(
     *,
     pinned: ArchiveSelection | None = None,
     allocation_seed: str = "",
+    profile_root: Path | None = None,
+    executable: Path | None = None,
 ) -> BatchPlan:
     policy = recipe.ranking_policy if isinstance(recipe, NormalizationRecipe) else "turnover"
     snapshot, positions = (
@@ -291,7 +299,12 @@ async def plan_batch(
             )
             try:
                 order = source_order(row, row.get("relative_path"))
-                resolved = await resolve_archive(c, paths, row, content)
+                if profile_root is None and executable is None:
+                    resolved = await resolve_archive(c, paths, row, content)
+                else:
+                    resolved = await resolve_archive(
+                        c, paths, row, content, profile_root=profile_root, executable=executable
+                    )
                 task = resolved.task
                 stream = str(task["stream_id"])
                 bounds = order[:2]
@@ -651,6 +664,7 @@ async def prepare_batch(
     recipe: AcquisitionConfig | NormalizationRecipe | PreparationRequest,
     *,
     dry_run: bool = False,
+    recipe_source: Path | None = None,
     http: HttpSettings | None = None,
     pinned: ArchiveSelection | None = None,
     allocation_seed: str = "",
@@ -660,8 +674,8 @@ async def prepare_batch(
     on_candidate: PreparationObserver = ignore_preparation,
     supervised_validation: bool = False,
 ) -> dict[str, object]:
-    dsn = testing_dsn(paths.root)
-    async with testing_connection(dsn) as c:
+    dsn = database_dsn(paths.root)
+    async with database_connection(dsn) as c:
         async with c.transaction():
             await c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             if isinstance(recipe, PreparationRequest):
@@ -670,11 +684,67 @@ async def prepare_batch(
                 plan = await plan_batch(c, paths, recipe)
             else:
                 plan = await plan_batch(
-                    c, paths, recipe, pinned=pinned, allocation_seed=allocation_seed
+                    c,
+                    paths,
+                    recipe,
+                    pinned=pinned,
+                    allocation_seed=allocation_seed,
+                    profile_root=historical,
+                    executable=executable,
                 )
         report = cast(dict[str, object], json.loads(json.dumps(plan.report, default=str)))
         report["dry_run"] = dry_run
+        if report.get("status") == "prepared" and pinned is None:
+            from forge.historical.engine.managed import resolve
+            from forge.historical.normalization.execution import add_reused, preview_reuse
+
+            try:
+                engine = executable or resolve(paths)
+            except MarketForgeError:
+                engine = None
+            if engine is not None:
+                try:
+                    registry = await registry_id(c)
+                    states, ready = await preview_reuse(
+                        paths,
+                        cast(dict[str, Any], plan.batch),
+                        registry,
+                        binary=engine,
+                        historical=historical,
+                    )
+                except (MarketForgeError, OSError, ValueError) as error:
+                    report["reuse_plan_error"] = str(error)
+                else:
+                    report["reuse_plan"] = states
+                    if ready and len(ready) == len(plan.jobs) and not dry_run:
+                        result: dict[str, Any] = {
+                            "status": "complete",
+                            "operation": "normalize",
+                            "environment": database_purpose(),
+                            "registry_id": registry,
+                            "execution_id": plan.run.name,
+                            "requested_jobs": plan.batch["jobs"],
+                            "requested_interval": plan.batch["requested_interval"],
+                            "recipe_source": str(await joined_io(recipe_source.resolve))
+                            if recipe_source
+                            else None,
+                            "requests": report["requests"],
+                            "ranking_policy": report["ranking_policy"],
+                            "engine_execution_skipped": True,
+                            "normalization": "not_started",
+                            "verification": "verified",
+                            "registration": "registered",
+                            "jobs": [],
+                            "counts": {"requested": 0, "successful": 0, "failed": 0},
+                            "reused_outputs": ready,
+                            "reuse_plan": states,
+                        }
+                        add_reused(result, ready)
+                        result["report_path"] = str(plan.run / "reuse-result.json")
+                        write_job(Path(result["report_path"]), result)
+                        return result
         if not dry_run:
+            report.update(environment=database_purpose(), registry_id=await registry_id(c))
             if historical is None and executable is None and not supervised_validation:
                 publish_batch(paths, plan, report)
             else:
@@ -682,7 +752,7 @@ async def prepare_batch(
                     paths,
                     plan,
                     report,
-                    historical or paths.config_dir / "historical",
+                    historical,
                     executable,
                     lifecycle=lifecycle,
                     on_candidate=on_candidate,
@@ -710,22 +780,33 @@ def stage_batch(
             )
     source = directory / "normalize-batch.json"
     write_job(source, plan.batch)
-    report["profile_evidence"] = [
-        {"id": item["id"], "sha256": item["sha256"]}
-        for item in profile_inventory(paths, historical)
-    ]
-    config = (historical or paths.config_dir / "historical") / "general.toml"
+    profile_root = directory / "historical"
+    profile_root.mkdir()
+    (profile_root / "profiles").mkdir()
+    profiles = profile_inventory(paths, historical)
+    for item in profiles:
+        original = Path(item["location"])
+        target = profile_root / "profiles" / item["id"].rsplit(".", 1)[1] / original.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(original, target)
+        require(checksum(target) == item["sha256"], f"Profile changed while pinning: {original}")
+    report["profile_evidence"] = [{"id": item["id"], "sha256": item["sha256"]} for item in profiles]
+    origin = paths.runtime_config("normalize", historical)
+    config = directory / origin.name
+    shutil.copyfile(origin, config)
+    report["configuration_origin"] = str(origin)
+    report["configuration_filename"] = config.name
     report["configuration_sha256"] = checksum(config)
     report["submitted_sha256"] = checksum(source)
     if plan.batch["status"] != "prepared":
         return None
     binary = executable or resolve(paths)
     report["executable_sha256"] = checksum(binary)
-    return batch_validation_command(paths, binary, source, config)
+    return batch_validation_command(paths, binary, source, config, profile_root)
 
 
 def batch_validation_command(
-    paths: ProjectPaths, binary: Path, source: Path, config: Path
+    paths: ProjectPaths, binary: Path, source: Path, config: Path, profile_root: Path
 ) -> list[str]:
     return [
         str(binary),
@@ -736,7 +817,7 @@ def batch_validation_command(
         "--config",
         str(config),
         "--profiles-root",
-        str(config.parent),
+        str(profile_root),
     ]
 
 
@@ -773,12 +854,27 @@ async def validate_candidate(
     paths: ProjectPaths,
     source: Path,
     report: dict[str, object],
-    historical: Path,
+    historical: Path | None,
     executable: Path,
     *,
     lifecycle: Lifecycle,
 ) -> dict[str, object]:
-    config = historical / "general.toml"
+    from forge.historical.normalization.execution import profile_inventory
+
+    profiles = source.parent / "historical"
+    if "configuration_origin" in report:
+        config = source.parent / str(report.get("configuration_filename", "general.toml"))
+    else:
+        config = paths.runtime_config("normalize", historical)
+        profiles = historical or paths.engine_config_dir / "normalize"
+    require(
+        report["profile_evidence"]
+        == [
+            {"id": item["id"], "sha256": item["sha256"]}
+            for item in profile_inventory(paths, profiles)
+        ],
+        "Retained normalization profiles changed before validation.",
+    )
     require(
         checksum(executable) == report["executable_sha256"]
         and checksum(config) == report["configuration_sha256"]
@@ -789,7 +885,7 @@ async def validate_candidate(
     directory.mkdir()
     lifecycle("validate")
     response = await check(
-        batch_validation_command(paths, executable, source, config),
+        batch_validation_command(paths, executable, source, config, profiles),
         paths.root,
         directory,
         "validation",
@@ -812,7 +908,7 @@ async def publish_batch_async(
     paths: ProjectPaths,
     plan: BatchPlan,
     report: dict[str, object],
-    historical: Path,
+    historical: Path | None,
     executable: Path | None,
     *,
     lifecycle: Lifecycle,

@@ -108,6 +108,6 @@ def test_custom_storage_keeps_configuration_at_workspace(
 
     assert paths.data_root == root / "custom-data"
     assert paths.config_dir == root / "data" / ".config"
-    assert paths.settings_file == paths.config_dir / "marketforge.toml"
-    assert paths.pipeline_config_dir == paths.config_dir / "pipeline"
+    assert paths.settings_file == paths.config_dir / "forge/marketforge.toml"
+    assert paths.pipeline_config_dir == paths.pipeline_config_dir
     assert not paths.data_root.exists()

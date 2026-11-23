@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from forge.cli.commands.markets import emit
+from forge.cli.environment import add_database_options
 from forge.cli.market_filters import configure_identity_filters
 from forge.markets.models import MarketDataError, array, obj
 from forge.markets.ranking.coordination import ranking_lock
@@ -16,7 +17,7 @@ from forge.markets.ranking.policy import TEMPLATE, load_policy, policy_document
 from forge.markets.ranking.service import build, latest_snapshot, list_snapshots, show
 from forge.markets.ranking.workflow import refresh_and_publish
 from forge.shared.config.library import resolve_config_file
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.terminal.markets import (
     MarketCollectionDisplay,
@@ -86,7 +87,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
         if action == "update":
             child.add_argument("ranking_name", nargs="?", choices=("turnover", "volume"))
         if action in {"build", "list", "show", "update", "delete"}:
-            child.add_argument("--testing", required=True, action="store_true")
+            add_database_options(child)
         child.add_argument(
             "--silent",
             action="store_true",
@@ -132,7 +133,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     if o.rank_action == "delete":
 
         async def remove() -> dict[str, object]:
-            async with testing_connection(testing_dsn(context.paths.root)) as c:
+            async with database_connection(database_dsn(context.paths.root)) as c:
                 return await delete_snapshots(
                     c, context.paths, o.ranking_id, all_snapshots=o.delete_all, apply=o.apply
                 )
@@ -149,10 +150,10 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
         with WorkspaceOwnership(context.paths), display:
 
             async def update() -> dict[str, object]:
-                async with testing_connection(testing_dsn(context.paths.root)) as c:
+                async with database_connection(database_dsn(context.paths.root)) as c:
                     async with ranking_lock(c):
                         return await refresh_and_publish(
-                            testing_dsn(context.paths.root),
+                            database_dsn(context.paths.root),
                             context.settings.http,
                             directory,
                             (o.ranking_name,) if o.ranking_name else ("turnover", "volume"),
@@ -181,7 +182,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             return 0
 
         async def generate() -> dict[str, object]:
-            async with testing_connection(testing_dsn(context.paths.root)) as c:
+            async with database_connection(database_dsn(context.paths.root)) as c:
                 async with ranking_lock(c):
                     return {"snapshot_id": str(await build(c, path.stem, policy))}
 
@@ -191,7 +192,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
         return 0
 
     async def browse() -> dict[str, object]:
-        async with testing_connection(testing_dsn(context.paths.root)) as c:
+        async with database_connection(database_dsn(context.paths.root)) as c:
             async with ranking_lock(c, shared=True):
                 if o.rank_action == "list":
                     rows = await list_snapshots(c, o.limit + 1)

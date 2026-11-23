@@ -1,4 +1,4 @@
-"""Transactional core migrations for the explicitly configured testing database."""
+"""Transactional core migrations for the explicitly selected database."""
 
 from __future__ import annotations
 
@@ -12,10 +12,14 @@ from typing import Final
 import psycopg
 from psycopg.rows import class_row
 
-from forge.shared.database.credentials import DatabaseCredentialsError, resolve_database_dsn
+from forge.shared.database.connection import (
+    DatabaseError,
+    database_dsn,
+    expected_database,
+    verify_identity,
+)
 from forge.shared.errors import MarketForgeError
 
-_TEST_DATABASE_NAME: Final[str] = "marketforge_test"
 _MIGRATION_LOCK: Final[int] = 0x4D464F5247450001
 
 
@@ -118,24 +122,20 @@ def validate_history(
             )
 
 
-def migrate_testing_database(
+def migrate_database(
     directory: Path | None = None,
     *,
+    testing: bool,
     dsn: str | None = None,
     project_root: Path | None = None,
 ) -> MigrationResult:
-    """Apply the pending core batch atomically to marketforge_test only.
-
-    Migration SQL must not contain transaction-control statements.
-    No production-connection fallback or database creation is performed.
-    """
-    if dsn is None:
-        try:
-            dsn = resolve_database_dsn(testing=True, project_root=project_root)
-        except DatabaseCredentialsError as error:
-            raise MigrationError(str(error)) from None
-    if not dsn.strip():
-        raise MigrationError("An explicitly supplied testing DSN must not be empty.")
+    """Apply the pending core batch atomically to the selected database."""
+    purpose = "testing" if testing else "production"
+    try:
+        dsn = database_dsn(project_root, testing=testing) if dsn is None else dsn
+        name = expected_database(dsn, testing=testing)
+    except DatabaseError as error:
+        raise MigrationError(str(error)) from None
 
     migrations = load_migrations(directory)
     bootstrap = (
@@ -150,8 +150,8 @@ def migrate_testing_database(
         ) as connection:
             database = connection.execute("SELECT current_database()").fetchone()
 
-            if database != (_TEST_DATABASE_NAME,):
-                raise MigrationError("Refusing to migrate a database other than marketforge_test.")
+            if database != (name,):
+                raise MigrationError("Connected database differs from the configured database.")
 
             with connection.transaction():
                 locked = connection.execute(
@@ -163,24 +163,36 @@ def migrate_testing_database(
                     raise MigrationError("Another Forge migration runner is active.")
 
                 connection.execute("SET LOCAL lock_timeout = '5s'")
-                connection.execute(
-                    bootstrap.encode("utf-8"),
-                    prepare=False,
-                )
-                connection.execute("""
-                    INSERT INTO forge_meta.database_identity(singleton, purpose)
-                    VALUES (TRUE, 'testing')
-                    ON CONFLICT (singleton) DO NOTHING
-                    """)
+                metadata = connection.execute("""
+                    SELECT to_regclass('forge_meta.database_identity') IS NOT NULL,
+                           to_regclass('forge_meta.schema_migrations') IS NOT NULL
+                    """).fetchone()
+                if metadata == (False, False):
+                    existing_schema = connection.execute("""
+                        SELECT EXISTS (
+                            SELECT FROM pg_namespace
+                            WHERE nspname IN ('catalog', 'historical', 'ranking')
+                        )
+                        """).fetchone()
+                    if existing_schema == (True,):
+                        raise MigrationError(
+                            "Existing Forge schemas have no migration metadata. "
+                            "Review database provisioning before bootstrapping."
+                        )
+                    connection.execute(bootstrap.encode("utf-8"), prepare=False)
+                    connection.execute(
+                        "INSERT INTO forge_meta.database_identity(singleton, purpose) VALUES (TRUE, %s)",
+                        (purpose,),
+                    )
+                elif metadata != (True, True):
+                    raise MigrationError("Forge migration metadata is incomplete.")
 
-                purpose = connection.execute("""
-                    SELECT purpose
+                identity = connection.execute("""
+                    SELECT database_id, purpose
                     FROM forge_meta.database_identity
                     WHERE singleton
                     """).fetchone()
-
-                if purpose != ("testing",):
-                    raise MigrationError("The database is not designated for testing.")
+                verify_identity(identity, testing=testing)
 
                 with connection.cursor(
                     row_factory=class_row(AppliedMigration),
@@ -215,13 +227,23 @@ def migrate_testing_database(
                     )
 
         return MigrationResult(
-            database=_TEST_DATABASE_NAME,
+            database=name,
             applied=tuple(migration.version for migration in pending),
             already_applied=tuple(migration.version for migration in applied),
         )
-    except psycopg.Error as exc:
+    except DatabaseError as error:
+        raise MigrationError(str(error)) from None
+    except psycopg.Error:
         raise MigrationError(
-            "PostgreSQL could not complete the migration transaction. Verify that the configured "
-            "marketforge_test database exists, is reachable, and permits Python migrations; "
-            "no database was created."
-        ) from exc
+            f"PostgreSQL could not complete the {purpose} migration transaction. "
+            "Verify credentials, schema state, and migration privileges."
+        ) from None
+
+
+def migrate_testing_database(
+    directory: Path | None = None,
+    *,
+    dsn: str | None = None,
+    project_root: Path | None = None,
+) -> MigrationResult:
+    return migrate_database(directory, testing=True, dsn=dsn, project_root=project_root)

@@ -5,26 +5,35 @@
 After a successful matching [metadata sync](instrument-discovery.md), refresh statistics:
 
 ```bash
-marketforge markets refresh --exchange bybit --market spot --instrument BTCUSDT --testing
-marketforge markets show bybit.spot.BTCUSDT --testing
+mf markets refresh --exchange bybit --market spot --instrument BTCUSDT --testing
+mf markets show bybit.spot.BTCUSDT --testing
 ```
 
 Refresh contacts public endpoints and writes retained observations. Browsing reads stored values only. A current successful metadata membership is required for each selected scope; older or incomplete syncs do not certify the universe. A broad successful sync can support a symbol-filtered refresh; a narrow sync does not certify an unfiltered refresh. Refresh does not automatically synchronize metadata.
 
-A scope's browsing cache is published only when its required endpoint sequence succeeds. Individual observations can be retained before a later failure, so a failed scope may leave diagnostic observations without updating the displayed latest values. Successful independent scopes remain usable when others fail. Read collection status and per-scope outcomes rather than assuming every value was refreshed.
+A scope's browsing cache is published only when its required endpoint sequence succeeds. Individual observations can be retained before a later failure, so a failed scope may leave diagnostic observations without updating the displayed latest values. Successful independent scopes remain usable when others fail. An older source window does not replace a newer cached window. Fetch time breaks ties between equal window ends. Read collection status and per-scope outcomes rather than assuming every value was refreshed.
 
 ## What values mean
 
 | Value | Meaning and availability |
 | --- | --- |
 | Last price | Native quote units per base unit, when supplied; not an execution guarantee or separate time series. |
-| Base/quote volume | Rolling quantities in their stated asset; fields differ by provider and derivative type. Missing is not zero. |
+| Base/quote volume | Rolling quantities in their stated asset; fields differ by provider and derivative type. A missing quantity stays null. Zero can represent observed inactivity. |
 | Contract volume | Contract count where mapped. Convert only using the applicable saved contract specification. |
 | Turnover | Native monetary activity in the recorded denomination; may be reported, contract-value derived, or an explicitly flagged volume/last-price estimate. |
 | Open interest | Optional current quantity with its explicit unit (base, quote or contracts); not comparable across units by bare number. |
-| Funding rate | Optional signed raw rate when returned; not annualized or converted to a universal funding interval. Dated futures have no funding value. |
+| Funding rate | Optional signed raw rate for the venue’s funding interval. Dated futures have no funding value. |
+| Source window and timestamps | UTC window bounds and basis, upstream observation time when supplied, and fetch time. |
+| Freshness | Browse indication using fetch time. Ranking separately checks source timing and configured tolerances. |
+| Provenance and estimate | Mapping version, source field or formula, activity scope, and estimate flag. Use these to interpret native money and derived quantities. |
 
 Spot does not universally expose funding/open interest. The mapper retains Bybit open interest in base units for linear and quote units for inverse, Gate derivative open interest in contracts, and available Bitget open interest in base units. Binance/OKX ticker mapping does not retrieve additional funding or open-interest endpoints. A field supported by the model need not be populated for every source.
+
+## Read scope outcomes
+
+`complete` means every requested scope finished. `partial` means one or more scopes did not finish successfully, including when all individual scopes fail. A command-level failure can terminate collection and leave a failed record with source diagnostics. Cancellation reports `cancelled` and exits 130. Successful scopes may still have published latest values. Read the per-scope results before using the data for ranking.
+
+The example refreshes one symbol. Omitting exchange and market filters selects all supported scopes. A filtered refresh does not certify the whole unfiltered scope.
 
 ## Provider-specific volume and turnover
 
@@ -50,16 +59,16 @@ USDT, USDC and USD are distinct. A contract's settlement currency alone does not
 
 Binance's supplied `openTime`/`closeTime` are retained. OKX/Bitget ticker generation timestamps support inferred preceding 24-hour windows. Without source time, the window is inferred from fetch time and labeled accordingly. A separate last-trade price timestamp is not invented: conversion evidence identifies the ticker/fetch-time proxy.
 
-Stored browsing marks missing collection separately from freshness; `stale` is based on `fetched_at` older than one hour (or absent). This display rule is weaker than ranking freshness: ranking checks fetch time **and** source-window time, future timestamps, and inter-window alignment. Re-fetching an old source interval does not make it suitable for ranking.
+Browse results retain activity scope, mapping version and estimation evidence. On Bitget a platform-local aggregate may cover only platform activity. A reported value from a broader product scope cannot stand in for it. Stored browsing marks missing collection separately from freshness; `stale` is based on `fetched_at` older than one hour (or absent). This display rule is weaker than ranking freshness: ranking checks fetch time **and** source-window time, future timestamps, and inter-window alignment. Re-fetching an old source interval does not make it suitable for ranking.
 
 These are retained current/rolling observations, not historical tick data or a backtest-ready point-in-time dataset.
 
 ## Filter, sort and inspect
 
 ```bash
-marketforge markets list --testing --exchange okx --market linear --sort turnover --limit 30
-marketforge markets list --testing --base-asset ETH --sort freshness --limit 20
-marketforge --json markets show bybit.spot.BTCUSDT --testing
+mf markets list --testing --exchange okx --market linear --sort turnover --limit 30
+mf markets list --testing --base-asset ETH --sort freshness --limit 20
+mf --json markets show bybit.spot.BTCUSDT --testing
 ```
 
 `identity` is the default sort. `turnover` sorts descending **within native denomination groups**, never by a hidden cross-currency conversion. `freshness` orders by stored measured/window-end time, not the one-hour fetch-time indicator. There is no `--instrument-type` option on `markets list`; use returned type metadata, exact symbols or qualified `show` references.

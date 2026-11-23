@@ -493,7 +493,7 @@ async def test_completed_archive_concrete_dependencies_block_before_and_after_pr
         folder.mkdir(parents=True)
         (folder / "known.json").write_text(json.dumps({"tasks": [{"input_path": str(final)}]}))
     else:
-        folder = f.paths.normalization_config_dir
+        folder = f.paths.normalization_recipe_dir
         folder.mkdir(parents=True)
         (folder / "known.toml").write_text(f"[[inputs]]\narchive_id = {identity}\n")
     _, blocked = await f.preview("delete", StorageFilters(), identity=identity)

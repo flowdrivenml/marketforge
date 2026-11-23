@@ -111,15 +111,15 @@ async def test_dataset_transactions(
     async def connect(_: str) -> AsyncIterator[AsyncConnection[TupleRow]]:
         yield database
 
-    monkeypatch.setattr(datasets, "testing_dsn", lambda root: "verified-fixture")
-    monkeypatch.setattr(datasets, "testing_connection", unavailable)
+    monkeypatch.setattr(datasets, "database_dsn", lambda root: "verified-fixture")
+    monkeypatch.setattr(datasets, "database_connection", unavailable)
     pending = await datasets.register_verified(
         paths, [normalized], receipt_directory=tmp_path / "outage"
     )
     assert pending["registration"] == "pending"
     assert (tmp_path / "outage/registration-intent.json").is_file()
 
-    monkeypatch.setattr(datasets, "testing_connection", connect)
+    monkeypatch.setattr(datasets, "database_connection", connect)
     registered = await datasets.register_verified(
         paths, [normalized], receipt_directory=tmp_path / "retry"
     )

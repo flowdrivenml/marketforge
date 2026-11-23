@@ -10,9 +10,10 @@ from forge.catalog.models import reference
 from forge.historical.archives.config import AcquisitionInterval
 from forge.historical.imports.models import ImportConfig
 from forge.historical.profiles.service import identity
+from forge.shared.config.library import resolve_config_file
+from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
-from forge.shared.errors import MarketForgeError
-from forge.shared.paths import ProjectPaths
+from forge.shared.paths import ProjectPaths, require_migrated
 
 
 class Registration(SettingsModel, frozen=True):
@@ -75,19 +76,15 @@ class Recipe(SettingsModel, frozen=True):
 
 def recipe_path(paths: ProjectPaths, name: str) -> Path:
     supplied = Path(name).expanduser()
-    if supplied.is_absolute() or len(supplied.parts) > 1:
+    if supplied.is_absolute() or "/" in name:
         return supplied.resolve()
-    if supplied.name in {".", ".."}:
-        raise MarketForgeError("Invalid registration name.")
-    return (
-        paths.config_dir
-        / "historical/registration"
-        / (name if name.endswith(".toml") else name + ".toml")
-    )
+    path = resolve_config_file(paths.workflow_dir("import") / "registration", name)
+    return require_migrated(path, paths.config_dir / "historical/registration" / path.name)
 
 
 def load(path: Path) -> Recipe:
-    return Recipe.model_validate(tomllib.loads(path.read_text()))
+    with configuration_errors(path):
+        return Recipe.model_validate(tomllib.loads(path.read_text()))
 
 
 def groups(recipe: Recipe, paths: ProjectPaths) -> list[ImportConfig]:

@@ -14,7 +14,8 @@ from forge.historical.archives.storage.files import disk
 from forge.historical.drafts import write_new
 from forge.historical.engine import managed
 from forge.historical.engine.process import ProcessControl, controlled_thread
-from forge.historical.metadata.service import enrich_testing
+from forge.historical.engine.runtime import runtime_report
+from forge.historical.metadata.service import enrich_registry
 from forge.markets.models import Exchange, Market
 from forge.markets.ranking import deletion, policy
 from forge.markets.ranking import service as ranking
@@ -22,10 +23,11 @@ from forge.markets.ranking.coordination import ranking_lock
 from forge.markets.ranking.workflow import refresh_and_publish
 from forge.markets.repository import browse as market_browse
 from forge.markets.service import collect
-from forge.orchestration import inspection
+from forge.orchestration.registry import list_index
+from forge.orchestration.runs import inspect_run
 from forge.shared.config.library import resolve_config_file
 from forge.shared.database import backup, migrations, status
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn, database_environment
 from forge.shared.errors import MarketForgeError
 from forge.startup.context import ApplicationContext
 from forge.startup.diagnostics import doctor
@@ -70,10 +72,10 @@ async def datasets(action: str, v: Values, context: ApplicationContext) -> objec
 
 async def storage(action: str, v: Values, context: ApplicationContext) -> object:
     paths = context.paths
-    dsn = testing_dsn(paths.root)
+    dsn = database_dsn(paths.root)
     archive = archive_identity(v)
     selected = StorageFilters.model_validate({k: val for k, val in v.items() if val != ""})
-    async with testing_connection(dsn) as connection:
+    async with database_connection(dsn) as connection:
         if action in {"verify", "reconcile"}:
             return await maintain(
                 connection,
@@ -111,7 +113,10 @@ async def review_cleanup(
     identity = archive_identity(v)
     overlap = bool(v.get("overlap"))
     cleanup.validate_selection(action, selected, identity, overlap)
-    async with testing_connection(testing_dsn(paths.root)) as connection, connection.transaction():
+    async with (
+        database_connection(database_dsn(paths.root)) as connection,
+        connection.transaction(),
+    ):
         await connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         plan = await cleanup.preview(
             connection,
@@ -142,14 +147,14 @@ async def apply_cleanup(
     )
     if plan.digest != reviewed["preview_digest"]:
         raise MarketForgeError("Saved cleanup preview changed; review again.")
-    async with testing_connection(testing_dsn(context.paths.root)) as connection:
+    async with database_connection(database_dsn(context.paths.root)) as connection:
         return await cleanup.apply(connection, context.paths, source, plan)
 
 
 async def markets(
     action: str, v: Values, context: ApplicationContext, progress: Progress
 ) -> object:
-    dsn = testing_dsn(context.paths.root)
+    dsn = database_dsn(context.paths.root)
     exchanges, categories = words(v, "exchanges"), words(v, "markets")
     instrument = optional(v, "instrument")
     if action in {"sync", "refresh"}:
@@ -163,7 +168,7 @@ async def markets(
             progress=progress,
         )
     limit = int(v.get("limit", 50))
-    async with testing_connection(dsn) as connection:
+    async with database_connection(dsn) as connection:
         rows = await market_browse(
             connection,
             exchanges=exchanges or None,
@@ -210,15 +215,15 @@ async def ranks(
         if action == "validate":
             return {"valid": True, "policy": policy.policy_document(config)}
         async with (
-            testing_connection(testing_dsn(paths.root)) as connection,
+            database_connection(database_dsn(paths.root)) as connection,
             ranking_lock(connection),
         ):
             return {
                 "status": "published",
                 "snapshot_id": str(await ranking.build(connection, path.stem, config)),
             }
-    dsn = testing_dsn(paths.root)
-    async with testing_connection(dsn) as connection:
+    dsn = database_dsn(paths.root)
+    async with database_connection(dsn) as connection:
         if action == "delete":
             return await deletion.delete_snapshots(
                 connection,
@@ -297,7 +302,7 @@ async def catalogue(model: str, action: str, v: Values, context: ApplicationCont
     if action == "validate":
         assert declaration is not None
         return {"valid": True, "declaration": declaration.model_dump(mode="json")}
-    async with testing_connection(testing_dsn(context.paths.root)) as connection:
+    async with database_connection(database_dsn(context.paths.root)) as connection:
         return (
             await catalog.add(connection, declaration)
             if declaration
@@ -334,14 +339,11 @@ async def system(key: str, v: Values, context: ApplicationContext, progress: Pro
     paths = context.paths
     reference = value(v, "reference")
     if key == "config show":
-        return {
-            "workspace": str(paths.root),
-            "storage": str(paths.data_root),
-            "settings_file": context.settings_file,
-            "settings": context.settings.model_dump(mode="json"),
-        }
+        return context.configuration_report()
     if key == "engine status":
         return await disk(managed.inventory, paths)
+    if key == "engine runtime":
+        return await disk(runtime_report, paths, reference)
     if key == "engine build":
         builds: list[dict[str, Any]] = []
         building = not v.get("dry_run")
@@ -362,20 +364,28 @@ async def system(key: str, v: Values, context: ApplicationContext, progress: Pro
             builds.append(await target_result(target))
         return {"status": "built" if building else "planned", "targets": builds}
     if key == "database status":
-        return asdict(await disk(status.inspect_testing_database, project_root=paths.root))
+        return asdict(await disk(status.inspect_database, project_root=paths.root))
     if key.startswith("runs "):
         action = key.split()[-1]
         limit = int(v.get("limit", 50))
         if action == "list":
-            return {"runs": await disk(inspection.list_runs, paths.runs_dir, limit)}
-        if action == "logs":
-            return await disk(inspection.read_logs, paths.runs_dir, reference, limit)
-        return await disk(inspection.read_report, paths.runs_dir, reference)
+            return await list_index(paths, limit=limit)
+        return await inspect_run(paths, reference, action=action, limit=limit)
     if key == "doctor":
-        return await disk(doctor, paths)
-    dsn = testing_dsn(paths.root)
+        report = await disk(
+            doctor,
+            project_root=paths.root,
+            config_file=context.settings_file,
+            testing=context.testing,
+        )
+        return report.payload()
+    if key in {"database backup", "database restore"} and not context.testing:
+        raise MarketForgeError(
+            "This administrative action requires launching Forge with --testing."
+        )
+    dsn = database_dsn(paths.root)
     if key == "database migrate":
-        return asdict(await disk(migrations.migrate_testing_database, dsn=dsn))
+        return asdict(await disk(migrations.migrate_database, dsn=dsn, testing=context.testing))
     if key == "database backup":
         return await controlled_thread(
             lambda control: backup.backup(
@@ -390,7 +400,11 @@ async def system(key: str, v: Values, context: ApplicationContext, progress: Pro
         )
     if key == "init":
         await disk(paths.ensure_application_directories)
-        migration = asdict(await disk(migrations.migrate_testing_database, dsn=dsn))
+        if context.testing:
+            migration = asdict(await disk(migrations.migrate_testing_database, dsn=dsn))
+        else:
+            await disk(status.require_initialized_production, paths.root)
+            migration = {}
         progress("Collect catalogue")
         catalogue_result = await collect(
             dsn, context.settings.http, metadata=True, progress=progress
@@ -398,8 +412,8 @@ async def system(key: str, v: Values, context: ApplicationContext, progress: Pro
         if catalogue_result.get("status") == "cancelled":
             return {"status": "cancelled", "catalogue": catalogue_result, "migrations": migration}
         progress("Enrich historical metadata")
-        enrichment = await enrich_testing(dsn, paths)
-        async with testing_connection(dsn) as connection, ranking_lock(connection):
+        enrichment = await enrich_registry(dsn, paths)
+        async with database_connection(dsn) as connection, ranking_lock(connection):
             result = await refresh_and_publish(
                 dsn, context.settings.http, paths.config_dir / "markets/rankings", progress=progress
             )
@@ -415,6 +429,13 @@ async def system(key: str, v: Values, context: ApplicationContext, progress: Pro
 
 
 async def execute(
+    key: str, v: Values, context: ApplicationContext, progress: Progress, edit: Edit
+) -> object:
+    with database_environment(testing=context.testing):
+        return await _execute(key, v, context, progress, edit)
+
+
+async def _execute(
     key: str, v: Values, context: ApplicationContext, progress: Progress, edit: Edit
 ) -> object:
     first, *parts = key.split()

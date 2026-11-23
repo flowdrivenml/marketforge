@@ -1,12 +1,19 @@
-"""Read-only inspection of the testing database migration state."""
+"""Read-only inspection of the selected database migration state."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Literal
 
 import psycopg
 from psycopg.rows import class_row
 
-from forge.shared.database.credentials import DatabaseCredentialsError, resolve_database_dsn
+from forge.shared.database.connection import (
+    DatabaseError,
+    database_dsn,
+    expected_database,
+    is_testing,
+    verify_identity,
+)
 from forge.shared.database.migrations import (
     AppliedMigration,
     MigrationError,
@@ -25,85 +32,133 @@ class DatabaseStatus:
     purpose: str | None
     applied: tuple[int, ...]
     pending: tuple[int, ...]
+    missing_schemas: tuple[str, ...] = ()
 
 
-def inspect_testing_database(*, project_root: Path | None = None) -> DatabaseStatus:
-    """Inspect the explicitly configured testing database without modifying it."""
+InspectionStage = Literal["credentials", "connection", "identity", "registry", "history", "schemas"]
+
+
+class DatabaseInspectionError(MigrationError):
+    """Sanitized failure with observations established before the failing step."""
+
+    def __init__(
+        self,
+        message: str,
+        stage: InspectionStage,
+        *,
+        connected: bool = False,
+        status: DatabaseStatus | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.stage = stage
+        self.connected = connected
+        self.status = status
+
+
+def inspect_database(
+    *, project_root: Path | None = None, testing: bool | None = None
+) -> DatabaseStatus:
+    """Inspect the selected database in a bounded, read-only transaction."""
+    testing = is_testing() if testing is None else testing
     try:
-        dsn = resolve_database_dsn(testing=True, project_root=project_root)
-    except DatabaseCredentialsError as error:
-        raise MigrationError(str(error)) from None
+        dsn = database_dsn(project_root, testing=testing)
+        name = expected_database(dsn, testing=testing)
+    except DatabaseError as error:
+        raise DatabaseInspectionError(str(error), "credentials") from None
 
-    migrations = load_migrations()
-
+    stage: InspectionStage = "connection"
+    connected = False
+    status: DatabaseStatus | None = None
     try:
-        with psycopg.connect(
-            dsn,
-            autocommit=True,
-            connect_timeout=10,
-        ) as connection:
+        with psycopg.connect(dsn, autocommit=True, connect_timeout=10) as connection:
+            connected = True
+            stage = "identity"
             with connection.transaction():
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                connection.execute("SET LOCAL statement_timeout = '5s'")
+                connection.execute("SET LOCAL lock_timeout = '5s'")
 
-                database_row = connection.execute("SELECT current_database()").fetchone()
+                if connection.execute("SELECT current_database()").fetchone() != (name,):
+                    raise MigrationError("Connected database differs from the configured database.")
 
-                if database_row != ("marketforge_test",):
-                    raise MigrationError(
-                        "Testing operations require the marketforge_test database."
-                    )
-
-                metadata_row = connection.execute("""
+                stage = "registry"
+                metadata = connection.execute("""
                     SELECT
                         to_regclass('forge_meta.database_identity') IS NOT NULL,
                         to_regclass('forge_meta.schema_migrations') IS NOT NULL
                     """).fetchone()
-
-                if metadata_row == (False, False):
-                    return DatabaseStatus(
-                        database="marketforge_test",
-                        initialized=False,
-                        database_id=None,
-                        purpose=None,
-                        applied=(),
-                        pending=tuple(migration.version for migration in migrations),
-                    )
-
-                if metadata_row != (True, True):
+                if metadata == (False, False):
+                    status = DatabaseStatus(name, False, None, None, (), ())
+                elif metadata == (True, True):
+                    stage = "identity"
+                    identity_row = connection.execute("""
+                        SELECT database_id, purpose
+                        FROM forge_meta.database_identity
+                        WHERE singleton = TRUE
+                        """).fetchone()
+                    identity = verify_identity(identity_row, testing=testing)
+                    purpose = "testing" if testing else "production"
+                    status = DatabaseStatus(name, True, str(identity), purpose, (), ())
+                else:
                     raise MigrationError("Forge migration metadata is incomplete.")
 
-                identity_row = connection.execute("""
-                    SELECT database_id::text, purpose
-                    FROM forge_meta.database_identity
-                    WHERE singleton = TRUE
-                    """).fetchone()
+                stage = "schemas"
+                required = ("forge_meta", "catalog", "historical", "ranking")
+                rows = connection.execute(
+                    "SELECT nspname FROM pg_namespace WHERE nspname = ANY(%s)",
+                    (list(required),),
+                ).fetchall()
+                present = {row[0] for row in rows}
+                status = replace(
+                    status,
+                    missing_schemas=tuple(schema for schema in required if schema not in present),
+                )
 
-                if identity_row is None:
-                    raise MigrationError("Forge database identity is missing.")
-
-                database_id, purpose = identity_row
-
-                if not isinstance(database_id, str) or purpose != "testing":
-                    raise MigrationError("Database identity does not identify a testing database.")
-
-                with connection.cursor(row_factory=class_row(AppliedMigration)) as cursor:
-                    cursor.execute("""
-                        SELECT version, name, checksum
-                        FROM forge_meta.schema_migrations
-                        WHERE stream = 'core'
-                        ORDER BY version
-                        """)
-                    applied = tuple(cursor.fetchall())
-
-                validate_history(migrations, applied)
-
-                return DatabaseStatus(
-                    database="marketforge_test",
-                    initialized=True,
-                    database_id=database_id,
-                    purpose="testing",
+                stage = "history"
+                try:
+                    migrations = load_migrations()
+                except (OSError, UnicodeError):
+                    raise MigrationError("Could not read local migration files.") from None
+                applied: tuple[AppliedMigration, ...] = ()
+                if status.initialized:
+                    with connection.cursor(row_factory=class_row(AppliedMigration)) as cursor:
+                        cursor.execute("""
+                            SELECT version, name, checksum
+                            FROM forge_meta.schema_migrations
+                            WHERE stream = 'core'
+                            ORDER BY version
+                            """)
+                        applied = tuple(cursor.fetchall())
+                    validate_history(migrations, applied)
+                return replace(
+                    status,
                     applied=tuple(item.version for item in applied),
                     pending=tuple(item.version for item in migrations[len(applied) :]),
                 )
 
-    except psycopg.Error as exc:
-        raise MigrationError("PostgreSQL could not inspect the migration state.") from exc
+    except (MigrationError, DatabaseError) as error:
+        raise DatabaseInspectionError(
+            str(error), stage, connected=connected, status=status
+        ) from None
+    except psycopg.Error as error:
+        if isinstance(error, (psycopg.errors.ConnectionTimeout, psycopg.errors.QueryCanceled)):
+            message = "PostgreSQL inspection timed out."
+        elif not connected:
+            message = "Could not connect to the selected PostgreSQL database."
+        else:
+            message = "PostgreSQL could not complete this inspection step."
+        raise DatabaseInspectionError(message, stage, connected=connected, status=status) from None
+
+
+def inspect_testing_database(*, project_root: Path | None = None) -> DatabaseStatus:
+    return inspect_database(project_root=project_root, testing=True)
+
+
+def require_initialized_production(project_root: Path) -> None:
+    """Production initialization uses an explicitly provisioned current registry."""
+    result = inspect_database(project_root=project_root, testing=False)
+    if not result.initialized or result.pending or result.missing_schemas:
+        raise MigrationError(
+            "Review mf database status --production and apply approved migrations "
+            "with mf database migrate --production before initialization."
+        )

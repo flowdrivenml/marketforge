@@ -38,7 +38,7 @@ def workspace(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def request_file(workspace: Path) -> Path:
-    source = workspace / "data" / ".config" / "acquisition" / "request.toml"
+    source = workspace / "data/.config/workflows/data_engineering/acquisition/request.toml"
     source.parent.mkdir(parents=True)
     source.write_text(_VALID_DOCUMENT, encoding="utf-8")
     return source
@@ -53,14 +53,35 @@ def isolated_acquisition(request_file: Path) -> Iterator[str]:
 
     from forge.shared.database.testing import testing_connection
 
-    dsn = os.environ.get("MARKETFORGE_DATABASE_URL_TEST")
+    dsn = os.environ.get("TEST_DATABASE_KEY")
     if not dsn:
-        pytest.skip("MARKETFORGE_DATABASE_URL_TEST is not set.")
+        pytest.skip("TEST_DATABASE_KEY is not set.")
     symbol = "MF_TEST_" + uuid4().hex
     request_file.write_text(request_file.read_text().replace("BTCUSDT", symbol))
 
     async def cleanup() -> None:
         async with testing_connection(dsn) as connection, connection.transaction():
+            prefix = str(request_file.parents[5] / "data/runs") + "/"
+            # Only execution fixtures created under this test workspace.
+            for table in ("execution_resources", "execution_attempts", "execution_runs"):
+                from psycopg import sql
+
+                runs = sql.SQL(
+                    "(SELECT run_id FROM historical.execution_runs WHERE left(artifact_root,length(%s))=%s)"
+                )
+                clause = (
+                    sql.SQL(
+                        "attempt_id IN (SELECT attempt_id FROM historical.execution_attempts WHERE run_id IN {})"
+                    ).format(runs)
+                    if table == "execution_resources"
+                    else sql.SQL("run_id IN {}").format(runs)
+                )
+                await connection.execute(
+                    sql.SQL("DELETE FROM historical.{} WHERE {}").format(
+                        sql.Identifier(table), clause
+                    ),
+                    (prefix, prefix),
+                )
             await connection.execute(
                 """DELETE FROM historical.discovery_scans
                 WHERE scope_json->>'scope_identifier' = %s""",

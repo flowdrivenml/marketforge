@@ -2,11 +2,13 @@
 
 Forge provides a Textual application alongside the direct CLI. Install Forge
 with Python 3.12 or newer on Linux or macOS. Textual is included in the Forge
-lockfile. Use an interactive terminal and the verified `marketforge_test`
-registry for registry operations. The application resolves the same project
-root and application settings as the CLI.
+lockfile. Use an interactive terminal. Forge defaults to production and its
+workspace header shows the selected environment and verified connectivity. The
+application resolves the same project root, settings, and credentials as the CLI.
 
 ```bash
+mf tui
+mf tui --production
 mf tui --testing
 ```
 
@@ -138,7 +140,7 @@ during the edit. Retained submissions remain read-only evidence.
 To edit a recipe directly from a shell, use nvim.
 
 ```bash
-nvim data/.config/pipeline/bybit_spot.toml
+nvim data/.config/workflows/data_engineering/pipeline/bybit_spot.toml
 ```
 
 ## Author recipes

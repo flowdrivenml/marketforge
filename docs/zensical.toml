@@ -1,60 +1,76 @@
 [project]
 site_name = "MarketForge"
 site_description = "Historical market-data acquisition, normalization and dataset inspection"
+site_url = "https://flowdrivenml.github.io/marketforge/"
+repo_url = "https://github.com/flowdrivenml/marketforge"
 docs_dir = "content"
 site_dir = "site"
 extra_css = ["assets/stylesheets/extra.css"]
+extra_javascript = ["assets/javascripts/keyboard.js"]
 nav = [
-  { "Start here" = [
-    { "MarketForge" = "index.md" },
-    { "Orientation" = "getting-started/index.md" },
-    { "Installation" = "getting-started/installation.md" },
-    { "Bybit Quick Start" = "getting-started/quickstart.md" },
-  ] },
-  { "Guides" = [
-    { "Overview" = "workflows/index.md" },
-    { "Forge workspace" = "workflows/forge-tui.md" },
-    { "Describe instruments" = ["workflows/catalogue/index.md", "workflows/catalogue/exchanges-and-instruments.md", "workflows/catalogue/specifications.md"] },
-    { "Acquire and register" = ["workflows/acquisition/index.md", "workflows/acquisition/historical-data.md", "workflows/acquisition/external-data.md", "workflows/acquisition/managing-acquisitions.md", "workflows/acquisition/forge.md"] },
-    { "Create profiles" = ["workflows/catalogue/profiles.md", "workflows/catalogue/profile-trades.md", "workflows/catalogue/profile-depth.md", "workflows/catalogue/profile-troubleshooting.md"] },
-    { "Process data" = ["workflows/pipeline.md", "workflows/normalize.md", "workflows/merge.md", "workflows/conversion.md"] },
-    { "Use datasets" = ["workflows/datasets.md", "workflows/notebooks.md"] },
-    { "Explore markets" = ["workflows/markets/index.md", "workflows/markets/instrument-discovery.md", "workflows/markets/market-statistics.md", "workflows/markets/rankings.md"] },
-    { "Operate MarketForge" = "workflows/operations.md" },
-  ] },
-  { "Concepts" = "concepts/index.md" },
-  { "Reference" = [
-    { "Overview" = "reference/index.md" },
-    { "CLI" = ["reference/cli/acquisition.md", "reference/cli/catalog.md", "reference/cli/maintenance.md", "reference/cli/engine.md", "reference/cli/registration.md", "reference/cli/normalize.md", "reference/cli/merge.md", "reference/cli/convert.md", "reference/cli/datasets.md", "reference/cli/markets.md"] },
-    { "Configuration and recipes" = ["configuration/index.md", "configuration/acquisition.md", "configuration/normalization.md", "configuration/conversion.md", "configuration/markets.md"] },
-    { "Profiles" = "reference/profiles.md" },
-    { "Registration declarations" = "reference/registration.md" },
-    { "Runtime and policies" = "reference/runtime.md" },
-    { "Prepared contracts" = "reference/prepared.md" },
-    { "Publication formats" = "reference/publications.md" },
-    { "Python datasets" = "reference/python-datasets.md" },
-  ] },
-  { "Examples" = ["examples/index.md", "examples/catalogue/index.md", "examples/catalogue/merge.md", "examples/bring-your-own-data/index.md", "examples/bring-your-own-data/databento/index.md"] },
-  { "Development" = [
-    "development/index.md",
-    "development/setup.md",
-    "development/first-contribution.md",
-    "development/architecture.md",
-    "development/operations.md",
-    "development/forge-tui.md",
-    { "Extension guides" = [
-      "development/extending.md",
-      "development/sources.md",
-      "development/orchestration.md",
+  { "Using MarketForge" = [
+    { "Introduction" = "index.md" },
+    { "Getting started" = [
+      "getting-started/index.md",
+      { "Installation and workspace setup" = "getting-started/installation.md" },
+      { "First dataset: Bybit trades and depth" = "getting-started/quickstart.md" },
     ] },
-    "development/testing.md",
-    "development/debugging.md",
-    "development/performance.md",
-    "development/compatibility.md",
+    { "Guides" = [
+      "workflows/index.md",
+      { "Explore markets" = ["workflows/markets/index.md", "workflows/markets/instrument-discovery.md", "workflows/markets/market-statistics.md", "workflows/markets/rankings.md"] },
+      { "Acquire historical data" = [
+        { "Overview" = "workflows/acquisition/index.md" },
+        "workflows/acquisition/historical-data.md",
+        "reference/acquisition-sources.md",
+        "workflows/acquisition/managing-acquisitions.md",
+      ] },
+      "workflows/acquisition/forge.md",
+      { "Catalogue and specifications" = ["workflows/catalogue/index.md", "workflows/catalogue/exchanges-and-instruments.md", "workflows/catalogue/specifications.md"] },
+      { "Register external recordings" = "workflows/acquisition/external-data.md" },
+      { "Normalization" = [
+        "workflows/normalize.md",
+        { "Author normalization profiles" = ["workflows/catalogue/profiles.md", "workflows/catalogue/profile-trades.md", "workflows/catalogue/profile-depth.md", "workflows/catalogue/profile-troubleshooting.md"] },
+      ] },
+      { "Process data" = ["workflows/merge.md", "workflows/conversion.md", "workflows/pipeline.md"] },
+      { "Inspect history and data" = ["workflows/datasets.md", "workflows/runs.md", "workflows/notebooks.md"] },
+      "workflows/forge-tui.md",
+    ] },
+    { "Concepts" = ["concepts/index.md", "concepts/identity.md", "concepts/time.md", "concepts/depth.md", "concepts/ordering.md", "concepts/evidence.md"] },
+    { "Reference" = [
+      "reference/index.md",
+      { "CLI" = ["reference/cli/index.md", "reference/cli/forge.md", "reference/cli/acquisition.md", "reference/cli/storage.md", "reference/cli/runs.md", "reference/cli/catalog.md", "reference/cli/maintenance.md", "reference/cli/engine.md", "reference/cli/registration.md", "reference/cli/normalize.md", "reference/cli/merge.md", "reference/cli/convert.md", "reference/cli/pipeline.md", "reference/cli/datasets.md", "reference/cli/markets.md"] },
+      { "Configuration and recipes" = ["configuration/index.md", "configuration/application.md", "reference/runtime.md", "configuration/acquisition.md", "configuration/catalogue.md", "configuration/normalization.md", "configuration/normalization-runtime.md", "configuration/merge.md", "configuration/merge-runtime.md", "configuration/conversion.md", "configuration/pipeline.md", "configuration/markets.md"] },
+      { "Format profiles" = ["reference/profiles.md", "reference/profile-fields.md"] },
+      "reference/registration.md",
+      { "Prepared jobs and retained evidence" = ["reference/prepared.md", "reference/prepared-normalization.md", "reference/prepared-merge.md", "reference/prepared-conversion.md", "reference/prepared-forge.md"] },
+      { "Publication formats" = ["reference/publications.md", "reference/publication-normalized.md", "reference/publication-merge.md", "reference/publication-converted.md"] },
+      "reference/python-datasets.md",
+      "reference/history-maintenance.md",
+    ] },
+    { "Examples" = ["examples/index.md", "examples/catalogue/index.md", "examples/catalogue/merge.md", "examples/bring-your-own-data/index.md", "examples/bring-your-own-data/databento/index.md"] },
+    { "Troubleshooting" = "workflows/operations.md" },
+  ] },
+  { "Development" = [
+    { "Developer overview" = "development/index.md" },
+    { "Getting started" = ["development/setup.md", "development/first-contribution.md"] },
+    { "Architecture" = [
+      { "System overview" = "development/architecture.md" },
+      "development/forge.md",
+      "development/normalize.md",
+      "development/merge.md",
+      "development/convert.md",
+      "development/operations.md",
+      "development/forge-tui.md",
+    ] },
+    { "Extending MarketForge" = ["development/extending.md", "development/sources.md", "development/orchestration.md"] },
+    { "Testing" = "development/testing.md" },
+    { "Debugging and performance" = ["development/debugging.md", "development/performance.md"] },
+    { "Contributing" = "development/compatibility.md" },
   ] },
 ]
 
 [project.markdown_extensions]
+footnotes = {}
 pymdownx.superfences.custom_fences = [
   { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
 ]
@@ -63,7 +79,15 @@ pymdownx.superfences.custom_fences = [
 logo = "assets/branding/logo_small.png"
 favicon = "assets/branding/logo_small.png"
 font = false
-features = ["navigation.tabs", "navigation.sections", "navigation.indexes", "content.code.copy"]
+features = [
+  "navigation.tabs",
+  "navigation.sections",
+  "navigation.indexes",
+  "navigation.path",
+  "navigation.footer",
+  "toc.follow",
+  "content.code.copy",
+]
 
 [[project.theme.palette]]
 scheme = "slate"

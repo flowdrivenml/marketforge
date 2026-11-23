@@ -2,8 +2,9 @@
 
 The public command remains `marketforge`. Use repository-root `.venv/bin/marketforge`
 or `uv run --project forge --locked marketforge`. Global `--json` goes **before**
-the command. Database operations require `--testing` and the existing safe
-`MARKETFORGE_DATABASE_URL_TEST` loader. Production has no fallback.
+the command. Production uses `PRODUCTION_DATABASE_KEY` by default. Pass `--testing` to
+select `TEST_DATABASE_KEY`. The literal dotenv loader checks the selected
+process key first, then the same key in `.secrets/postgres.env`.
 
 ## Acquisition scheduling
 
@@ -144,7 +145,7 @@ duplicate streams are rejected. No Rust job schema is assumed.
 
 ```console
 marketforge acquisition import new my-recording --from /path/to/recording
-# Edit data/.config/acquisition/import/my-recording.toml explicitly.
+# Edit data/.config/workflows/data_engineering/import/my-recording.toml explicitly.
 marketforge acquisition import inspect my-recording
 marketforge acquisition import validate my-recording
 marketforge acquisition import plan my-recording
@@ -191,24 +192,11 @@ recovery. Final-registration failure can be reconciled from a fresh connection
 without copying again. Arbitrary raw formats, including binary/Parquet, may be
 imported; this does not adopt them as normalized datasets.
 
-The format helper samples at most 64 KiB. It supports CSV/JSONL evidence and
-plain/gzip/selected ZIP members; select `--member` for multi-layout ZIPs. Unsupported
-layouts still produce an incomplete template and diagnostics where an installed
-physical template exists. Tar member sampling and arbitrary binary/depth parsing
-are not promised. Generated `physical.toml`, `profile.toml`, and `diagnostics.json`
-are under `data/.config/historical/format-drafts/PROFILE/`, outside the active
-recursive `formats/` loader. `unsupported_reason` marks the profile as DRAFT.
-Timestamp units, quantity interpretation, ordering, side/depth/snapshot/sequence
-semantics and contract multipliers remain unresolved unless explicitly declared.
-Drafts do not alter import configuration or active profiles, and refuse overwrite
-without `--overwrite`.
-
-The inspected engine has no stable profile-only validation CLI: its executable
-accepts normalization jobs, which this helper does not run. Structural TOML
-validation is therefore explicit and engine validation remains pending. Unknown
-venues can be raw-imported, but their admission to Rust's canonical exchange
-model is not invented by Forge. Final job generation/normalization integration
-waits for the stable engine job and validation contracts.
+The profile sample command examines at most 64 KiB of CSV or JSONL evidence
+from plain, gzip, or selected ZIP members. The profile validation command
+compiles schema-2 profiles with the managed normalization Engine and checks
+compatibility with the installed catalogue. Use the active profile source
+under `data/.config/engine/normalize/profiles/`.
 
 The task's real tiny walkthrough is retained under
 `/tmp/marketforge-import-walkthrough-uj5_rngh`: one CSV was imported, its second run

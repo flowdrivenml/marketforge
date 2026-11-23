@@ -228,15 +228,19 @@ async def test_content_jobs_ranks_feeds_diagnostics_and_single_file(
                 "gateio.spot.spot.G.depth.snapshot",
                 "gateio.spot.spot.G.depth.incremental",
             } <= defined
-    config = paths.config_dir / "historical/general.toml"
+    config = paths.config_dir / "engine/normalize.toml"
     config.parent.mkdir(parents=True)
     config.write_text("schema_version=1\n")
     wrapper = obj(json.loads(json.dumps(plan.report, default=str)))
     publish_batch(paths, plan, wrapper)
     assert sorted(p.name for p in plan.run.iterdir()) == [
+        "historical",
         "normalize-batch.json",
+        "normalize.toml",
         "prepare-report.json",
     ]
+    assert (plan.run / "normalize.toml").read_bytes() == config.read_bytes()
+    assert (plan.run / "historical/profiles").is_dir()
     saved = obj(json.loads((plan.run / "normalize-batch.json").read_text()))
     assert saved == json.loads(json.dumps(plan.batch, default=str))
     assert saved["schema_version"] == 4

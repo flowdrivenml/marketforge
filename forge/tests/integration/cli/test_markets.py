@@ -89,7 +89,7 @@ def test_collection_final_summaries_and_filters(
         }
 
     monkeypatch.setattr(markets, "collect", controlled)
-    monkeypatch.setattr(markets, "testing_dsn", selected_dsn)
+    monkeypatch.setattr(markets, "database_dsn", selected_dsn)
     args = ["--project-root", str(workspace)]
     if mode == "json":
         args.append("--json")
@@ -112,7 +112,7 @@ def test_collection_final_summaries_and_filters(
 def test_collection_uses_workspace_owner(
     workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(markets, "testing_dsn", selected_dsn)
+    monkeypatch.setattr(markets, "database_dsn", selected_dsn)
     with WorkspaceOwnership(ProjectPaths.resolve(root=workspace)):
         assert main(["--project-root", str(workspace), "markets", "sync", "--testing"]) != 0
     assert "Another historical application instance" in capsys.readouterr().err
@@ -149,8 +149,8 @@ def test_json_ranking_show_never_uses_human_display_limit(
             ],
         }
 
-    monkeypatch.setattr(rankings, "testing_dsn", selected_dsn)
-    monkeypatch.setattr(rankings, "testing_connection", connection)
+    monkeypatch.setattr(rankings, "database_dsn", selected_dsn)
+    monkeypatch.setattr(rankings, "database_connection", connection)
     monkeypatch.setattr(rankings, "show", detail)
     assert (
         main(
@@ -219,8 +219,8 @@ def test_json_exposes_all_conversion_evidence_despite_entry_selection_and_limit(
             "conversion_summary": {"bridged": 1, "identity": 1},
         }
 
-    monkeypatch.setattr(rankings, "testing_dsn", selected_dsn)
-    monkeypatch.setattr(rankings, "testing_connection", connection)
+    monkeypatch.setattr(rankings, "database_dsn", selected_dsn)
+    monkeypatch.setattr(rankings, "database_connection", connection)
     monkeypatch.setattr(rankings, "show", detail)
     assert (
         main(

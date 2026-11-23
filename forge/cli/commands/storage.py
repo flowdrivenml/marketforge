@@ -7,9 +7,10 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ConfigDict
 
 from forge.cli.commands.markets import emit
+from forge.cli.environment import add_database_options
 from forge.cli.market_filters import configure_identity_filters
 from forge.markets.models import array
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.errors import MarketForgeError
 from forge.shared.terminal.storage import render_storage
 from forge.startup.context import ApplicationContext
@@ -80,12 +81,8 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
     # Root arguments support the bare overview; suppressed child defaults allow
     # the same filters before or after an explicit browsing subcommand.
-    parser.description = "Browse nominal local archive coverage by default. Read-only list/details use the configured raw root and require --testing. Maintenance is explicit."
-    parser.add_argument(
-        "--testing",
-        action="store_true",
-        help="Use the verified testing database; no production fallback.",
-    )
+    parser.description = "Browse nominal local archive coverage by default. Read-only list/details use the configured raw root. Maintenance is explicit."
+    add_database_options(parser)
     filters(parser)
     parser.add_argument("--gaps", action="store_true", help="Show missing half-open UTC intervals.")
     parser.set_defaults(service_handler=run, storage_action="coverage")
@@ -93,9 +90,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
     for action in ("coverage", "list", "show", "verify", "reconcile"):
         child = actions.add_parser(action, argument_default=argparse.SUPPRESS, allow_abbrev=False)
         child.set_defaults(service_handler=run, storage_action=action)
-        child.add_argument(
-            "--testing", action="store_true", required=action in {"verify", "reconcile"}
-        )
+        add_database_options(child)
         if action in {"coverage", "list"}:
             filters(child)
             if action == "coverage":
@@ -168,15 +163,13 @@ def utc_json(value: object) -> object:
 
 def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     options = Options.model_validate(vars(arguments))
-    if not options.testing:
-        raise MarketForgeError("Storage browsing requires --testing; no production fallback.")
     selected = StorageFilters.model_validate(
         {key: value for key, value in vars(arguments).items() if value is not None}
     )
     identity = local_identity(options.archive_reference)
 
     async def execute() -> dict[str, object]:
-        async with testing_connection(testing_dsn(context.paths.root)) as connection:
+        async with database_connection(database_dsn(context.paths.root)) as connection:
             async with connection.transaction():
                 await connection.execute(
                     "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"

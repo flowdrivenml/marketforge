@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from docs.content.examples.notebooks.dataset_fixtures import ID_BASE, PRICE, START, build
+
 from forge.datasets import MarketData, parquet
 from forge.datasets.registration import merged_file_memberships
 

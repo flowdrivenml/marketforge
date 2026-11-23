@@ -111,7 +111,7 @@ async def test_overview_owned_cancel_registry_failure_and_retained_selection(
         await asyncio.wait_for(ready.wait(), timeout=2)
         await pilot.pause(0.3)
         assert "execute" in str(app.query_one("#overview-current", Static).content)
-        assert "Testing registry unavailable" in str(
+        assert "Production registry unavailable" in str(
             app.query_one("#overview-attention", Static).content
         )
         await app.switch("Runs")
@@ -164,7 +164,12 @@ async def test_overview_exact_recovery_and_evidence_resolution(tmp_path: Path) -
     async def status(
         _: str, __: Values, ___: ApplicationContext, ____: Progress, _____: Edit
     ) -> object:
-        return {"database": "marketforge_test", "initialized": True}
+        return {
+            "database": "marketforge",
+            "initialized": True,
+            "purpose": "production",
+            "database_id": "fixture",
+        }
 
     app.overview_probe = status
     async with app.run_test(size=(120, 32)) as pilot:
@@ -186,6 +191,7 @@ async def test_overview_exact_recovery_and_evidence_resolution(tmp_path: Path) -
         assert app.overview_needs_registration({**failed, "submitted_sha256": "other"})
         recovered: dict[str, object] = {
             "registration": "registered",
+            "registry_id": "fixture",
             "execution": {"execution_id": MANAGED, "submitted_sha256": "digest"},
             "publications": {"output": {"publication_id": 7654321}},
         }
@@ -230,7 +236,12 @@ async def test_status_generation_rejects_late_results(tmp_path: Path) -> None:
                 cancelled.set()
                 await release.wait()
             return {"database": "marketforge_test", "initialized": False}
-        return {"database": "marketforge_test", "initialized": True}
+        return {
+            "database": "marketforge",
+            "initialized": True,
+            "purpose": "production",
+            "database_id": "fixture",
+        }
 
     app = ForgeApp(ctx)
     app.overview_probe = probe

@@ -100,7 +100,7 @@ pub(crate) fn bybit_spot_trade_job(
         |task| task.stream_id.0 == stream,
     )?;
     let root = project_root();
-    let catalog = FormatCatalog::load(root.join("data/.config/historical"))
+    let catalog = FormatCatalog::load(root.join("data/.config/engine/normalize"))
         .map_err(|error| error.to_string())?;
     batch
         .resolve_job(&batch.jobs[0], &catalog, config, root)

@@ -1,87 +1,92 @@
 # Acquire historical archives
 
-Use a saved TOML recipe to select a source, instrument or archive scope, data type, and time interval. Public historical coverage varies by provider, instrument and date. A supported request can legitimately find no files; neither current instrument listings nor a successful search prove complete historical coverage.
+Acquisition finds historical market-data archives and preserves the original provider bytes in managed raw storage. Once the files are available locally, normalization reads them and builds canonical datasets.
 
-## Supported sources
+**Create → Edit → Validate → Discover → Download → Inspect → Normalize**
 
-This table describes the current archive adapters, not the separate current-market collection matrix.
+Run the commands from your MarketForge workspace. The examples use the testing registry, where downloads still write real files to the configured data root. See the [acquisition prerequisites](index.md#prerequisites) for setup.
 
-| Source | Instrument type / market category | Data | Scope and discovery |
-| --- | --- | --- | --- |
-| Binance | spot/spot; perpetual or future/linear or inverse | `trades` | Native instrument; paginated daily S3 listing. |
-| Bybit | spot/spot; perpetual or future/linear or inverse | `trades`, `order_book_l2` | Native instrument; daily directory listings. |
-| Bybit | option/option | Both | `base_coin`, such as BTC; list-files requests split into at most seven calendar days. Not an individual option contract. |
-| Bitget | spot/spot; perpetual/linear or inverse; future/inverse | Both | Native instrument; historical symbol lookup and availability requests in seven-day windows. |
-| OKX | spot/spot | Both | Native spot instrument; daily historical queries. |
-| OKX | perpetual or future/linear or inverse | Both | Explicit `family`, such as BTC-USD; not a contract symbol. |
-| OKX | option/option | Both | Explicit `family`, or `base_coin` expanded to currently advertised families. |
-| Gate.io | spot/spot; perpetual or future/linear or inverse | Both | Native instrument; probes monthly trade or hourly book candidates for existence. |
-
-Binance L2/options and Bitget options/linear dated futures are not supported by these adapters. Gate.io dated-future archive routes are implemented as candidates; that does not establish that any particular archive exists. Its current-market metadata support is narrower. OKX depth uses the 5000-level historical module. Family bundles remain family-scoped files, not automatically identified concrete contracts.
-
-Use explicit historical scopes for delisted instruments/families. The archive adapters do not require them to appear in today's instrument list. OKX option `base_coin` expansion can only discover currently advertised families; use an explicit historical family when appropriate. See [scope configuration](../../configuration/acquisition.md#scope-and-provider-options).
-
-## 1. Create and validate a recipe
-
-These commands create a template, open the configured editor, and validate the saved structure:
+## 1. Create a recipe
 
 ```bash
-marketforge acquisition new september
-marketforge acquisition edit september
-marketforge acquisition validate september
-marketforge acquisition list
+mf acquisition new september | cpout
+mf acquisition edit september
 ```
 
-`new` creates `data/.config/acquisition/september.toml` and refuses to overwrite it; it does not open an editor. `edit` opens one and validates after saving. Select dates and scope using the [complete TOML example](../../configuration/acquisition.md#complete-example). `validate` checks schema, timezone-aware dates and required fields. Source support and availability are checked during mapping, not structural validation.
+`new` creates a TOML recipe in the workspace acquisition library and refuses to overwrite an existing file. `edit` opens that file in your editor and checks its structure when the editor exits successfully.
 
-## 2. Inspect cached knowledge or discover archives
+A recipe has one time interval shared by all its requests. Each request names an exchange, instrument type, market category, data type, and archive scope. This example selects one UTC day of Bybit BTCUSDT linear perpetual trades. The interval includes its start and excludes its end. Use the example as a starting point and replace the dates and request details with the data you intend to acquire.
 
-A cache-only plan needs both flags:
+```toml
+version = 1
+
+[interval]
+start = 2026-09-01T00:00:00Z
+end = 2026-09-02T00:00:00Z
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "perpetual"
+market_category = "linear"
+data_type = "trades"
+scope = { kind = "instrument", identifier = "BTCUSDT" }
+```
+
+Choose combinations with `mf acquisition sources` or the [supported historical sources](../../reference/acquisition-sources.md). See the [configuration reference](../../configuration/acquisition.md) for every recipe field.
+
+## 2. Validate
 
 ```bash
-marketforge acquisition plan september --testing --cache-only
-marketforge acquisition plan september --testing --cache-only --verify-local --limit 20
+mf acquisition validate september | cpout
 ```
 
-Before discovery, a request may be unresolved. Planning will not contact a provider to fill the gap. It reports a bounded archive sample, not a total download-size estimate. `--verify-local` hashes only that sample without changing registry status.
+Validation reads the saved TOML and checks fields, types, and interval order. A structurally valid recipe can still specify an unsupported source combination or a date with no published files. Mapping evaluates the combination and checks for archives.
 
-To discover availability and record it:
+## 3. Discover archives
 
 ```bash
-marketforge acquisition map september --testing
+mf acquisition map september --testing
 ```
 
-Mapping lists source archive identities and locations, records a completed scan when discovery succeeds, and produces a run report. Gate.io mapping includes existence probes; listing/metadata requests are still network work even though no archive body is downloaded. Successful empty results are cached. Observed nominal interval bounds and gap diagnostics are not event-level completeness checks.
+Mapping finds archive identities and records their nominal time intervals without downloading archive bodies. The request table distinguishes cached discovery from discovery performed during this run. A successful search can be empty. Unsupported requests and discovery failures have separate outcomes. Use the run ID or report path in the summary to inspect every request.
 
-## 3. Download or reuse local copies
+## 4. Download
 
 ```bash
-marketforge acquisition download september --testing
-marketforge --json acquisition download september --testing --silent
+mf acquisition download september --testing
 ```
 
-Download resolves the same request, maps when necessary, and acquires its discovered files. Matching completed copies are checked by size and SHA-256 before reuse. A changed upstream revision gets a new managed copy; completed files are not overwritten. Files are downloaded whole: the requested interval selects overlapping archives, not a crop of their contents.
+Download uses fresh discovery when available and discovers archives as needed. It verifies the size and SHA-256 of matching local copies before reusing them. New upstream revisions get separate immutable managed copies. Acquisition retrieves whole archives that overlap your interval, so a file may contain records beyond the requested dates.
 
-For a deliberate rediscovery or lower request rate:
+## 5. Inspect
 
 ```bash
-marketforge acquisition download september --testing --refresh --requests-per-second 0.5
+mf storage list --testing --exchange bybit --instrument BTCUSDT --data-type trades | cpout
+mf runs list --testing --operation acquisition --limit 10 | cpout
+mf runs report RUN_ID --testing | cpout
 ```
 
-`--refresh` bypasses discovery freshness; it is not a forced redownload of valid local bytes. It cannot detect an upstream revision that exposes no revision metadata. Unknown or expired locations are renewed when a usable local copy cannot be recovered or reused.
+Storage shows registered files. Use the run ID from the acquisition summary to inspect discovery and file outcomes. Nominal archive intervals describe the advertised file boundaries. Event-level completeness remains unknown even when those intervals span the entire request.
 
-## 4. Inspect the result
+## Optional operations
 
-```bash
-marketforge storage list --testing --exchange bybit --instrument BTCUSDT --data-type trades
-marketforge storage coverage --testing --exchange bybit --instrument BTCUSDT --gaps
-marketforge runs list --limit 10
-```
+| Goal | Command or option |
+| --- | --- |
+| Inspect fresh cached discovery | `mf acquisition plan september --testing --cache-only` |
+| Hash a bounded sample of registered files locally | Add `--verify-local` to the cache-only plan. |
+| Check discovery again | Add `--refresh` to `map` or `download`. |
+| Lower HTTP request pacing | Add `--requests-per-second 0.5` to `map` or `download`. |
+| Capture machine-readable results | Put global `--json` before `acquisition`. Add `--silent` to `map` or `download` to suppress progress in human mode. |
 
-Use the returned local archive ID and run UUID with `storage show`, `runs report`, and `runs logs`; see [management and recovery](managing-acquisitions.md). Progress uses stderr. The final result and report location remain available with `--silent`; global `--json` emits a structured stdout result.
+## Troubleshooting
 
-## If acquisition is incomplete
+| Symptom | What to do |
+| --- | --- |
+| No archives found | Check the native identifier, scope and dates. Use `--refresh` if cached results need an upstream check. |
+| Unsupported source or scope | Check the [historical source matrix](../../reference/acquisition-sources.md) and update the request. |
+| Partial or failed download | Inspect the retained report and events, then follow the [recovery instructions](managing-acquisitions.md#recover-partial-or-failed-runs). |
+| Invalid recipe | Correct the TOML location or field reported by `validate`. See [common validation errors](../../configuration/acquisition.md#common-validation-errors). |
 
-Inspect request outcomes and individual archive events before retrying. Unsupported scope is different from an empty successful search. Partial scans are not reusable coverage. A retry can reuse valid files and recover durable publication reservations, but it does not resume an incomplete HTTP body at its previous byte offset. Provider cooldowns and retry budgets are respected; repeated retries are not a way to bypass them.
+## Next step
 
-When the managed copies are complete, [prepare and normalize them](../normalize.md).
+[Normalize managed archives](../normalize.md) into canonical datasets.

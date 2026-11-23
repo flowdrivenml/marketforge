@@ -12,36 +12,17 @@ from psycopg.rows import TupleRow
 
 from forge.historical.archives.config import AcquisitionInterval, ArchiveRequest
 from forge.historical.archives.models import DiscoveredArchive
+from forge.shared.database.testing import testing_connection
 
 
 @pytest_asyncio.fixture
 async def connection() -> AsyncGenerator[AsyncConnection[TupleRow], None]:
-    dsn = os.environ.get("MARKETFORGE_DATABASE_URL_TEST")
+    dsn = os.environ.get("TEST_DATABASE_KEY")
 
     if not dsn:
-        pytest.skip("MARKETFORGE_DATABASE_URL_TEST is not set.")
+        pytest.skip("TEST_DATABASE_KEY is not set.")
 
-    async with await AsyncConnection.connect(
-        dsn,
-        autocommit=True,
-        connect_timeout=10,
-    ) as connection:
-        cursor = await connection.execute("SELECT current_database()")
-        database = await cursor.fetchone()
-
-        if database != ("marketforge_test",):
-            pytest.fail("Registry tests require the marketforge_test database.")
-
-        cursor = await connection.execute("""
-            SELECT purpose
-            FROM forge_meta.database_identity
-            WHERE singleton = TRUE
-            """)
-        identity = await cursor.fetchone()
-
-        if identity != ("testing",):
-            pytest.fail("Registry tests require a testing database identity.")
-
+    async with testing_connection(dsn) as connection:
         async with connection.transaction(force_rollback=True):
             yield connection
 

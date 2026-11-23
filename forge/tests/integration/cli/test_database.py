@@ -40,7 +40,8 @@ def test_reports_migration_result_as_plain_json(
 ) -> None:
     calls: list[str] = []
 
-    def fake_migrate(*, project_root: Path | None = None) -> MigrationResult:
+    def fake_migrate(*, testing: bool, project_root: Path | None = None) -> MigrationResult:
+        assert testing
         assert project_root == workspace
         calls.append("migrate")
         return MigrationResult(
@@ -50,7 +51,7 @@ def test_reports_migration_result_as_plain_json(
         )
 
     monkeypatch.setattr(
-        "forge.cli.commands.database.migrate_testing_database",
+        "forge.cli.commands.database.apply_migrations",
         fake_migrate,
     )
 
@@ -82,12 +83,13 @@ def test_reports_migration_failure(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def fake_migrate(*, project_root: Path | None = None) -> MigrationResult:
+    def fake_migrate(*, testing: bool, project_root: Path | None = None) -> MigrationResult:
+        assert testing
         assert project_root == workspace
         raise MigrationError("Migration history mismatch.")
 
     monkeypatch.setattr(
-        "forge.cli.commands.database.migrate_testing_database",
+        "forge.cli.commands.database.apply_migrations",
         fake_migrate,
     )
 

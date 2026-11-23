@@ -976,6 +976,15 @@ pub fn execute_merge_with_tui(
         return Err("merge TUI requires an interactive terminal".into());
     }
 
+    let _diagnostics = paths
+        .managed
+        .then(|| {
+            crate::historical::normalize::progress::log::DashboardLog::enter_managed(
+                &paths.report.with_file_name("engine-tui.log"),
+            )
+            .ok()
+        })
+        .flatten();
     let _signals = InterruptSignals::install()?;
     // Initialize terminal before launching the merge.
     let guard = TerminalGuard::enter()?;

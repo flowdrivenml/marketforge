@@ -9,14 +9,14 @@ from forge.datasets.registration import file_summaries, register_files
 from forge.historical.archives.storage.acquire import root_key
 from forge.historical.archives.storage.files import disk
 from forge.historical.normalization.datasets import verify
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
 
 async def migrate(paths: ProjectPaths, *, dry_run: bool) -> dict[str, Any]:
     plans = []
-    async with testing_connection(testing_dsn(paths.root)) as c:
+    async with database_connection(database_dsn(paths.root)) as c:
         async with c.cursor(row_factory=dict_row) as cursor:
             await cursor.execute(
                 """SELECT d.id,d.storage_path,d.operation,d.operation_details,m.publication_id

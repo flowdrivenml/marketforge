@@ -39,7 +39,7 @@ fn resolve(mut b: PreparedBatch) -> Result<ProcessingJob> {
     }
     b.validate(&root())?;
     let c = run.runtime(Overrides::default()).map_err(error)?;
-    let catalog = FormatCatalog::load(root().join("data/.config/historical"))?;
+    let catalog = FormatCatalog::load(root().join("data/.config/engine/normalize"))?;
     let [job] = b.jobs.as_slice() else {
         return Err(error("retained case must select exactly one job"));
     };

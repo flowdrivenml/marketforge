@@ -13,8 +13,9 @@ from rich.prompt import Confirm
 
 from forge.cli.commands.markets import emit
 from forge.cli.commands.storage import filters, local_identity, utc_json
+from forge.cli.environment import add_database_options
 from forge.markets.models import obj
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import OwnershipConflictError, WorkspaceOwnership
 from forge.shared.terminal.storage_cleanup import render_cleanup
@@ -48,7 +49,7 @@ def configure(add_parser: Callable[..., argparse.ArgumentParser]) -> None:
             else "Preview deletion of selected managed archive copies.",
         )
         child.set_defaults(service_handler=run, storage_action=action)
-        child.add_argument("--testing", action="store_true")
+        add_database_options(child)
         filters(child, cleanup=True, containment=action == "delete")
         child.add_argument(
             "--status",
@@ -115,8 +116,6 @@ def confirm_prune(context: ApplicationContext, counts: dict[str, object]) -> boo
 
 def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     options = Options.model_validate(vars(arguments))
-    if not options.testing:
-        raise MarketForgeError("Storage cleanup requires --testing; no production fallback.")
     submitted = {key: value for key, value in vars(arguments).items() if value is not None}
     selected = StorageFilters.model_validate(submitted)
     immediate = options.apply and options.preview is None
@@ -160,7 +159,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             raise MarketForgeError("Apply local ID differs from the reviewed preview.")
         if options.overlap and not plan.overlap:
             raise MarketForgeError("Apply date mode differs from preview.")
-        async with testing_connection(testing_dsn(context.paths.root)) as connection:
+        async with database_connection(database_dsn(context.paths.root)) as connection:
             return await apply(connection, context.paths, loaded, plan)
 
     async def create_preview() -> dict[str, object]:
@@ -173,7 +172,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
                 inactive = True
             except OwnershipConflictError:
                 pass
-            async with testing_connection(testing_dsn(context.paths.root)) as connection:
+            async with database_connection(database_dsn(context.paths.root)) as connection:
                 async with connection.transaction():
                     await connection.execute(
                         "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
@@ -222,7 +221,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
                     str(context.paths.root),
                     "storage",
                     options.storage_action,
-                    "--testing",
+                    "--testing" if context.testing else "--production",
                     "--apply",
                     "--preview",
                     str(source),

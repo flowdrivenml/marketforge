@@ -1,0 +1,67 @@
+version = 1
+
+[interval]
+start = 2026-10-27T00:00:00Z
+end = 2026-10-30T00:00:00Z
+
+[normalize]
+ranking_policy = "turnover"
+
+[merge]
+timeline_ordering = "causal"
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "trades"
+scope = { kind = "instrument", identifier = "BTCUSDT" }
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "order_book_l2"
+scope = { kind = "instrument", identifier = "BTCUSDT" }
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "trades"
+scope = { kind = "instrument", identifier = "BTCUSDC" }
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "order_book_l2"
+scope = { kind = "instrument", identifier = "BTCUSDC" }
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "trades"
+scope = { kind = "instrument", identifier = "ETHUSDT" }
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "order_book_l2"
+scope = { kind = "instrument", identifier = "ETHUSDT" }
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "trades"
+scope = { kind = "instrument", identifier = "ETHBTC" }
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "order_book_l2"
+scope = { kind = "instrument", identifier = "ETHBTC" }

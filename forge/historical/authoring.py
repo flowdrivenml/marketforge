@@ -157,7 +157,7 @@ def replace_merge_source(paths: ProjectPaths, name: str, source: str, expected: 
     """Replace the one derived source while preserving its interval and options."""
     from forge.historical.merge.config import DerivedRecipe, normalization_source
 
-    path = resolve_config_file(paths.config_dir / "historical/merge", name)
+    path = resolve_config_file(paths.workflow_dir("merge"), name)
     with recipe_writer(path):
         if path.read_bytes() != expected:
             raise MarketForgeError("Merge recipe changed since review.")

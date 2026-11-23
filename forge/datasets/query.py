@@ -2,21 +2,23 @@
 
 import argparse
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, LiteralString
 
-from psycopg.rows import dict_row
+from psycopg import AsyncConnection
+from psycopg.pq import TransactionStatus
+from psycopg.rows import TupleRow, dict_row
 from psycopg.types.json import Jsonb
 
-from forge.datasets import parquet
+from forge.datasets import converted, parquet, timelines, views
 from forge.datasets.inspection import contribution_counts, terminal_lineage
 from forge.datasets.migration import migrate
 from forge.datasets.registration import file_summaries
 from forge.historical.archives.storage.files import disk
 from forge.historical.engine.managed import checksum
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -109,6 +111,15 @@ class DatasetRequest:
     precise: bool = False
     checksums: bool = False
     dry_run: bool = False
+    view: str | None = None
+    publication_id: int | None = None
+    engine_publication: str | None = None
+    output_ref: str | None = None
+    target_quote: str | None = None
+    search: str | None = None
+    sort: str = "id"
+    part: int | None = None
+    timeline_reference: str | None = None
 
 
 async def browse(
@@ -126,11 +137,23 @@ async def browse(
         "head",
         "migrate-registration",
         "refresh-summary",
+        "timeline",
     }:
         raise MarketForgeError(f"Unsupported dataset action: {action}.")
     if action == "migrate-registration":
         return await migrate(paths, dry_run=args.dry_run)
-    async with testing_connection(testing_dsn(paths.root)) as c:
+    async with database_connection(database_dsn(paths.root)) as c:
+        if (
+            args.view is not None
+            or args.publication_id is not None
+            or args.output_ref is not None
+            or args.timeline_reference is not None
+        ):
+            start_snapshot = c.info.transaction_status == TransactionStatus.IDLE
+            async with c.transaction():
+                if start_snapshot:
+                    await c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                return await browse_projection(c, args, detailed=detailed)
         async with c.cursor(row_factory=dict_row) as cur:
             if action in SEARCH_ACTIONS:
                 if args.offset < 0 or (
@@ -144,7 +167,10 @@ async def browse(
                     JOIN historical.dataset_publications p ON d.publication_id=p.id
                     WHERE (%(operation)s::text IS NULL OR d.operation=%(operation)s)
                     AND (%(data_type)s::text IS NULL OR d.data_type=%(data_type)s)
-                    AND (%(status)s::text IS NULL OR d.status=%(status)s)
+                    AND (%(status)s::text IS NULL AND d.status<>'superseded' OR d.status=%(status)s)
+                    AND (%(publication)s::text IS NOT NULL OR %(status)s::text IS NOT NULL
+                        OR NOT EXISTS (SELECT 1 FROM historical.publication_supersessions s
+                                       WHERE s.publication_id=p.id))
                     AND (%(publication)s::text IS NULL OR p.engine_dataset_id=%(publication)s)
                     AND (%(start)s::bigint IS NULL OR d.end_timestamp_ns >= %(start)s)
                     AND (%(end)s::bigint IS NULL OR d.start_timestamp_ns < %(end)s)
@@ -174,8 +200,16 @@ async def browse(
                     presentation["has_more"] = len(records) > args.limit
                     records = records[: args.limit]
                 for record in records:
-                    record["first_observed_utc"] = utc(record["start_timestamp_ns"])
-                    record["last_observed_utc"] = utc(record["end_timestamp_ns"])
+                    record["first_observed_utc"] = (
+                        utc(record["start_timestamp_ns"])
+                        if record["start_timestamp_ns"] is not None
+                        else None
+                    )
+                    record["last_observed_utc"] = (
+                        utc(record["end_timestamp_ns"])
+                        if record["end_timestamp_ns"] is not None
+                        else None
+                    )
                 return {
                     **presentation,
                     "datasets": records,
@@ -286,11 +320,13 @@ async def browse(
                     "scope": "primary file and shared manifest checksum",
                     "entire_publication_verified": False,
                     "file_sha256": digest,
+                    **({"file": row} if detailed else {}),
                 }
             if action == "schema":
                 schema = await disk(parquet.schema, [file])
                 return {
                     "id": args.id,
+                    **({"file": row} if detailed else {}),
                     "columns": [
                         {"name": field.name, "type": str(field.type), "nullable": field.nullable}
                         for field in schema
@@ -330,6 +366,164 @@ async def browse(
                 (Jsonb(summary), args.id),
             )
             return {"id": args.id, "summary": summary}
+
+
+async def browse_projection(
+    c: AsyncConnection[TupleRow],
+    args: DatasetRequest,
+    *,
+    detailed: bool,
+) -> dict[str, Any]:
+    action = args.dataset_action
+    if action == "timeline" and args.timeline_reference is not None:
+        ref = timelines.TimelineReference.decode(args.timeline_reference)
+        selection = DatasetRequest(
+            "list",
+            view="timelines",
+            operation=ref.operation,
+            status=ref.status,
+            start=ref.start,
+            end=ref.end,
+            search=ref.search,
+            output_ref=ref.output,
+            limit=1,
+            **ref.membership_filters(),
+        )
+        result = await views.page(c, selection, timeline_ref=ref)
+        return {
+            "schema_version": 1,
+            "environment": result["environment"],
+            "timeline": result["timelines"][0],
+        }
+    if action in SEARCH_ACTIONS and args.view:
+        if args.offset < 0 or (
+            args.start is not None and args.end is not None and args.start >= args.end
+        ):
+            raise MarketForgeError("Require nonnegative offset and start < end.")
+        return await views.page(c, args)
+    if action not in SEARCH_ACTIONS and args.output_ref:
+        outputs, capability, unavailable = await converted.indexed_outputs(c, args.output_ref)
+        if capability == "unavailable":
+            raise MarketForgeError("The selected registry has no conversion output index.")
+        if unavailable:
+            raise MarketForgeError("The indexed conversion manifest is unavailable or invalid.")
+        if not outputs:
+            raise MarketForgeError("No indexed conversion output matches this reference.")
+        return await inspect_converted(outputs[0], args, detailed=detailed)
+    if action in {"show", "streams"} and args.publication_id is not None:
+        selection = replace(args, view="publications", limit=1)
+        result = await views.page(c, selection, inspect=True)
+        if not result["publications"]:
+            raise MarketForgeError(f"No registry publication {args.publication_id}.")
+        publication = result["publications"][0]
+        if action == "streams":
+            return {
+                "file": publication,
+                "scope": "primary-file membership across the publication",
+                "streams": stream_memberships(publication.get("memberships") or []),
+            }
+        files = await views.page(c, replace(args, view="files"), inspect=True)
+        return {"publication": publication, "files": files}
+    raise MarketForgeError("An explicit dataset view or inspection reference is required.")
+
+
+def stream_memberships(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    streams: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for member in members:
+        identity = tuple(
+            member.get(field)
+            for field in (
+                "stream_id",
+                "stream_rank",
+                "source_publication_id",
+                "kind",
+                "exchange",
+                "instrument_id",
+                "instrument_type",
+                "market_category",
+            )
+        )
+        stream = streams.setdefault(identity, dict(member))
+        for field, combine in (("start_timestamp_ns", min), ("end_timestamp_ns", max)):
+            if (bound := member.get(field)) is not None:
+                prior = stream.get(field)
+                stream[field] = bound if prior is None else combine(int(prior), int(bound))
+    return [streams[key] for key in sorted(streams, key=str)]
+
+
+async def inspect_converted(
+    row: dict[str, Any], args: DatasetRequest, *, detailed: bool
+) -> dict[str, Any]:
+    action = args.dataset_action
+    files = row["files"]
+    part = args.part
+    if part is not None and not 1 <= part <= len(files):
+        raise MarketForgeError(f"Choose a converted file part from 1 to {len(files)}.")
+    if action == "show":
+        return {"output": row}
+    if action == "streams":
+        return {
+            "file": row,
+            "scope": "source publication",
+            "streams": stream_memberships(row["summary"]["memberships"]),
+        }
+    if action == "lineage":
+        return {"file": row, "publication_selection": row["indexed_result"]["input"]}
+    if action == "verify":
+        result = await disk(converted.verify_output, row, part)
+        return {**result, **({"file": row} if detailed else {})}
+    if part is None:
+        raise MarketForgeError(
+            "Specify --part using the file numbers from datasets show --output-ref."
+        )
+    file = await disk(converted.checked_path, Path(row["storage_root"]), files[part - 1]["path"])
+    result: dict[str, Any] = {"output_ref": row["output_ref"], "part": part}
+    if detailed:
+        result["file"] = {**row, "summary": {**row["summary"], "rows": files[part - 1]["rows"]}}
+    if action == "schema":
+        schema = await disk(parquet.schema, [file])
+        result["columns"] = [
+            {"name": field.name, "type": str(field.type), "nullable": field.nullable}
+            for field in schema
+        ]
+    else:
+        from itertools import islice
+
+        def read() -> dict[str, Any]:
+            columns = args.column
+            if detailed and columns is None and not args.wide:
+                names = parquet.schema([file]).names
+                fields = (
+                    "event_timestamp_ns",
+                    "stream_id",
+                    "event_kind",
+                    "target_quote",
+                    "price",
+                    "price_target",
+                    "quantity_quote",
+                    "quantity_quote_target",
+                    "trade",
+                    "trade_target",
+                    "changes",
+                    "changes_target",
+                    "depth",
+                    "depth_target",
+                    "conversion_status",
+                )
+                columns = [name for name in fields if name in names] or names[:5]
+            batches = parquet.batches([file], columns=columns, batch_size=args.limit)
+            rows = [record for batch in islice(batches, 1) for record in batch.to_pylist()]
+            return {
+                "rows": rows,
+                **(
+                    {"projection": columns, "precise": args.precise, "compact": False}
+                    if detailed
+                    else {}
+                ),
+            }
+
+        result.update(await disk(read))
+    return result
 
 
 def preview_columns(row: dict[str, Any], names: list[str]) -> list[str]:
@@ -392,7 +586,7 @@ async def publications(
     }
     order = orders.get(sort, "p.id")
     direction: LiteralString = " DESC" if descending else " ASC"
-    async with testing_connection(testing_dsn(paths.root)) as connection:
+    async with database_connection(database_dsn(paths.root)) as connection:
         await connection.execute("SET statement_timeout = '5s'")
         async with connection.cursor(row_factory=dict_row) as cursor:
             await cursor.execute(

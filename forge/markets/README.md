@@ -22,6 +22,8 @@ Run sync first after upgrading: older completion records do not certify the new
 futures-aware universe. The collection version is `markets-futures-v3`. Examples
 of dated symbols above reflect a live check on 2026-11-05, not permanent listings.
 
+See the [Markets guide](../../docs/content/workflows/markets/index.md) and [CLI reference](../../docs/content/reference/cli/markets.md) for current command behavior.
+
 ## Supported scopes and metadata
 
 | Exchange | Spot | Linear derivatives | Inverse derivatives |

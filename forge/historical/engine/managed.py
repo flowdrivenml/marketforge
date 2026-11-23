@@ -175,19 +175,22 @@ def inventory(paths: ProjectPaths) -> dict[str, Any]:
         path = paths.bin_dir / target.installed_filename
         entry = document["targets"].get(target.name)
         state = "missing"
-        if path.is_symlink():
-            state = "unsafe_symlink"
-        elif path.exists():
-            if not path.is_file():
-                state = "not_regular"
-            elif not os.access(path, os.X_OK):
-                state = "not_executable"
-            elif not isinstance(entry, dict) or not isinstance(
-                entry["sha256"] if "sha256" in entry else None, str
-            ):
-                state = document.get("error", "missing_metadata")
-            else:
-                state = "verified" if checksum(path) == entry["sha256"] else "checksum_mismatch"
+        try:
+            if path.is_symlink():
+                state = "unsafe_symlink"
+            elif path.exists():
+                if not path.is_file():
+                    state = "not_regular"
+                elif not os.access(path, os.X_OK):
+                    state = "not_executable"
+                elif not isinstance(entry, dict) or not isinstance(
+                    entry["sha256"] if "sha256" in entry else None, str
+                ):
+                    state = document.get("error", "missing_metadata")
+                else:
+                    state = "verified" if checksum(path) == entry["sha256"] else "checksum_mismatch"
+        except OSError:
+            state = "unreadable"
         results.append(
             {"target": target.name, "path": str(path), "status": state, "installation": entry}
         )

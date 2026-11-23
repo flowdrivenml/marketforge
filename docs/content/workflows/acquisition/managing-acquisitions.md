@@ -1,75 +1,61 @@
-# Inspect and manage acquisitions
+# Managing acquisitions
 
-## Browse managed records
+Use the [acquisition guide](historical-data.md) for the first run. This page covers discovery freshness, managed copies, and recovery.
 
-These commands read the configured raw root's registry records without contacting providers or hashing files:
+## Discovery cache and refresh
 
-```bash
-marketforge storage --testing
-marketforge storage list --testing --exchange bybit --instrument BTCUSDT --status complete --wide
-marketforge storage coverage --testing --exchange bybit --instrument BTCUSDT --data-type trades --gaps
-```
-
-`storage` defaults to coverage. Lists include pending, downloading, complete, missing, corrupt, failed and deleted records unless filtered. `--wide` adds filenames; details/JSON expose paths and checksums. Replace `LOCAL_ID` below with a returned positive local ID, optionally prefixed `local:`:
+A completed scan is fresh for six hours when its source scope, covering interval, and adapter version match. A successful empty scan is cacheable. Unsupported requests and partial or failed scans do not provide reusable completed coverage.
 
 ```bash
-marketforge storage show LOCAL_ID --testing
+mf acquisition map september --testing --refresh
+mf acquisition plan september --testing --cache-only --verify-local --limit 20 | cpout
 ```
 
-Filters include origin (`remote` or `external`), market/type, scope kind, data type, feed, assets, symbol glob and half-open date bounds. Browsing dates use overlap. Coverage merges nominal intervals from complete records; duplicate copies increase file/byte counts, not covered duration. With no requested bounds, gaps are only holes inside the observed envelope. With both bounds, leading/trailing gaps are included. Missing interval metadata is unknown, not zero gaps. A group must have matching local records to appear.
+A successful refresh supersedes overlapping completed discovery for that selection. A failed refresh leaves previous completed discovery intact. Refresh updates discovery evidence. Download can still reuse matching verified bytes.
 
-> **Coverage is nominal.** Zero registered gaps does not prove file integrity, parseability or complete market events. Browsing does not reverify bytes. Asset metadata can be unknown or ambiguous for historical families and options.
+The optional cache-only plan reads fresh completed scans from the selected registry. Unresolved requests need discovery. The archive list is a bounded sample (default 100, range 1–10000). With `--verify-local`, planning checks size and SHA-256 on eligible local copies in that sample without updating the registry. Use mapping to discover current upstream availability.
+
+## Archive identity and managed copies
+
+An archive's source identity includes its provider-native object key and revision evidence. Download URLs can expire or change independently of that identity. A changed upstream revision gets a separate managed copy. Changes that the provider exposes without distinct revision evidence may go undetected.
+
+Download verifies matching completed local files by size and SHA-256 before reuse. If a matching copy is missing or corrupt, the registry records that condition. A needed download can renew an expired or missing source location. Forge checks supported container integrity and publishes verified bytes as immutable managed raw files, then finalizes their local archive registration.
+
+Storage lists registered copies and their states. Nominal intervals describe the published archive boundaries. Even gap-free nominal intervals leave record integrity and market-event completeness unknown.
+
+```bash
+mf storage list --testing --exchange bybit --instrument BTCUSDT --wide | cpout
+mf storage show LOCAL_ID --testing | cpout
+mf storage coverage --testing --exchange bybit --instrument BTCUSDT --data-type trades --gaps | cpout
+```
+
+Use the local archive ID returned by the list command. See [storage commands](../../reference/cli/storage.md) for inspection, verification and cleanup options.
 
 ## Inspect runs and reports
 
 ```bash
-marketforge runs list --limit 10
-marketforge runs report RUN_UUID
-marketforge runs show RUN_UUID
-marketforge runs logs RUN_UUID --limit 50
+mf runs list --testing --operation acquisition --limit 10 | cpout
+mf runs show RUN_ID --testing | cpout
+mf runs report RUN_ID --testing | cpout
+mf runs logs RUN_ID --testing --limit 50 | cpout
 ```
 
-Replace `RUN_UUID` with the operation's UUID. These commands read local artifacts and need no `--testing`. `show` and `report` read the same report. Logs return the first events within a 1 MiB read cap, not a live tail; limits are 1–1000. A missing/interrupted or invalid report is reported explicitly. Reports over 4 MiB cannot be read through this inspection command.
+Use the run ID from the acquisition result. The execution index provides searchable status. The report and recorded events contain detailed request and file outcomes. The download byte total covers measured completed transfers. Failed or interrupted transfers can consume additional bandwidth. The report path points into the configured data root's `runs/` directory. The event log is a bounded read of retained events. See [execution history and retained evidence](../../reference/cli/runs.md).
 
-Acquisition runs retain the submitted TOML, `report.json` and append-only `events.jsonl` under the configured data root's `runs/`. Imports also retain a resolved plan. Request results distinguish discovery/cache outcomes from file outcomes. File counters distinguish queued, completed, reused, failed and cancelled work; discovery totals can remain provisional until all requests finish. Per-archive events provide local identity, status, bytes, checksum, relative path, or diagnostic. Keep reports for recovery and diagnosis; inspect them before sharing, especially external-import plans with source paths/samples.
+## Recover partial or failed runs
 
-## Cache and reuse
-
-Completed discovery is fresh for six hours, including successful empty searches, provided its scope, covering interval and adapter version match. `--refresh` supersedes overlapping successful scans for that selection, including an authoritative empty result. Failed refreshes do not invalidate the previous completed scan. A cache result is a source interpretation, not a claim of continuous data.
-
-Download reuse verifies size and SHA-256. Missing/corrupt files are recorded and a new acquisition can replace their availability without overwriting the old completed path. URL signatures are not archive identity. If there is no reusable local copy, expired/missing locations trigger selection-level renewal. Invisible upstream changes without revision metadata cannot be detected by local reuse.
-
-## Verification and recovery are maintenance
-
-The following commands do more than display records:
+1. Read the report and events. Identify unsupported requests, successful empty searches, discovery failures and file failures separately. A partial run can leave completed copies available for reuse. A hard termination can leave a reservation without a final report.
+2. Correct unsupported scopes in the recipe. For rate or network errors, let the provider cooldown expire before retrying. Forge uses bounded retries and honors cooldowns. Add `--requests-per-second 0.5` to lower pacing when appropriate. Provider budgets still apply.
+3. Verify a suspect local copy, or reconcile an interrupted publication when a local archive ID is available.
+4. Rerun `mf acquisition download september --testing` to reuse verified files and retrieve outstanding archives. An incomplete HTTP transfer starts again from the beginning.
 
 ```bash
-marketforge storage verify --testing --archive LOCAL_ID
-marketforge storage reconcile --testing --archive LOCAL_ID
+mf storage verify --testing --archive LOCAL_ID | cpout
+mf storage reconcile --testing --archive LOCAL_ID | cpout
 ```
 
-Replace `LOCAL_ID`. Verification reads bytes and can update verification time or mark missing/corrupt records. Reconciliation can recover downloading reservations from durable size/hash evidence, publish a reserved temporary file, and finalize registration. Neither contacts providers or redownloads. Unverified partials are retained by maintenance reconciliation. The `--limit` default is 100; maintenance `--status`/`--origin` are accepted by the parser but are not passed to the selection service, so do not rely on them to narrow maintenance. Use `--archive` for one record.
+Verification reads local bytes and can update registry state. Reconciliation uses durable size and hash evidence to recover an eligible reservation, publish a verified temporary file, or finalize registration. Both are local maintenance operations. Partials without sufficient evidence remain unverified.
 
-Remote download validation checks nonempty content, ZIP/gzip integrity and rejects HTML/error documents; it does not extract archives or validate market schemas. External imports preserve arbitrary stable bytes and do not apply the same container checks automatically.
+## Cleanup
 
-After ordinary failure or interruption, rerun the acquisition/import recipe to reuse valid copies and recover durable reservations. Incomplete transfers without committed hash evidence restart rather than resume. Hard termination can leave no final report; registry reservations remain important. Do not manually edit reservation rows or replace files to force success.
-
-## Cleanup is explicit
-
-`storage prune --testing` previews failed-download retirement; `storage delete LOCAL_ID --testing` previews one managed-copy deletion. Previews can create managed preview/lock files, but do not remove archive bytes or update archive records. They are not pure filesystem-read commands.
-
-Prune apply in an interactive terminal shows all targets and asks for confirmation. Scripted prune and every delete apply require the exact saved preview path. Review every target using `--all` or `--json` before applying. Display pagination never narrows the selected set. Delete date filters use full containment unless `--overlap` is explicit, unlike browsing overlap. Dependencies, active ownership and unsafe/changed targets can block removal. Original external source files are preserved. See [maintenance syntax](../../reference/cli/acquisition.md#cleanup-reference) before any deletion.
-
-## Troubleshooting
-
-| Symptom | What to check |
-| --- | --- |
-| TOML rejected | Unknown fields, timezone-aware dates, interval order, scope and provider matrix. Structural validity alone does not prove source support. |
-| Cache-only plan unresolved | Run mapping deliberately if network/registry writes are intended; planning cannot discover new availability. |
-| No archives | Check provider, native identifier, dates and scope. Gate candidate absence is not proof the product is unsupported. |
-| Database access rejected | Testing URL key, explicit database name, testing identity and applied migrations; no production fallback exists. |
-| HTTP/rate failure | Read request outcomes; lower pacing if needed and respect server cooldowns. Do not repeatedly refresh to bypass a cooldown. |
-| Missing/corrupt file | Inspect one ID, then deliberately verify/reconcile or rerun download. Do not equate an old `complete` record with current byte validity. |
-| Interrupted run | Inspect report/events and reservation state; retries can recover a durable publication without HTTP. |
-
-See the [unified Forge workflow](forge.md) for managed builds, manually authored profiles, historical registration declarations, namespace mappings and dataset-registration recovery.
+Use the [storage cleanup reference](../../reference/cli/storage.md#understand-cleanup-safety) to preview failed attempts with `storage prune` or managed copies with `storage delete`. Apply cleanup only after reviewing the selected targets and any dependencies. See the [Forge workflow](forge.md) for dataset build and registration recovery.

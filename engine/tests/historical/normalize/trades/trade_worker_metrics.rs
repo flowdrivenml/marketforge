@@ -21,7 +21,7 @@ struct CountingSink {
 fn load_policy() -> marketforge_engine::historical::job::IntegrityPolicy {
     let root = project_root();
 
-    load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+    load_processing_config(root.join("data/.config/engine/normalize.toml"), &root)
         .expect("load processing configuration")
         .integrity_policy
 }

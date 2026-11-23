@@ -24,11 +24,22 @@ from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 from forge.startup.context import ApplicationContext
 
-EXAMPLE = Path(__file__).resolve().parents[4] / "data/.config/pipeline/bybit_spot.toml"
+EXAMPLE = Path(__file__).with_name("fixtures") / "bybit_pipeline.toml"
 
 
 @pytest.fixture
-def run(tmp_path: Path) -> service.PipelineRun:
+def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> service.PipelineRun:
+    from collections.abc import Awaitable, Callable
+    from types import SimpleNamespace
+
+    async def execute(_: object, call: Callable[[], Awaitable[dict[str, Any]]]) -> dict[str, Any]:
+        return await call()
+
+    monkeypatch.setattr(service, "show_index", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        service, "begin", AsyncMock(return_value=SimpleNamespace(registry="testing"))
+    )
+    monkeypatch.setattr(service, "complete_call", execute)
     console = Console(file=io.StringIO())
     context = ApplicationContext(
         AppSettings(), ProjectPaths(tmp_path, tmp_path / "data"), None, console, console

@@ -453,10 +453,10 @@ def library(context: ApplicationContext, family: str) -> Path:
         "pipeline": paths.pipeline_config_dir,
         "acquisition": paths.acquisition_config_dir,
         "normalize": paths.normalization_recipe_dir,
-        "merge": paths.config_dir / "historical/merge",
+        "merge": paths.workflow_dir("merge"),
         "convert": conversion_library(paths),
-        "acquisition import": paths.acquisition_config_dir / "import",
-        "acquisition register": paths.config_dir / "historical/registration",
+        "acquisition import": paths.workflow_dir("import"),
+        "acquisition register": paths.workflow_dir("import") / "registration",
         "markets rank": paths.config_dir / "markets/rankings",
     }[family]
 

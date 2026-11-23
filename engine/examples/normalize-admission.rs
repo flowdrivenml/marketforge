@@ -12,13 +12,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let p = std::path::PathBuf::from(args.get(index).map(String::as_str).unwrap_or(default));
         if p.is_absolute() { p } else { root.join(p) }
     };
-    let runtime =
-        load_processing_config(resolve(2, "data/.config/historical/general.toml"), &root)?;
+    let runtime = load_processing_config(resolve(2, "data/.config/engine/normalize.toml"), &root)?;
     let batch = read_prepared_batch(
         resolve(1, "engine/tests/historical/fixtures/normalize.json"),
         &root,
     )?;
-    let catalog = FormatCatalog::load(root.join("data/.config/historical"))?;
+    let catalog = FormatCatalog::load(root.join("data/.config/engine/normalize"))?;
     let jobs = batch
         .jobs
         .iter()

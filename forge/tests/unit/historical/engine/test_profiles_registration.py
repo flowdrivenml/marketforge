@@ -16,7 +16,7 @@ from forge.shared.paths import ProjectPaths
 
 def test_namespaced_discovery_without_services(tmp_path: Path) -> None:
     paths = ProjectPaths(tmp_path, tmp_path / "data")
-    directory = paths.config_dir / "historical/profiles/trades"
+    directory = paths.config_dir / "engine/normalize/profiles/trades"
     directory.mkdir(parents=True)
     source = directory / "binance.spot.spot.trades.toml"
     source.write_text(

@@ -134,7 +134,7 @@ impl TestRun {
     ///
     /// Only the scratch directory is relocated to the isolated test run.
     pub fn runtime_from_general(&self) -> TestResult<ProcessingConfig> {
-        let mut config = load_processing_config("data/.config/historical/general.toml", root())
+        let mut config = load_processing_config("data/.config/engine/normalize.toml", root())
             .map_err(|e| e.to_string())?;
 
         config.resources.scratch_path = self.path.join("scratch");
@@ -170,6 +170,16 @@ impl TestRun {
         batch: &PreparedBatch,
         runtime: &ProcessingConfig,
     ) -> TestResult<ResolvedBatch> {
+        let catalogue = FormatCatalog::load(root().join("data/.config/engine/normalize"))
+            .map_err(|e| e.to_string())?;
+        self.prepare_with_catalogue(batch, runtime, &catalogue)
+    }
+    pub fn prepare_with_catalogue(
+        &mut self,
+        batch: &PreparedBatch,
+        runtime: &ProcessingConfig,
+        catalogue: &FormatCatalog,
+    ) -> TestResult<ResolvedBatch> {
         let mut b = batch.clone();
         self.metadata["selection"] =
             json!(b.jobs.iter().flat_map(|j| &j.tasks).collect::<Vec<_>>());
@@ -192,14 +202,8 @@ impl TestRun {
             serde_json::to_vec_pretty(&b).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())?;
-        let resolved = load_normalization_batch(
-            &b.batch_path,
-            &FormatCatalog::load(root().join("data/.config/historical"))
-                .map_err(|e| e.to_string())?,
-            runtime,
-            root(),
-        )
-        .map_err(|e| e.to_string())?;
+        let resolved = load_normalization_batch(&b.batch_path, catalogue, runtime, root())
+            .map_err(|e| e.to_string())?;
         self.metadata["resolved_jobs"] = json!(resolved.jobs);
         self.save()?;
         Ok(resolved)

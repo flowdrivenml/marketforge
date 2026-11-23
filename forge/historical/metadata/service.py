@@ -29,7 +29,7 @@ from forge.historical.metadata.policy import (
 )
 from forge.historical.normalization.service import write_job
 from forge.historical.profiles.service import validate_catalogue
-from forge.shared.database.testing import testing_connection
+from forge.shared.database.connection import database_connection, database_purpose
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 from forge.storage.models import StorageFilters
@@ -276,7 +276,7 @@ async def enrich(
     }
     profile_map: dict[str, Any] = {}
     if discover_archives and any(row["scope_kind"] == "family" for row in raw):
-        validated = await disk(validate_catalogue, paths, paths.config_dir / "historical")
+        validated = await disk(validate_catalogue, paths, paths.engine_config_dir / "normalize")
         profile_map = {p["id"]: p for p in validated["profiles"]}
     discoveries: dict[int, dict[str, Any]] = {}
     blockers: list[dict[str, Any]] = []
@@ -580,7 +580,7 @@ async def enrich(
     report: dict[str, Any] = {
         "schema_version": 1,
         "run_id": run_id,
-        "environment": "testing",
+        "environment": database_purpose(),
         "policy_version": POLICY_VERSION,
         "status": "complete" if eligible == len(raw) else "partial",
         "concrete_instruments": dict(counts),
@@ -607,15 +607,15 @@ async def enrich(
     }
     async with c.transaction():
         await c.execute(
-            "INSERT INTO historical.metadata_enrichment_runs(id,environment,policy_version,report) VALUES(%s,'testing',%s,%s)",
-            (run_id, POLICY_VERSION, Jsonb(serial(report))),
+            "INSERT INTO historical.metadata_enrichment_runs(id,environment,policy_version,report) VALUES(%s,%s,%s,%s)",
+            (run_id, report["environment"], POLICY_VERSION, Jsonb(serial(report))),
         )
     write_job(operation / "enrichment-report.json", report)
     return report
 
 
-async def enrich_testing(dsn: str, paths: ProjectPaths) -> dict[str, Any]:
-    async with testing_connection(dsn) as c:
+async def enrich_registry(dsn: str, paths: ProjectPaths) -> dict[str, Any]:
+    async with database_connection(dsn) as c:
         cur = await c.execute("SELECT pg_try_advisory_lock(556823701490)")
         if await cur.fetchone() != (True,):
             raise MarketForgeError("Another historical metadata enrichment operation is active.")

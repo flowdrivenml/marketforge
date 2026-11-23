@@ -1,15 +1,17 @@
 """Orchestration policy without starting a processing subprocess."""
 
 import json
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from forge.historical.normalization import execution
 from forge.historical.normalization.datasets import verify_inventory
 from forge.shared.config.library import ConfigurationNameError, run_reference
+from forge.shared.database.connection import database_environment
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -39,7 +41,7 @@ def test_finish_requires_valid_verified_registrations(
 ) -> None:
     paths = ProjectPaths(tmp_path, tmp_path / "data")
     document: dict[str, Any] = {"run_id": "submitted", "jobs": []}
-    records = []
+    records: list[dict[str, Any]] = []
     for job_id, status in enumerate(statuses, 10):
         output = tmp_path / str(job_id)
         document["jobs"].append(
@@ -80,6 +82,8 @@ def test_finish_requires_valid_verified_registrations(
         "engine_result_path": str(result_path),
         "allow_partial": allow,
         "execution_id": "fixture",
+        "environment": "production",
+        "registry_id": "registry-fixture",
         "submitted_sha256": "fixture",
         "source_sha256_by_job": {"10": {}, "11": {}},
     }
@@ -180,10 +184,10 @@ def test_named_run_prepares_once_and_submits_exact_artifact(
     from forge.cli.commands import normalization
     from forge.cli.main import main
 
-    for path in ("forge", "engine", "data/.config/historical/normalization"):
+    for path in ("forge", "engine", "data/.config/workflows/data_engineering/normalization"):
         (tmp_path / path).mkdir(parents=True)
     (tmp_path / "forge/pyproject.toml").touch()
-    recipe = tmp_path / "data/.config/historical/normalization/demo.toml"
+    recipe = tmp_path / "data/.config/workflows/data_engineering/normalization/demo.toml"
     recipe.write_text("""
 version = 1
 [interval]
@@ -197,7 +201,7 @@ data_type = "trades"
 scope = {kind = "instrument", identifier = "BTCUSDT"}
 """)
     submission = tmp_path / "frozen-request"
-    calls = []
+    calls: list[str] = []
 
     async def prepare(*args: Any, **kwargs: Any) -> dict[str, str]:
         calls.append("prepare")
@@ -211,6 +215,7 @@ scope = {kind = "instrument", identifier = "BTCUSDT"}
         assert kwargs == {"tui": False, "allow_partial": True, "recipe": "demo"}
         return {"status": "partial", "execution_id": "fixture", "registrations": [{}]}
 
+    monkeypatch.setattr(normalization, "cli_execution", Mock(return_value=nullcontext()))
     monkeypatch.setattr(normalization, "prepare_batch", prepare)
     monkeypatch.setattr(normalization, "execute", execute)
     assert (
@@ -256,7 +261,8 @@ async def test_register_from_intent_never_runs_processing(
         json.dumps(
             {
                 "operation": "normalize",
-                "environment": "testing",
+                "environment": "production",
+                "registry_id": "registry-fixture",
                 "execution_id": "power-loss",
                 "source_sha256_by_job": {"7": {"fixture": "hash"}},
                 "allow_partial": False,
@@ -268,7 +274,7 @@ async def test_register_from_intent_never_runs_processing(
     monkeypatch.setattr(
         execution, "run_process", Mock(side_effect=AssertionError("No processing permitted"))
     )
-    monkeypatch.setattr(execution, "committed_job", lambda *args: {"path": str(dataset)})
+    monkeypatch.setattr(execution, "committed_job", Mock(return_value={"path": str(dataset)}))
 
     async def retry(
         _paths: ProjectPaths, outputs: list[dict[str, Any]], **kwargs: Any
@@ -278,7 +284,15 @@ async def test_register_from_intent_never_runs_processing(
         return {"registration": "registered", "catalogue_dataset_id": 91}
 
     monkeypatch.setattr(execution, "register_verified", retry)
+    monkeypatch.setattr(
+        execution, "selected_registry_id", AsyncMock(return_value="registry-fixture")
+    )
     assert (await execution.recover(paths, intent))["catalogue_dataset_id"] == 91
+    with (
+        database_environment(testing=True),
+        pytest.raises(MarketForgeError, match="original verified database identity"),
+    ):
+        await execution.recover(paths, intent)
     submission.write_text("{}")
     with pytest.raises(MarketForgeError, match="fingerprint"):
         await execution.recover(paths, intent)

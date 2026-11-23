@@ -1,29 +1,52 @@
 """Application execution identities."""
 
-from __future__ import annotations
-
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import NewType
 from uuid import UUID, uuid4
 
-RunId = NewType("RunId", UUID)
+
+class RunOperation(StrEnum):
+    ACQUISITION = "acquisition"
+    NORMALIZE = "normalize"
+    MERGE = "merge"
+    CONVERT = "convert"
+    PIPELINE = "pipeline"
+
+
+@dataclass(frozen=True, slots=True)
+class RunId:
+    uuid: UUID
+    operation: RunOperation | None
+
+    def __str__(self) -> str:
+        return f"{self.operation}-{self.uuid}" if self.operation else str(self.uuid)
+
+
 AttemptId = NewType("AttemptId", UUID)
 
 
-def new_run_id() -> RunId:
-    """Allocate an identity for a new execution."""
-    return RunId(uuid4())
+def new_run_id(operation: RunOperation) -> RunId:
+    return RunId(uuid4(), RunOperation(operation))
 
 
 def new_attempt_id() -> AttemptId:
-    """Allocate an identity for one execution attempt."""
     return AttemptId(uuid4())
 
 
 def parse_run_id(value: str) -> RunId:
-    """Validate and normalize an external run reference."""
-    return RunId(UUID(value))
+    prefix, separator, remainder = value.partition("-")
+    if separator and prefix in tuple(RunOperation):
+        operation = RunOperation(prefix)
+        identity = UUID(remainder)
+        if remainder.lower() != str(identity):
+            raise ValueError("Expected a hyphenated UUID.")
+        return RunId(identity, operation)
+    identity = UUID(value)
+    if value.lower() != str(identity):
+        raise ValueError("Expected an operation-prefixed run ID or legacy UUID.")
+    return RunId(identity, None)
 
 
 def parse_attempt_id(value: str) -> AttemptId:
-    """Validate and normalize an external attempt reference."""
     return AttemptId(UUID(value))

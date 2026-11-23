@@ -16,7 +16,7 @@ fn fixture() -> PreparedBatch {
     super::super::normalization_fixture::canonical_normalization_batch().unwrap()
 }
 fn catalog() -> FormatCatalog {
-    FormatCatalog::load(root().join("data/.config/historical")).unwrap()
+    FormatCatalog::load(root().join("data/.config/engine/normalize")).unwrap()
 }
 fn runtime() -> ProcessingConfig {
     crate::shared::historical::load_processing_config(

@@ -24,7 +24,7 @@ from forge.markets.repository import (
 )
 from forge.shared.async_work import bounded_map
 from forge.shared.config.models import HttpSettings
-from forge.shared.database.testing import testing_connection
+from forge.shared.database.connection import database_connection
 from forge.shared.http.configured import open_configured_http_client
 
 __all__ = ["EXCHANGES", "MARKETS", "collect"]
@@ -61,7 +61,7 @@ async def collect(
         "symbol": symbol,
         "collection_version": COLLECTION_VERSION,
     }
-    async with testing_connection(dsn) as c:
+    async with database_connection(dsn) as c:
         cur = await c.execute(
             "INSERT INTO catalog.instrument_syncs(scope_json,status,source_outcomes) VALUES(%s,'running',%s) RETURNING id"
             if metadata
@@ -103,7 +103,7 @@ async def collect(
         )
 
     async def persist(index: int) -> None:
-        async with testing_connection(dsn) as c:
+        async with database_connection(dsn) as c:
             await write_outcome(c, index)
 
     cancelled = False
@@ -137,7 +137,7 @@ async def collect(
                 try:
                     await persist(index)
                     provider = PublicProvider(e, clients[e])
-                    async with testing_connection(dsn) as c:
+                    async with database_connection(dsn) as c:
                         if metadata:
                             seen_metadata: set[tuple[str, str]] = set()
                             async for page in provider.pages(m, metadata=True):
@@ -307,7 +307,7 @@ async def collect(
         for o in outcomes:
             if o["status"] in {"queued", "running"}:
                 o["status"] = "cancelled"
-        async with testing_connection(dsn) as c:
+        async with database_connection(dsn) as c:
             await c.execute(
                 "UPDATE catalog.instrument_syncs SET status='failed',completed_at=now(),source_outcomes=%s WHERE id=%s"
                 if metadata
@@ -326,7 +326,7 @@ async def collect(
         if all(o["status"] == "complete" for o in outcomes)
         else "partial"
     )
-    async with testing_connection(dsn) as c:
+    async with database_connection(dsn) as c:
         await c.execute(
             "UPDATE catalog.instrument_syncs SET status=%s,completed_at=now(),source_outcomes=%s WHERE id=%s"
             if metadata

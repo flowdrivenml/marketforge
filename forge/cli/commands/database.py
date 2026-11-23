@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 
 from forge.shared.config.models import PresentationSettings
-from forge.shared.database.migrations import MigrationError, migrate_testing_database
-from forge.shared.database.status import inspect_testing_database
+from forge.shared.database.migrations import migrate_database as apply_migrations
+from forge.shared.database.status import inspect_database
 from forge.shared.terminal.console import create_console
 
 
@@ -16,11 +16,8 @@ def migrate_database(
     as_json: bool = False,
     project_root: Path | None = None,
 ) -> None:
-    """Apply pending migrations to the explicitly selected testing database."""
-    if not testing:
-        raise MigrationError("Database migration currently requires --testing.")
-
-    result = migrate_testing_database(project_root=project_root)
+    """Apply pending migrations to the explicitly selected database."""
+    result = apply_migrations(project_root=project_root, testing=testing)
 
     if as_json:
         print(
@@ -58,11 +55,8 @@ def show_database_status(
     as_json: bool = False,
     project_root: Path | None = None,
 ) -> None:
-    """Display the testing database identity and migration state."""
-    if not testing:
-        raise MigrationError("Database inspection currently requires --testing.")
-
-    status = inspect_testing_database(project_root=project_root)
+    """Display the selected database identity and migration state."""
+    status = inspect_database(project_root=project_root, testing=testing)
 
     if as_json:
         print(
@@ -70,6 +64,8 @@ def show_database_status(
                 {
                     "schema_version": 1,
                     "database": status.database,
+                    "environment": "testing" if testing else "production",
+                    "missing_schemas": list(status.missing_schemas),
                     "initialized": status.initialized,
                     "database_id": status.database_id,
                     "purpose": status.purpose,
@@ -90,12 +86,15 @@ def show_database_status(
             f"Identity: {status.database_id}",
             style="mf.secondary",
         )
-        console.print("Purpose: testing", style="mf.body")
+        console.print(f"Purpose: {status.purpose}", style="mf.body")
     else:
         console.print(
             "Forge migration metadata is not initialized.",
             style="mf.warning",
         )
+
+    if status.missing_schemas:
+        console.print(f"Missing schemas: {', '.join(status.missing_schemas)}", style="mf.warning")
 
     applied = ", ".join(str(version) for version in status.applied) or "none"
     console.print(f"Applied migrations: {applied}", style="mf.body")

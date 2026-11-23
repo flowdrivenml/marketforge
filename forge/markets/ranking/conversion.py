@@ -7,6 +7,7 @@ from fractions import Fraction
 from typing import Literal
 
 from forge.markets.ranking.policy import ManualRate, RankingPolicy, currency
+from forge.shared.database.connection import database_flag
 
 PRECISION = 80
 ALGORITHM = "turnover24h-spotfx-rational80-v2"
@@ -319,7 +320,7 @@ class ConversionResolver:
                 )
             )
             raise ConversionUnavailable(
-                f"{reason} for {unit} -> {target}; refresh stored spot statistics with marketforge markets refresh --market spot --testing"
+                f"{reason} for {unit} -> {target}; refresh stored spot statistics with marketforge markets refresh --market spot {database_flag()}"
             )
         ratio = Fraction(1)
         for edge in selected:

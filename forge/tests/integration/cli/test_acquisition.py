@@ -112,7 +112,9 @@ def test_new_creates_a_configuration_that_validates(
     workspace: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    destination = workspace / "data" / ".config" / "acquisition" / "new.toml"
+    destination = (
+        workspace / "data" / ".config" / "workflows/data_engineering/acquisition" / "new.toml"
+    )
 
     result = _run(workspace, "--json", "acquisition", "new", "new")
     captured = capsys.readouterr()
@@ -192,3 +194,85 @@ def test_lists_names_without_requiring_valid_contents(
         "request",
         "unfinished",
     ]
+
+
+def test_human_inventory_empty_then_with_invalid_recipe(
+    workspace: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_database(*_: object) -> None:
+        pytest.fail("Local inventory must not resolve database credentials")
+
+    monkeypatch.setattr("forge.cli.commands.acquisition.database_dsn", unexpected_database)
+    assert _run(workspace, "acquisition", "list") == 0
+    assert "No acquisition configurations found." in capsys.readouterr().out
+    directory = workspace / "data/.config/workflows/data_engineering/acquisition"
+    directory.mkdir(parents=True)
+    (directory / "request.toml").write_text(_VALID_DOCUMENT)
+    (directory / "broken.toml").write_text("[incomplete")
+    assert _run(workspace, "acquisition", "list") == 0
+    output = capsys.readouterr()
+    assert "Requests Period (UTC)" in output.out
+    assert "1–3 Sep 2026" in output.out
+    assert any("broken" in line and "Invalid" in line for line in output.out.splitlines())
+    assert "2 configurations" in output.out
+    assert not output.err and not output.out.startswith("\n") and not output.out.endswith("\n\n")
+
+
+def test_human_validation_scope_and_toml_location(
+    workspace: Path, request_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _run(workspace, "acquisition", "validate", "request") == 0
+    output = capsys.readouterr()
+    assert "✓ Configuration structure valid" in output.out
+    assert "Source support and archive availability were not checked." in output.out
+    assert str(workspace) not in output.out
+
+    request_file.write_text("invalid = ?\n")
+    assert _run(workspace, "acquisition", "validate", "request") == 2
+    output = capsys.readouterr()
+    assert not output.out
+    assert "✗ Configuration structure invalid" in output.err
+    assert "line 1, column 11" in output.err and "request.toml" in output.err
+
+
+def test_historical_sources_report_adapter_capabilities_without_database(
+    workspace: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_database(*_: object) -> None:
+        pytest.fail("Historical capabilities must not resolve database credentials")
+
+    monkeypatch.setattr("forge.cli.commands.acquisition.database_dsn", unexpected_database)
+    assert _run(workspace, "acquisition", "sources") == 0
+    output = capsys.readouterr()
+    assert "Historical Sources" in output.out
+    assert "/reference/acquisition-sources/" in output.out
+    assert not output.err
+
+    assert _run(workspace, "--json", "acquisition", "sources") == 0
+    output = capsys.readouterr()
+    result = json.loads(output.out)
+    assert result["schema_version"] == 1
+    assert not output.err and "\x1b" not in output.out
+    rows = result["capabilities"]
+    assert {row["exchange"] for row in rows} == {"binance", "bybit", "bitget", "okx", "gateio"}
+    assert {
+        row["scope"]
+        for row in rows
+        if row["exchange"] == "bybit" and row["instrument_type"] == "option"
+    } == {"base_coin"}
+    assert {
+        row["scope"]
+        for row in rows
+        if row["exchange"] == "okx" and row["instrument_type"] == "future"
+    } == {"family"}
+    assert all(
+        row["data_type"] == "trades" and row["instrument_type"] != "option"
+        for row in rows
+        if row["exchange"] == "binance"
+    )
+    assert not any(
+        row["exchange"] == "bitget"
+        and row["instrument_type"] == "future"
+        and row["market_category"] == "linear"
+        for row in rows
+    )

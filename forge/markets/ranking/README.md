@@ -417,7 +417,7 @@ mf markets rank delete SNAPSHOT_UUID --testing --apply
 mf markets rank delete --all --testing --apply
 ```
 
-Exactly one policy/UUID/`--all` selector is required; `--testing` is mandatory.
+Exactly one policy/UUID/`--all` selector is required. Both guarded database environments are supported. The examples select testing explicitly. See the [snapshot maintenance reference](../../../docs/content/reference/cli/markets.md#snapshot-deletion).
 Preview never deletes. Apply re-resolves and validates its selected set inside the
 deletion transaction; a preview does not lock a later target set and no preview
 file needs to be copied. UUIDs are explicit in both human and global `--json`

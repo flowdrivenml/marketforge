@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import shutil
+import time
+import tomllib
 from datetime import UTC
 from pathlib import Path
 from typing import Any, Self, cast
@@ -22,6 +25,7 @@ from forge.historical.engine.process import (
     joined_io,
     supervise,
 )
+from forge.historical.engine.work import READY_MESSAGE, WorkIndex, merge_key, output_present
 from forge.historical.merge.config import (
     DatabaseID,
     DerivedRecipe,
@@ -39,14 +43,26 @@ from forge.historical.normalization.datasets import (
 )
 from forge.historical.normalization.execution import run_process, sync_submission
 from forge.historical.normalization.service import write_job
+from forge.orchestration.registry import retain_recipe
+from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import (
+    database_connection,
+    database_dsn,
+    database_flag,
+    database_purpose,
+    is_testing,
+    pinned_registry,
+    require_registry,
+    selected_registry_id,
+)
 from forge.shared.errors import MarketForgeError
+from forge.shared.identity import RunOperation
 from forge.shared.paths import ProjectPaths
 
 MERGE_NAMESPACE = "marketforge:historical:merge:v1"
 
-TEMPLATE = """# Registry dataset IDs in precedence order.
+TEMPLATE = """# Example registry primary-file IDs in precedence order. Replace before preparing.
 dataset_ids = [1, 2]
 start_ns = 1727683200000000000
 end_ns = 1727769600000000000
@@ -138,7 +154,7 @@ async def select_inputs(
     ):
         raise MarketForgeError("Select valid registered file dataset IDs without duplicates.")
 
-    async with testing_connection(testing_dsn(paths.root)) as c:
+    async with database_connection(database_dsn(paths.root)) as c:
         query = """SELECT d.id,d.storage_path,d.primary_file,d.file_sha256,d.operation_details,
                    d.start_timestamp_ns,d.end_timestamp_ns,p.storage_root,p.engine_dataset_id,
                    p.instrument_namespace,p.evidence->>'manifest_sha256',p.manifest_path
@@ -419,42 +435,71 @@ async def source_selection_async(paths: ProjectPaths, recipe: DerivedRecipe) -> 
     return result
 
 
-def prepare(paths: ProjectPaths, recipe: Recipe | DerivedRecipe, name: str) -> dict[str, Any]:
+def prepare(
+    paths: ProjectPaths, recipe: Recipe | DerivedRecipe, name: str, *, dry_run: bool = False
+) -> dict[str, Any]:
     identity = uuid4().int & (2**63 - 1)
     directory = paths.runs_dir / f"merge-prepare-{identity}"
     result: dict[str, Any] = {}
     if isinstance(recipe, DerivedRecipe):
         result = source_selection(paths, recipe)
-        result.update(recipe=name, report_path=str(directory / "prepare-report.json"))
+        result.update(
+            recipe=name,
+            environment=database_purpose(),
+            report_path=str(directory / "prepare-report.json"),
+        )
         if result["blockers"]:
-            return blocked(directory, result)
+            return blocked(directory, result, dry_run=dry_run)
         ids = result["selected_dataset_ids"]
     else:
         ids = recipe.dataset_ids
     try:
-        return prepare_job(paths, recipe, name, identity, directory, ids, result)
+        return prepare_job(paths, recipe, name, identity, directory, ids, result, dry_run=dry_run)
     except (MarketForgeError, OSError, ValueError) as error:
-        if not isinstance(recipe, DerivedRecipe):
+        if not isinstance(recipe, DerivedRecipe) and not dry_run:
             raise
-        result["blockers"].append(
+        result.update(recipe=name, environment=database_purpose())
+        result.setdefault("blockers", []).append(
             {
                 "dataset_ids": ids,
                 "reason": str(error),
                 "suggestion": "Check the selected publications and narrow or correct the recipe before preparing again.",
             }
         )
-        return blocked(directory, result)
+        return blocked(directory, result, dry_run=dry_run)
 
 
-def blocked(directory: Path, report: dict[str, Any]) -> dict[str, Any]:
+def blocked(directory: Path, report: dict[str, Any], *, dry_run: bool = False) -> dict[str, Any]:
     report.update(status="blocked", compatibility="blocked")
+    if dry_run:
+        report["dry_run"] = True
+        return report
     directory.mkdir(parents=True, exist_ok=True)
     write_job(directory / "prepare-report.json", report)
     return report
 
 
+def load_recipe(source: Path, *, retain: bool = True) -> Recipe | DerivedRecipe:
+    with configuration_errors(source):
+        data = source.read_bytes()
+        document = tomllib.loads(data.decode())
+        recipe = (
+            DerivedRecipe.model_validate(document)
+            if {"version", "interval", "selection"} & document.keys()
+            else Recipe.model_validate(document)
+        )
+    if retain:
+        retain_recipe(RunOperation.MERGE, source, data)
+    return recipe
+
+
+def validate_recipe(paths: ProjectPaths, recipe: Recipe | DerivedRecipe) -> None:
+    if isinstance(recipe, DerivedRecipe):
+        normalization_source(paths, recipe.selection.source)
+
+
 def runtime_path(paths: ProjectPaths) -> Path:
-    return paths.config_dir / "historical/general.toml"
+    return paths.runtime_config("merge")
 
 
 def assign_ranks(
@@ -525,9 +570,26 @@ def prepare_job(
     directory: Path,
     ids: list[int],
     discovery: dict[str, Any],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
-    selected = asyncio.run(select_inputs(paths, ids=ids))
-    return assemble_job(paths, recipe, name, identity, directory, selected, discovery)
+    async def select() -> tuple[str, list[dict[str, Any]]]:
+        registry = await selected_registry_id(paths.root)
+        with pinned_registry(registry):
+            return registry, await select_inputs(paths, ids=ids)
+
+    registry, selected = asyncio.run(select())
+    return assemble_job(
+        paths,
+        recipe,
+        name,
+        identity,
+        directory,
+        selected,
+        discovery,
+        registry=registry,
+        dry_run=dry_run,
+    )
 
 
 async def prepare_direct(
@@ -572,7 +634,9 @@ async def prepare_async(
         ids = discovery["selected_dataset_ids"]
     else:
         ids = recipe.dataset_ids
-    selected = await select_inputs(paths, ids=ids)
+    registry = await selected_registry_id(paths.root)
+    with pinned_registry(registry):
+        selected = await select_inputs(paths, ids=ids)
     result = await joined_io(
         lambda: assemble_job(
             paths,
@@ -582,13 +646,17 @@ async def prepare_async(
             directory,
             selected,
             discovery,
+            registry=registry,
             validate=False,
+            preview_work=historical is None and executable is None,
         )
     )
+    if result["status"] == "complete":
+        return result
     source = Path(result["job_path"])
-    config = directory / "general.toml"
     binary = executable or await joined_io(resolve, paths, "merge")
-    runtime = historical / "general.toml" if historical else runtime_path(paths)
+    runtime = paths.runtime_config("merge", historical)
+    config = directory / runtime.name
     result["candidate_executable_sha256"] = await joined_io(
         copy_runtime, result, binary, runtime, config
     )
@@ -607,7 +675,7 @@ async def validate_candidate(
     lifecycle: Lifecycle,
 ) -> dict[str, Any]:
     root = source.parent
-    config = root / "general.toml"
+    config = root / str(result.get("configuration_filename", "general.toml"))
     digest = result["candidate_executable_sha256"]
     if (
         checksum(executable) != digest
@@ -635,6 +703,7 @@ def copy_runtime(report: dict[str, Any], binary: Path, source: Path, config: Pat
     digest = checksum(binary)
     shutil.copyfile(source, config)
     report["configuration_origin"] = str(source)
+    report["configuration_filename"] = config.name
     report["configuration_sha256"] = checksum(config)
     return digest
 
@@ -656,7 +725,10 @@ def assemble_job(
     selected: list[dict[str, Any]],
     discovery: dict[str, Any],
     *,
+    registry: str,
     validate: bool = True,
+    dry_run: bool = False,
+    preview_work: bool = False,
 ) -> dict[str, Any]:
     candidates: dict[int, dict[str, Any]] = {}
     if discovery:
@@ -699,7 +771,6 @@ def assemble_job(
     output = (paths.datasets_dir / "merged" / str(identity)).absolute()
     if output.exists() or output.is_symlink():
         raise MarketForgeError(f"Merge output already exists: {output}")
-    directory.mkdir(parents=True, exist_ok=False)
     source = directory / "merge-job.json"
     job: dict[str, Any] = {
         "job_id": identity,
@@ -714,16 +785,17 @@ def assemble_job(
         "time_range": {"start_ns": recipe.start_ns, "end_ns": recipe.end_ns},
         "output": {"dataset_path": str(output)},
     }
-    write_job(source, job)
     report: dict[str, Any] = {
         **discovery,
+        "environment": database_purpose(),
+        "registry_id": registry,
         "status": "generated",
         "compatibility": "not_validated",
         "timeline_ordering": job["timeline_ordering"],
         "recipe": name,
         "job_path": str(source),
-        "submitted_sha256": checksum(source),
         "inputs": selected,
+        **({"requested_file_ids": recipe.dataset_ids} if isinstance(recipe, Recipe) else {}),
         "streams": streams,
         "stream_count": len(streams),
         "selected_file_count": len(selected),
@@ -731,11 +803,63 @@ def assemble_job(
         "report_path": str(directory / "prepare-report.json"),
         "coverage": selected_coverage,
     }
+    if validate or preview_work:
+        try:
+            binary = resolve(paths, "merge")
+            settings = effective_runtime(paths, binary, runtime_path(paths))
+            index = WorkIndex(paths.root, registry, "merge", directory.name)
+            key = merge_key(registry, checksum(binary), job, settings, selected)
+            prior_work = asyncio.run(index.peek([key]))
+            report["reuse_plan"] = {"work_key": key, "status": "would_execute"}
+            if key in prior_work:
+                owner, claim, original = prior_work[key]
+                if original is None:
+                    report["reuse_plan"].update(
+                        status="needs_registration_recovery"
+                        if output_present(Path(claim["path"]))
+                        else "in_progress",
+                        attempt=owner,
+                    )
+                else:
+                    asyncio.run(
+                        verify_reused_merge(paths, index, binary, selected, settings, original)
+                    )
+                    report["reuse_plan"].update(status="would_reuse", path=original["path"])
+                    if not dry_run:
+                        result: dict[str, Any] = {
+                            **original,
+                            "disposition": "reused",
+                            "reuse_message": READY_MESSAGE,
+                            "engine_execution_skipped": True,
+                            "canonical_execution_id": original["execution_id"],
+                            "execution_id": directory.name,
+                            "recipe": name,
+                            "report_path": str(directory / "reuse-result.json"),
+                            "requested_output_path": str(output),
+                            "reuse_plan": report["reuse_plan"],
+                        }
+                        write_job(Path(result["report_path"]), result)
+                        return result
+        except (MarketForgeError, OSError, ValueError, KeyError) as error:
+            report["reuse_plan"] = {"status": "blocked", "reason": str(error)}
+    if dry_run:
+        report.update(
+            status="planned",
+            dry_run=True,
+            compatibility="not_validated",
+            planned_output_path=str(output),
+            configuration_origin=str(paths.engine_config_dir / "merge.toml"),
+        )
+        return report
+    directory.mkdir(parents=True, exist_ok=False)
+    write_job(source, job)
+    report["submitted_sha256"] = checksum(source)
     if validate:
         try:
             binary = resolve(paths, "merge")
-            config = directory / "general.toml"
-            digest = copy_runtime(report, binary, runtime_path(paths), config)
+            runtime = runtime_path(paths)
+            config = directory / runtime.name
+            digest = copy_runtime(report, binary, runtime, config)
             validate_job(paths, binary, source, config)
             finish_preparation(report, binary, source, digest)
         except (MarketForgeError, OSError) as error:
@@ -871,6 +995,7 @@ async def execute_async(
     executable: Path | None = None,
     lifecycle: Lifecycle = lambda _: None,
 ) -> dict[str, Any]:
+    managed_started = time.monotonic()
     if tui and not all(os.isatty(fd) for fd in (0, 1, 2)):
         raise MarketForgeError("--tui requires an interactive terminal.")
     binary = executable or resolve(paths, "merge")
@@ -885,25 +1010,26 @@ async def execute_async(
     submission = directory / "submitted-merge.json"
     await joined_io(lambda: submission.write_bytes(source.read_bytes()))
     submitted_sha = checksum(submission)
-    config = directory / "general.toml"
-    runtime = historical / "general.toml" if historical else runtime_path(paths)
-    shutil.copyfile(runtime, config)
-    configuration_sha256 = checksum(config)
-    if standalone:
-        validate_job(paths, pinned, submission, config)
-        settings = effective_runtime(paths, pinned, config)
-    else:
-        await validate_async(paths, pinned, submission, config, directory)
-        effective = await check(
-            [str(pinned), "--runtime-settings", str(config)], paths.root, directory, "runtime"
-        )
-        if effective.returncode:
-            raise MarketForgeError(f"Could not resolve merge runtime: {effective.stdout}")
-        settings = cast(dict[str, Any], json.loads(effective.stdout))
-    job = read_json(submission)
-    selected = await select_inputs(paths, job=job)
     report = source.parent / "prepare-report.json"
     prepared = read_json(report) if report.is_file() else {}
+    runtime = (
+        source.parent / str(prepared.get("configuration_filename", "general.toml"))
+        if prepared.get("configuration_sha256") is not None
+        else paths.runtime_config("merge", historical)
+    )
+    config = directory / runtime.name
+    origin = prepared.get("configuration_origin", str(runtime))
+    shutil.copyfile(runtime, config)
+    configuration_sha256 = checksum(config)
+    settings = await joined_io(effective_runtime, paths, pinned, config)
+    job = read_json(submission)
+    registry = await selected_registry_id(paths.root)
+    if prepared.get("registry_id") is not None:
+        require_registry(prepared, registry)
+    elif not is_testing():
+        raise MarketForgeError("Prepare this merge job again in production.")
+    with pinned_registry(registry):
+        selected = await select_inputs(paths, job=job)
     if prepared and (
         prepared.get("submitted_sha256") != submitted_sha
         or (
@@ -926,7 +1052,8 @@ async def execute_async(
     receipt: dict[str, Any] = {
         "schema_version": 1,
         "operation": "merge",
-        "environment": "testing",
+        "environment": database_purpose(),
+        "registry_id": registry,
         "execution_id": directory.name,
         "job_id": job["job_id"],
         "recipe": prepared.get("recipe"),
@@ -935,7 +1062,7 @@ async def execute_async(
         "executable_sha256": digest,
         "configuration_sha256": configuration_sha256,
         "configuration_path": str(config),
-        "configuration_origin": str(runtime_path(paths)),
+        "configuration_origin": origin,
         "effective_runtime": settings,
         "inputs": selected,
         "coverage": coverage(selected, **job["time_range"]),
@@ -943,22 +1070,59 @@ async def execute_async(
         "report_path": str(result_path),
         "execution_receipt": str(intent),
         "engine_result_path": str(engine_result_path),
-        "recovery": f"mf merge register {intent} --testing",
+        "recovery": f"mf merge register {shlex.quote(str(intent))} {database_flag()}",
         "execution": "running",
         "verification": "not_started",
         "registration": "not_started",
         "counts": {"requested": 1, "successful": 0, "failed": 0, "registered": 0},
     }
-    sync_submission(submission)
-    if (
-        checksum(submission) != submitted_sha
-        or checksum(pinned) != digest
-        or checksum(config) != configuration_sha256
-    ):
-        raise MarketForgeError("Validated merge job or executable changed before launch.")
-    write_job(intent, receipt)
+    key = merge_key(registry, digest, job, settings, selected)
+    index = WorkIndex(paths.root, registry, "merge", directory.name)
+    candidate = {"report_path": str(result_path), "path": str(output), "intent": str(intent)}
+
+    async def recover_candidate(_key: str, _owner: str, source: Path) -> None:
+        await register(paths, source, require_pinned=True, lifecycle=lifecycle)
+
+    await index.recover_committed([key], recover_candidate)
+    existing = await index.acquire({key: candidate})
+    if key in existing:
+        _, _, original = existing[key]
+        assert original is not None
+        await verify_reused_merge(paths, index, pinned, selected, settings, original)
+        reused: dict[str, Any] = {
+            **original,
+            "disposition": "reused",
+            "reuse_message": READY_MESSAGE,
+            "engine_execution_skipped": True,
+            "canonical_execution_id": original["execution_id"],
+            "execution_id": directory.name,
+            "report_path": str(result_path),
+            "requested_submission_path": str(submission),
+            "requested_output_path": str(output),
+            "execution_intent_reference": original["execution_receipt"],
+        }
+        write_job(result_path, reused)
+        return reused
+    try:
+        if standalone:
+            validate_job(paths, pinned, submission, config)
+        else:
+            await validate_async(paths, pinned, submission, config, directory)
+        receipt["work_key"] = key
+        sync_submission(submission)
+        if (
+            checksum(submission) != submitted_sha
+            or checksum(pinned) != digest
+            or checksum(config) != configuration_sha256
+        ):
+            raise MarketForgeError("Validated merge job or executable changed before launch.")
+        write_job(intent, receipt)
+    except BaseException:
+        await index.release([key])
+        raise
     try:
         lifecycle("execute")
+        started = time.monotonic()
         argv = [
             str(pinned),
             "--job",
@@ -969,7 +1133,7 @@ async def execute_async(
             str(config),
             "--result-file",
             str(engine_result_path),
-            *(["--config-origin", str(runtime_path(paths))] if tui else []),
+            *(["--config-origin", origin] if tui else []),
         ]
         code, interrupted = (
             run_process(argv, paths.root, directory, tui=tui)
@@ -977,14 +1141,25 @@ async def execute_async(
             else await supervise(argv, paths.root, directory)
         )
     except OSError as error:
-        receipt.update(status="failed", execution="failed", error=str(error))
+        receipt.update(
+            status="failed",
+            execution="failed",
+            error=str(error),
+            managed_elapsed_ms=int((time.monotonic() - managed_started) * 1000),
+        )
         write_job(result_path, receipt)
+        if not await joined_io(output_present, output):
+            await index.release([key])
         return receipt
     receipt.update(
+        engine_elapsed_ms=int((time.monotonic() - started) * 1000),
         exit_code=code,
         execution="interrupted" if interrupted else "failed" if code else "complete",
         status="interrupted" if interrupted else "failed",
     )
+    diagnostics = directory / ("engine-tui.log" if tui else "engine-stderr.log")
+    if diagnostics.is_file():
+        receipt["engine_diagnostics_path"] = str(diagnostics)
     if engine_result_path.is_file():
         try:
             receipt["engine_result"] = read_json(engine_result_path)
@@ -1041,6 +1216,8 @@ async def execute_async(
                     receipt_directory=directory,
                     execution={
                         "execution_id": directory.name,
+                        "environment": receipt["environment"],
+                        "registry_id": receipt["registry_id"],
                         "submitted_sha256": receipt["submitted_sha256"],
                     },
                 )
@@ -1065,8 +1242,36 @@ async def execute_async(
         receipt.update(status="interrupted")
     if not interrupted and not receipt["counts"]["successful"]:
         receipt["counts"]["failed"] = 1
+    receipt["managed_elapsed_ms"] = int((time.monotonic() - managed_started) * 1000)
     write_job(result_path, receipt)
+    if receipt["status"] == "complete":
+        await index.complete(key, receipt, recovery=True)
+    elif not await joined_io(output_present, output):
+        await index.release([key])
     return receipt
+
+
+async def verify_reused_merge(
+    paths: ProjectPaths,
+    index: WorkIndex,
+    binary: Path,
+    selected: list[dict[str, Any]],
+    settings: dict[str, Any],
+    original: dict[str, Any],
+) -> None:
+    original_submission = Path(original["submission_path"])
+    if checksum(original_submission) != original["submitted_sha256"]:
+        raise MarketForgeError("Canonical merge submission changed.")
+    previous_job = read_json(original_submission)
+    committed = await joined_io(
+        verify_output, paths, Path(original["path"]), binary, selected, previous_job
+    )
+    if (
+        committed["manifest_sha256"] != original["dataset"]["manifest_sha256"]
+        or read_json(Path(original["path"]) / "merge-runtime.json") != settings
+    ):
+        raise MarketForgeError("Canonical merge evidence changed.")
+    await index.verify_registered(original, original["path"], committed["inventory_sha256"])
 
 
 async def register(
@@ -1082,8 +1287,9 @@ async def register(
     selected_primary = None
     if source.name == "execution-intent.json":
         intent = read_json(source)
-        if intent.get("operation") != "merge" or intent.get("environment") != "testing":
+        if intent.get("operation") != "merge":
             raise MarketForgeError("Expected a managed merge execution receipt.")
+        require_registry(intent, await selected_registry_id(paths.root))
         directory = (await asyncio.to_thread(source.resolve)).parent
         pinned = directory / "marketforge-merge"
         if pinned.is_file() and checksum(pinned) == intent["executable_sha256"]:
@@ -1097,6 +1303,8 @@ async def register(
         source = Path(job["output"]["dataset_path"])
         execution = {
             "execution_id": intent["execution_id"],
+            "environment": intent["environment"],
+            "registry_id": intent["registry_id"],
             "submitted_sha256": intent["submitted_sha256"],
         }
     else:
@@ -1105,7 +1313,11 @@ async def register(
         job = read_json(root / "merge-job.json")
     binary = binary or resolve(paths, "merge")
     lifecycle("verify")
-    selected = await select_inputs(paths, job=job, recovery=True)
+    if intent is not None:
+        with pinned_registry(intent["registry_id"]):
+            selected = await select_inputs(paths, job=job, recovery=True)
+    else:
+        selected = await select_inputs(paths, job=job, recovery=True)
     if intent is not None and not same_inputs(intent["inputs"], selected):
         raise MarketForgeError("Recovery inputs differ from merge execution intent.")
     try:
@@ -1118,9 +1330,31 @@ async def register(
     if selected_primary is not None:
         evidence["selected_primary"] = selected_primary
     lifecycle("register")
-    return await register_verified(
+    result = await register_verified(
         paths,
         [evidence],
         receipt_directory=paths.runs_dir / f"merge-register-{uuid4().hex}",
         execution=execution,
     )
+    if (
+        intent
+        and intent.get("work_key")
+        and result["registration"] == "registered"
+        and execution is not None
+    ):
+        index = WorkIndex(paths.root, intent["registry_id"], "merge", intent["execution_id"])
+        recovered = {
+            **intent,
+            **result,
+            "status": "complete",
+            "verification": "verified",
+            "execution": "complete",
+            "dataset": {
+                **evidence["manifest"],
+                "bytes_written": evidence["bytes_written"],
+                "engine_dataset_id": evidence["engine_dataset_id"],
+                "manifest_sha256": evidence["manifest_sha256"],
+            },
+        }
+        await index.complete(intent["work_key"], recovered, recovery=True)
+    return result

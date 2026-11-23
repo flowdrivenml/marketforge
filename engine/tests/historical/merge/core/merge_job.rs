@@ -584,7 +584,7 @@ fn cli_resolves_and_persists_runtime_from_the_explicit_root() {
     let project = tempfile::tempdir().unwrap();
     let root = project.path();
     let cwd = tempfile::tempdir().unwrap();
-    let config = root.join("data/.config/historical/general.toml");
+    let config = root.join("data/.config/engine/normalize.toml");
     fs::create_dir_all(config.parent().unwrap()).unwrap();
     let initial = include_str!("../../../../src/shared/historical/config/fixtures/runtime.toml");
     fs::write(&config, initial.replace("workers = 1", "workers = 0")).unwrap();

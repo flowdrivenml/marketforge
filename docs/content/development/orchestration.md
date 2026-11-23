@@ -33,3 +33,14 @@ For a new column, manifest field or auxiliary index, trace the producer, content
 | Stream membership | Multi-stream primary files, evidence for exact ranks, and behavior with missing or inconsistent registry information |
 
 Use `test_causal_merge.py` for small manifest-backed Parquet examples. Use full publication validation when the change affects conclusions drawn from committed output, and test legacy versions still accepted by the consumer. Update the [publication formats](../reference/publications.md) and [Python dataset API](../reference/python-datasets.md) at the boundary changed. [Discovery](https://github.com/flowdrivenml/marketforge/blob/main/forge/datasets/discovery.py) · [Dataset and stream handles](https://github.com/flowdrivenml/marketforge/blob/main/forge/datasets/dataset.py) · [Causal discovery tests](https://github.com/flowdrivenml/marketforge/blob/main/forge/tests/unit/datasets/test_causal_merge.py)
+
+Read the component chapters for implementation details. [Forge](forge.md) · [Normalization Engine](normalize.md) · [Merge Engine](merge.md) · [Conversion Engine](convert.md)
+
+## Verify a persisted-field change end to end
+
+Use the published depth observation row span as a worked boundary. A fixture with a retained zero-row observation followed by one changed level establishes two different expectations. The first observation remains addressable at its offset with count zero. The next observation has the same starting offset and count one. Encode these expectations from the input when extending the schema.
+
+1. Change the operation’s writer and its manifest or schema declaration together. Follow [normalization output](normalize.md) and use the [normalized publication reference](../reference/publication-normalized.md) to identify affected fields.
+2. Update structural and row-span validators before adding a consumer. In merge, inspect replay of a selected part and the mapping from canonical rows to observation spans. In Forge, check how inventory, registry summaries and Stream readers encounter legacy files.
+3. Run the focused historical normalization and merge suites and the Forge dataset reader tests. Check schema nullability, field units, the zero-row event and preservation of physical ordering. Use [test selection](testing.md) for commands and prerequisites.
+4. State whether existing artifacts remain readable, then update the publication reference and any affected [inspection procedure](../workflows/datasets.md).

@@ -117,7 +117,10 @@ async def positions_for(c: AsyncConnection[TupleRow], snapshot: UUID | None) -> 
     if snapshot is None:
         return {}
     cursor = await c.execute(
-        "SELECT instrument_id,position FROM ranking.entries WHERE snapshot_id=%s AND position IS NOT NULL",
+        """SELECT e.instrument_id,e.position
+        FROM ranking.entries e JOIN ranking.snapshots s ON s.id=e.snapshot_id
+        WHERE e.snapshot_id=%s AND e.position IS NOT NULL
+          AND COALESCE(s.policy_json->>'metric', 'turnover_24h')='turnover_24h'""",
         (snapshot,),
     )
     return {int(i): int(p) for i, p in await cursor.fetchall()}

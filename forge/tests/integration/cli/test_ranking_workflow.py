@@ -36,8 +36,8 @@ def ranking_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
     async def connect(dsn: str) -> AsyncGenerator[AsyncConnection[TupleRow]]:
         yield cast(AsyncConnection[TupleRow], object())
 
-    monkeypatch.setattr(rankings, "testing_connection", connect)
-    monkeypatch.setattr(initialization, "testing_connection", connect)
+    monkeypatch.setattr(rankings, "database_connection", connect)
+    monkeypatch.setattr(initialization, "database_connection", connect)
     monkeypatch.setattr(initialization, "ranking_lock", lock)
     monkeypatch.setattr(rankings, "ranking_lock", lock)
 
@@ -108,8 +108,8 @@ def test_one_refresh_independent_policy_outcomes_and_safe_repeat(
     async def show(c: AsyncConnection[TupleRow], snapshot: UUID) -> dict[str, object]:
         return {"snapshot": {"created_at": datetime.now(UTC), "partial_universe": partial}}
 
-    monkeypatch.setattr(initialization, "testing_dsn", dsn)
-    monkeypatch.setattr(rankings, "testing_dsn", dsn)
+    monkeypatch.setattr(initialization, "database_dsn", dsn)
+    monkeypatch.setattr(rankings, "database_dsn", dsn)
     monkeypatch.setattr(initialization, "migrate_testing_database", migrate)
 
     async def enrich(dsn: str, paths: ProjectPaths) -> dict[str, object]:
@@ -118,10 +118,10 @@ def test_one_refresh_independent_policy_outcomes_and_safe_repeat(
             "normalization_readiness": {"eligible_archives": 0, "blocked_archives": 0},
         }
 
-    monkeypatch.setattr(initialization, "enrich_testing", enrich)
+    monkeypatch.setattr(initialization, "enrich_registry", enrich)
     monkeypatch.setattr(initialization, "collect", collect)
     monkeypatch.setattr(workflow, "collect", collect)
-    monkeypatch.setattr(workflow, "testing_connection", connection)
+    monkeypatch.setattr(workflow, "database_connection", connection)
     monkeypatch.setattr(workflow, "build", build)
     monkeypatch.setattr(workflow, "show", show)
     command = ["init"] if action == "init" else ["markets", "rank", "update"]
@@ -190,8 +190,8 @@ def test_name_uuid_filter_before_limit_and_preserved_positions(
             ],
         }
 
-    monkeypatch.setattr(rankings, "testing_dsn", dsn)
-    monkeypatch.setattr(rankings, "testing_connection", connection)
+    monkeypatch.setattr(rankings, "database_dsn", dsn)
+    monkeypatch.setattr(rankings, "database_connection", connection)
     monkeypatch.setattr(rankings, "latest_snapshot", latest)
     monkeypatch.setattr(rankings, "show", show)
     args = [
@@ -233,8 +233,8 @@ def test_missing_snapshot_explains_update(
             f"No published snapshot. marketforge markets rank update {name} --testing"
         )
 
-    monkeypatch.setattr(rankings, "testing_dsn", dsn)
-    monkeypatch.setattr(rankings, "testing_connection", connection)
+    monkeypatch.setattr(rankings, "database_dsn", dsn)
+    monkeypatch.setattr(rankings, "database_connection", connection)
     monkeypatch.setattr(rankings, "latest_snapshot", latest)
     assert (
         main(
@@ -292,10 +292,10 @@ def test_update_reports_independent_build_failures(
     async def show(c: AsyncConnection[TupleRow], snapshot: UUID) -> dict[str, object]:
         return {"snapshot": {"created_at": datetime.now(UTC), "partial_universe": False}}
 
-    monkeypatch.setattr(rankings, "testing_dsn", dsn)
+    monkeypatch.setattr(rankings, "database_dsn", dsn)
     monkeypatch.setattr(workflow, "collect", collect)
     monkeypatch.setattr(workflow, "load_policy", policy)
-    monkeypatch.setattr(workflow, "testing_connection", connection)
+    monkeypatch.setattr(workflow, "database_connection", connection)
     monkeypatch.setattr(workflow, "build", build)
     monkeypatch.setattr(workflow, "show", show)
     assert main(
@@ -330,7 +330,7 @@ def test_update_selects_only_named_preset(
         assert names == (selected,)
         return {"schema_version": 1, "status": "complete", "rankings": []}
 
-    monkeypatch.setattr(rankings, "testing_dsn", dsn)
+    monkeypatch.setattr(rankings, "database_dsn", dsn)
     monkeypatch.setattr(rankings, "refresh_and_publish", refresh_and_publish)
     assert (
         main(
@@ -358,14 +358,14 @@ def test_init_connection_failure_is_actionable_and_does_not_collect(
     from forge.shared.database.testing import TestingDatabaseError
 
     def dsn(root: Path) -> str:
-        raise TestingDatabaseError("Set MARKETFORGE_DATABASE_URL_TEST explicitly.")
+        raise TestingDatabaseError("Set TEST_DATABASE_KEY explicitly.")
 
-    monkeypatch.setattr(initialization, "testing_dsn", dsn)
+    monkeypatch.setattr(initialization, "database_dsn", dsn)
     assert main(["--project-root", str(workspace), "--json", "init", "--testing"]) == 1
     captured = capsys.readouterr()
     value = json.loads(captured.out)
     assert value["stages"][-1]["stage"] == "migrations"
-    assert "MARKETFORGE_DATABASE_URL_TEST" in value["stages"][-1]["error"]
+    assert "TEST_DATABASE_KEY" in value["stages"][-1]["error"]
     assert all(outcome["status"] == "failed" for outcome in value["rankings"])
     assert captured.err == ""
 
@@ -431,8 +431,8 @@ def test_volume_validate_build_and_base_asset_filter(
             ],
         }
 
-    monkeypatch.setattr(rankings, "testing_dsn", dsn)
-    monkeypatch.setattr(rankings, "testing_connection", connection)
+    monkeypatch.setattr(rankings, "database_dsn", dsn)
+    monkeypatch.setattr(rankings, "database_connection", connection)
     monkeypatch.setattr(rankings, "build", build)
     monkeypatch.setattr(rankings, "latest_snapshot", latest)
     monkeypatch.setattr(rankings, "show", show)

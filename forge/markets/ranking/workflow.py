@@ -12,7 +12,7 @@ from forge.markets.ranking.policy import load_policy
 from forge.markets.ranking.service import build, show
 from forge.markets.service import collect
 from forge.shared.config.models import HttpSettings
-from forge.shared.database.testing import testing_connection
+from forge.shared.database.connection import database_connection
 from forge.shared.errors import MarketForgeError
 
 STANDARD_POLICIES = ("turnover", "volume")
@@ -54,7 +54,7 @@ async def refresh_and_publish(
                 raise MarketForgeError(
                     "No completed statistics refresh is available for this update."
                 )
-            async with testing_connection(dsn) as connection:
+            async with database_connection(dsn) as connection:
                 snapshot = await build(connection, name, policy, refresh_id=refresh_id)
                 header = obj((await show(connection, snapshot))["snapshot"])
             outcomes.append(

@@ -36,6 +36,8 @@ from forge.orchestration.inspection import (
     run_page,
 )
 from forge.shared.config.library import list_config_names
+from forge.shared.database.connection import database_environment
+from forge.shared.database.migrations import MigrationError
 from forge.shared.terminal.editor import edit_file
 from forge.startup.context import ApplicationContext
 from forge.tui import overview
@@ -143,6 +145,9 @@ class ForgeApp(App[None]):
     def __init__(self, context: ApplicationContext, *, invoke: Invoke = execute) -> None:
         super().__init__()
         self.context = context
+        self.database_environment = "testing" if context.testing else "production"
+        self.database_indicator = "checking"
+        self.database_id: str | None = None
         self.controller = Controller(context, self.edit_recipe, invoke)
         self.area = AREAS[0]
         self.view = VIEWS[self.area][0]
@@ -176,9 +181,15 @@ class ForgeApp(App[None]):
         scope = self.view + " (recorded complete)" if self.raw_complete else self.view
         return self.states.setdefault((self.area, scope), ViewState())
 
+    def workspace_header(self) -> str:
+        return (
+            f"MarketForge / Forge    {self.context.paths.root.name}    "
+            f"{self.database_environment.upper()} · {self.database_indicator}"
+        )
+
     def compose(self) -> ComposeResult:
         yield Static(
-            f"MarketForge / Forge    {self.context.paths.root.name}    TESTING",
+            self.workspace_header(),
             id="workspace-header",
             markup=False,
         )
@@ -474,9 +485,11 @@ class ForgeApp(App[None]):
         async def load(key: str) -> None:
             try:
                 if key == "registry":
-                    value = await inventory_query.inventory(self.context.paths)
+                    with database_environment(testing=self.context.testing):
+                        value = await inventory_query.inventory(self.context.paths)
                 elif key == "raw":
-                    value = await inventory_query.raw_inventory(self.context.paths)
+                    with database_environment(testing=self.context.testing):
+                        value = await inventory_query.raw_inventory(self.context.paths)
                 else:
                     reports, _ = await disk(
                         run_page,
@@ -613,9 +626,10 @@ class ForgeApp(App[None]):
         offset: int = 0,
     ) -> None:
         try:
-            rows, more = await inventory_query.publication_page(
-                self.context.paths, offset, operation, market
-            )
+            with database_environment(testing=self.context.testing):
+                rows, more = await inventory_query.publication_page(
+                    self.context.paths, offset, operation, market
+                )
         except Exception as error:
             self.push_screen(
                 Inspection("Registered publications unavailable", {"error": str(error)})
@@ -667,7 +681,8 @@ class ForgeApp(App[None]):
     @work(exit_on_error=False)
     async def open_inventory_markets(self, offset: int = 0) -> None:
         try:
-            items, more = await inventory_query.market_page(self.context.paths, offset)
+            with database_environment(testing=self.context.testing):
+                items, more = await inventory_query.market_page(self.context.paths, offset)
         except Exception as error:
             self.push_screen(Inspection("Market inventory unavailable", {"error": str(error)}))
             return
@@ -704,6 +719,7 @@ class ForgeApp(App[None]):
     @work(exclusive=True, group="overview-status", exit_on_error=False)
     async def check_overview(self, generation: int) -> None:
         async def source(key: str) -> None:
+            registry_id: str | None = None
             try:
                 if key == "Storage":
                     value = await disk(overview.storage_free, self.context.paths.data_root)
@@ -718,25 +734,38 @@ class ForgeApp(App[None]):
                     )
                     if key == "Registry":
                         evidence = document(value)
+                        registry = evidence.get("database_id")
                         observed = (
                             overview.Observation(
-                                "connected"
-                                if evidence.get("initialized")
-                                else "connected · uninitialized",
+                                "connected",
                                 datetime.now(UTC),
                             )
-                            if evidence.get("database") == "marketforge_test"
+                            if evidence.get("initialized")
+                            and evidence.get("purpose") == self.database_environment
+                            and isinstance(registry, str)
+                            and registry
                             else overview.Observation(
                                 "unavailable",
                                 datetime.now(UTC),
                                 False,
-                                "Testing identity could not be observed.",
+                                f"Verify the {self.database_environment} credentials and Forge identity.",
                             )
                         )
+                        if observed.available and isinstance(registry, str):
+                            registry_id = registry
                     else:
                         observed = overview.engine_summary(value)
+            except MigrationError as error:
+                observed = overview.Observation("unavailable", datetime.now(UTC), False, str(error))
             except Exception:
                 observed = overview.Observation("unavailable", datetime.now(UTC), False)
+            if key == "Registry" and generation == self.overview_generation:
+                self.database_indicator = observed.text
+                self.database_id = registry_id
+                if self.root_screen is not None:
+                    self.root_screen.query_one("#workspace-header", Static).update(
+                        self.workspace_header()
+                    )
             if self.area == "Overview" and generation == self.overview_generation:
                 self.overview_status[key] = observed
                 self.paint_overview()
@@ -808,13 +837,15 @@ class ForgeApp(App[None]):
                     )
         registry = self.overview_status.get("Registry")
         if registry and not registry.available:
-            items["Testing registry unavailable · details"] = self.show_overview_status
+            items[f"{self.database_environment.capitalize()} registry unavailable · details"] = (
+                self.show_overview_status
+            )
         return items
 
     def show_overview_status(self) -> None:
         self.push_screen(
             Inspection(
-                "Workspace status · testing",
+                f"Workspace status · {self.database_environment}",
                 {
                     key: " · ".join(
                         filter(None, (observed.text, observed.checked.isoformat(), observed.detail))
@@ -824,7 +855,7 @@ class ForgeApp(App[None]):
                     for key in self.overview_keys
                 },
                 actions={
-                    "Check testing registry": partial(self.open_action, BY_KEY["database status"]),
+                    "Check registry": partial(self.open_action, BY_KEY["database status"]),
                     "Inspect managed engines": partial(self.open_action, BY_KEY["engine status"]),
                     "Check prerequisites": partial(self.open_action, BY_KEY["doctor"]),
                 },
@@ -1043,7 +1074,7 @@ class ForgeApp(App[None]):
             )
         if self.view == "Profiles":
             return tuple(
-                f"acquisition profiles {x}" for x in ("inspect", "validate", "sample", "register")
+                f"normalize profiles {x}" for x in ("inspect", "validate", "sample", "register")
             )
         family = row.kind if row and row.path else FAMILIES.get(self.view)
         if family:
@@ -1137,7 +1168,10 @@ class ForgeApp(App[None]):
         self, identity: int, offset: int = 0, *, section: str = "Summary"
     ) -> None:
         try:
-            value = await publications(self.context.paths, identity=identity, file_offset=offset)
+            with database_environment(testing=self.context.testing):
+                value = await publications(
+                    self.context.paths, identity=identity, file_offset=offset
+                )
             matches = records(value, "publications")
             if not matches:
                 raise ValueError("The retained publication is unavailable.")
@@ -1351,11 +1385,31 @@ class ForgeApp(App[None]):
                     links[f"{label} · {Path(reference).name}"] = partial(
                         self.open_overview_artifact, reference
                     )
-        for publication in overview.publications(item):
+        self.add_registry_links(links, item)
+        return links
+
+    def add_registry_links(
+        self, links: dict[str, Callable[[], object]], result: Mapping[str, object]
+    ) -> None:
+        if self.database_id is None or result.get("registry_id") != self.database_id:
+            return
+        for publication in overview.publications(result):
             links[f"Publication {publication}"] = partial(
                 self.open_overview_publication, publication
             )
-        return links
+        ids = dict.fromkeys(
+            str(value) for value in document(result.get("catalogue_dataset_ids")).values()
+        )
+        for stage in document(result.get("stages")).values():
+            registered = document(stage).get("primary_file_ids")
+            if isinstance(registered, list):
+                ids.update(dict.fromkeys(str(item) for item in cast(list[object], registered)))
+        for identity in list(ids)[:5]:
+            if identity.isdecimal():
+                selection = Row(identity, identity, "File", "", {}, identity)
+                links[f"File {identity}"] = partial(
+                    self.open_action, BY_KEY["datasets show"], selection
+                )
 
     @work(exit_on_error=False)
     async def open_overview_artifact(self, reference: str) -> None:
@@ -1848,7 +1902,13 @@ class ForgeApp(App[None]):
             choices = await disk(list_config_names, library(self.context, family))
         if action.fields:
             values = await self.push_screen_wait(
-                Form(action, values_from_context, choices, self.context.paths.root)
+                Form(
+                    action,
+                    values_from_context,
+                    choices,
+                    self.context.paths.root,
+                    testing=self.context.testing,
+                )
             )
             if values is None:
                 return
@@ -2021,9 +2081,7 @@ class ForgeApp(App[None]):
             original = await disk(row.path.read_bytes)
             await self.edit_recipe(row.path)
             updated = await disk(row.path.read_bytes)
-            key = (
-                "acquisition profiles validate" if row.kind == "Profile" else f"{row.kind} validate"
-            )
+            key = "normalize profiles validate" if row.kind == "Profile" else f"{row.kind} validate"
             if key in BY_KEY:
                 await self.controller.invoke(
                     key,
@@ -2128,23 +2186,7 @@ class ForgeApp(App[None]):
         if isinstance(execution, str) and MANAGED_RUN.fullmatch(execution):
             links["Open execution report"] = partial(self.open_managed_run, execution)
             links["View engine logs"] = partial(self.open_overview_logs, execution)
-        for publication in overview.publications(result):
-            links[f"Publication {publication}"] = partial(
-                self.open_overview_publication, publication
-            )
-        ids = dict.fromkeys(
-            str(value) for value in document(result.get("catalogue_dataset_ids")).values()
-        )
-        for stage in document(result.get("stages")).values():
-            registered = document(stage).get("primary_file_ids")
-            if isinstance(registered, list):
-                ids.update(dict.fromkeys(str(item) for item in cast(list[object], registered)))
-        for identity in list(ids)[:5]:
-            if identity.isdecimal():
-                selection = Row(identity, identity, "File", "", {}, identity)
-                links[f"File {identity}"] = partial(
-                    self.open_action, BY_KEY["datasets show"], selection
-                )
+        self.add_registry_links(links, result)
         if (
             action is not None
             and values is not None

@@ -642,10 +642,10 @@ fn execute_unified_merge_job_inner(
     // -------------------------------------------------------------------------
 
     if profile {
-        eprintln!(
+        crate::historical::normalize::progress::log::diagnostic(format_args!(
             "[marketforge-profile] total_executor: {:.3}s",
             execution_started.elapsed().as_secs_f64(),
-        );
+        ));
     }
 
     // -------------------------------------------------------------------------
@@ -693,10 +693,10 @@ fn profile_stage<T>(profile: bool, name: &str, operation: impl FnOnce() -> Resul
     let result = operation();
 
     if profile {
-        eprintln!(
+        crate::historical::normalize::progress::log::diagnostic(format_args!(
             "[marketforge-profile] {name}: {:.3}s",
             started.elapsed().as_secs_f64(),
-        );
+        ));
     }
 
     result

@@ -12,6 +12,7 @@ from forge.catalog.models import reference
 from forge.historical.archives.config import AcquisitionInterval
 from forge.historical.normalization.config import NormalizationRecipe
 from forge.historical.normalization.recipes import recipe_path
+from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
@@ -93,10 +94,11 @@ def normalization_source(paths: ProjectPaths, source: str) -> tuple[Path, Normal
     if not path.is_file():
         raise MarketForgeError(f"Unknown normalization configuration {source!r}: {path}")
     data = path.read_bytes()
-    document = tomllib.loads(data.decode("utf-8"))
-    if "inputs" in document or "job_id" in document:
-        raise MarketForgeError(
-            "Source-derived merge requires a normalization recipe with requests and an interval. "
-            "For a legacy archive-ID request, select the registered file dataset IDs explicitly."
-        )
-    return path, NormalizationRecipe.model_validate(document), hashlib.sha256(data).hexdigest()
+    with configuration_errors(path):
+        document = tomllib.loads(data.decode("utf-8"))
+        if "inputs" in document or "job_id" in document:
+            raise MarketForgeError(
+                "Source-derived merge requires a normalization recipe with requests and an interval. "
+                "For a legacy archive-ID request, select the registered file dataset IDs explicitly."
+            )
+        return path, NormalizationRecipe.model_validate(document), hashlib.sha256(data).hexdigest()

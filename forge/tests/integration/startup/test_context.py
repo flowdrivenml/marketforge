@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from forge.shared.config.loader import ConfigurationLoadError
 from forge.startup.context import build_context
@@ -42,7 +41,7 @@ def test_loads_default_settings_from_outside_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source = workspace / "data" / ".config" / "marketforge.toml"
+    source = workspace / "data" / ".config" / "forge" / "marketforge.toml"
     _write_settings(
         source,
         '[storage]\ndata_root = "archives"\n\n[presentation]\nmode = "silent"\n',
@@ -62,7 +61,7 @@ def test_explicit_configuration_overrides_default_selection(
     workspace: Path,
     tmp_path: Path,
 ) -> None:
-    default = workspace / "data" / ".config" / "marketforge.toml"
+    default = workspace / "data" / ".config" / "forge" / "marketforge.toml"
     explicit = tmp_path / "selected.toml"
 
     _write_settings(default, '[presentation]\nmode = "progress"\n')
@@ -91,10 +90,10 @@ def test_missing_explicit_configuration_fails(
 def test_invalid_default_does_not_fall_back_to_defaults(
     workspace: Path,
 ) -> None:
-    source = workspace / "data" / ".config" / "marketforge.toml"
+    source = workspace / "data" / ".config" / "forge" / "marketforge.toml"
     _write_settings(source, '[presentation]\nmode = "background"\n')
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ConfigurationLoadError, match="presentation.mode"):
         build_context(project_root=workspace)
 
 
@@ -111,3 +110,16 @@ def test_consoles_use_separate_output_streams(
 
     assert captured.out == "Result\n"
     assert captured.err == "Diagnostic\n"
+
+
+def test_legacy_default_requires_migration_but_explicit_file_still_works(workspace: Path) -> None:
+    from forge.shared.paths import PathConfigurationError
+
+    source = workspace / "data/.config/marketforge.toml"
+    _write_settings(source, '[presentation]\nmode = "silent"\n')
+    with pytest.raises(PathConfigurationError, match="migration required"):
+        build_context(project_root=workspace)
+    assert (
+        build_context(project_root=workspace, config_file=source).settings.presentation.mode
+        == "silent"
+    )

@@ -16,9 +16,10 @@ from forge.historical.archives.storage.files import CHUNK_SIZE, disk, publish
 from forge.historical.imports.models import FrozenInput, ImportConfig, ImportError, freeze_inputs
 from forge.markets.repository import json_value
 from forge.orchestration.artifacts import RunArtifacts
+from forge.orchestration.registry import begin, complete_call, current_execution
 from forge.shared.async_work import bounded_map
-from forge.shared.database.testing import testing_connection
-from forge.shared.identity import new_run_id
+from forge.shared.database.connection import database_connection
+from forge.shared.identity import RunOperation, parse_run_id
 from forge.shared.paths import ProjectPaths
 
 
@@ -268,14 +269,30 @@ async def import_file(
 async def run_import(
     paths: ProjectPaths, dsn: str, config: ImportConfig, source_file: Path
 ) -> dict[str, object]:
+    execution = await begin(
+        paths,
+        RunOperation.ACQUISITION,
+        "import",
+        recipe=source_file.stem,
+        source=source_file,
+        dsn=dsn,
+    )
+    return await complete_call(execution, lambda: _run_import(paths, dsn, config, source_file))
+
+
+async def _run_import(
+    paths: ProjectPaths, dsn: str, config: ImportConfig, source_file: Path
+) -> dict[str, object]:
     if config.binding is not None:
         raise ImportError(
             "Legacy import is raw-only. Use acquisition register for a verified binding."
         )
     frozen = await disk(freeze_inputs, config)
-    run_id = new_run_id()
+    execution = current_execution()
+    assert execution is not None
+    run_id = parse_run_id(execution.id)
     artifacts = RunArtifacts.for_run(paths, run_id)
-    await disk(artifacts.root.mkdir, parents=True, exist_ok=False)
+    await disk(artifacts.root.mkdir, parents=True, exist_ok=True)
     await disk(artifacts.submitted_config.write_bytes, await disk(source_file.read_bytes))
     await disk(
         artifacts.resolved_plan.write_text,
@@ -296,7 +313,7 @@ async def run_import(
 
     async def work(item: FrozenInput) -> dict[str, object]:
         try:
-            async with testing_connection(dsn) as c:
+            async with database_connection(dsn) as c:
                 return await import_file(c, config, item, paths.raw_dir, str(run_id))
         except Exception as error:
             return {
@@ -328,6 +345,10 @@ async def run_import(
     report: dict[str, object] = {
         "schema_version": 1,
         "run_id": str(run_id),
+        "operation": "acquisition",
+        "action": "import",
+        "environment": execution.purpose,
+        "registry_id": execution.registry,
         "status": "failed" if counts["failed"] else "complete",
         "counts": counts,
         "report": str(artifacts.report),

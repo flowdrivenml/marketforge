@@ -1,19 +1,7 @@
-# Forge processing commands
+# Interactive Forge workspace
 
-Both `mf` and `marketforge` use the same parser. Global `--json` precedes the command. Interactive `--tui` and global `--json` are incompatible. Errors go to stderr and an incomplete managed workflow returns a nonzero exit code.
+```text
+mf tui --testing
+```
 
-## Managed engine
-
-See [Engine CLI](engine.md).
-
-## Profiles and registration
-
-See [Acquisition profiles and registration CLI](registration.md).
-
-## Normalization
-
-See [Normalization CLI](normalize.md).
-
-## Merge
-
-See [Merge CLI](merge.md).
+The Textual workspace starts in the selected Forge project. It requires interactive stdin, stdout and stderr, and rejects global `--json`. Production is the default. Use `--production` to select it explicitly or `--testing` to select testing. Operations launched inside the UI use the selected verified registry and can write the same managed data and registry state as their CLI counterparts. See [Forge workspace](../../workflows/forge-tui.md) for screens and interaction. [CLI index](index.md)

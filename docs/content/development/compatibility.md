@@ -31,4 +31,4 @@ For example, adding a causal marker to a timeline affects the physical schema di
 - Review the diff for unrelated changes, generated data and secrets. Include before/after behavior for an interface change and the supported rerun or migration path if applicable.
 - State what the verification establishes. For example, “portable conversion validates a prepared fixture without writing output” is a structural and planning check. It leaves publication and database behavior to separate checks.
 
-The repository has engineering notes and dated investigations under `docs/historical/`. Where they describe an older contract or workload, use the current implementation and reference for behavior. [Repository engineering instructions](https://github.com/flowdrivenml/marketforge/blob/main/.agents/AGENTS.md)
+Documentation lives under `docs/content/`. Keep links to supported behavior in the appropriate audience section and use the current implementation to check new examples. [Repository engineering instructions](https://github.com/flowdrivenml/marketforge/blob/main/.agents/AGENTS.md)

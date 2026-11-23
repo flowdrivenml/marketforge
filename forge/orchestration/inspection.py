@@ -6,10 +6,11 @@ import re
 from dataclasses import asdict
 from functools import lru_cache
 from pathlib import Path
-from uuid import UUID
 
 from forge.orchestration.run_summary import RunSummary, matches, summarize, value_for_sort
+from forge.orchestration.run_visibility import hidden_names
 from forge.shared.errors import MarketForgeError
+from forge.shared.identity import parse_run_id
 
 
 def list_runs(root: Path, limit: int = 50) -> list[dict[str, object]]:
@@ -18,14 +19,15 @@ def list_runs(root: Path, limit: int = 50) -> list[dict[str, object]]:
     if not root.exists():
         return []
     items: list[tuple[float, str]] = []
+    hidden = hidden_names(root)
     with os.scandir(root) as entries:
         for index, entry in enumerate(entries):
             if index >= 100000:
                 raise MarketForgeError("Run inventory exceeds bounded scan limit.")
-            if not entry.is_dir(follow_symlinks=False):
+            if entry.name in hidden or not entry.is_dir(follow_symlinks=False):
                 continue
             try:
-                UUID(entry.name)
+                parse_run_id(entry.name)
             except ValueError:
                 continue
             items.append((entry.stat().st_mtime, entry.name))
@@ -35,9 +37,9 @@ def list_runs(root: Path, limit: int = 50) -> list[dict[str, object]]:
 
 def run_root(root: Path, run_id: str) -> Path:
     try:
-        name = str(UUID(run_id))
+        name = str(parse_run_id(run_id))
     except ValueError:
-        raise MarketForgeError("Run ID must be a UUID.") from None
+        raise MarketForgeError("Expected an operation-prefixed run ID or legacy UUID.") from None
     path = root / name
     if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
         raise MarketForgeError("Unsafe run artifact location.")
@@ -47,6 +49,8 @@ def run_root(root: Path, run_id: str) -> Path:
 def read_report(root: Path, run_id: str) -> dict[str, object]:
     path = run_root(root, run_id)
     report = path / "report.json"
+    if report.is_symlink():
+        raise MarketForgeError("Unsafe retained report location.")
     if not report.is_file():
         return {
             "run_id": run_id,
@@ -66,9 +70,14 @@ def read_report(root: Path, run_id: str) -> dict[str, object]:
 
 
 def read_logs(root: Path, run_id: str, limit: int = 100) -> dict[str, object]:
+    return read_events(run_root(root, run_id) / "events.jsonl", run_id, limit)
+
+
+def read_events(path: Path, run_id: str, limit: int) -> dict[str, object]:
     if not 1 <= limit <= 1000:
         raise MarketForgeError("Log limit must be 1..1000.")
-    path = run_root(root, run_id) / "events.jsonl"
+    if path.is_symlink():
+        raise MarketForgeError("Unsafe retained event location.")
     if not path.is_file():
         return {"run_id": run_id, "events": [], "status": "events_missing"}
     with path.open("rb") as source:
@@ -88,7 +97,7 @@ def read_logs(root: Path, run_id: str, limit: int = 100) -> dict[str, object]:
 
 
 MANAGED_RUN = re.compile(
-    r"(?:normalize|merge|convert)-(?:execute|prepare|retry|register|recovery)-[0-9a-f-]{1,64}"
+    r"(?:normalize|merge|convert)-(?:execute|prepare|retry|register|recovery)-(?:[0-9]{1,20}|[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})"
 )
 
 
@@ -111,7 +120,10 @@ def read_managed_report(root: Path, run_id: str) -> dict[str, object]:
                 raise MarketForgeError("Managed report exceeds 4 MiB inspection limit.")
             from forge.markets.models import obj
 
-            result = obj(json.loads(path.read_bytes()))
+            try:
+                result = obj(json.loads(path.read_bytes()))
+            except (ValueError, UnicodeError):
+                return {"run_id": run_id, "status": "report_incomplete_or_invalid"}
             return {**result, "run_id": run_id, "resolved_report": str(path), "liveness": "unknown"}
     return {"run_id": run_id, "status": "report_missing_or_interrupted"}
 
@@ -166,17 +178,18 @@ def run_page(
     if not root.is_dir():
         return [], False
     candidates: list[tuple[float, str]] = []
+    hidden = hidden_names(root)
     with os.scandir(root) as items:
         for index, entry in enumerate(items):
             if index >= 100000:
                 raise MarketForgeError("Run inventory exceeds bounded scan limit.")
-            if not entry.is_dir(follow_symlinks=False):
+            if entry.name in hidden or not entry.is_dir(follow_symlinks=False):
                 continue
             if managed_prefix is not None and not entry.name.startswith(managed_prefix):
                 continue
             try:
                 if not (include_managed and MANAGED_RUN.fullmatch(entry.name)):
-                    UUID(entry.name)
+                    parse_run_id(entry.name)
                 candidates.append((entry.stat().st_mtime, entry.name))
             except (ValueError, FileNotFoundError):
                 continue
@@ -237,7 +250,13 @@ def run_page(
     return result[:limit], len(result) > limit
 
 
-def read_managed_logs(root: Path, run_id: str) -> dict[str, object]:
+def read_managed_logs(
+    root: Path,
+    run_id: str,
+    *,
+    truncated: set[str] | None = None,
+    supplemental: dict[str, str] | None = None,
+) -> dict[str, object]:
     """Read a bounded tail from the fixed engine log names."""
     if not MANAGED_RUN.fullmatch(run_id):
         raise MarketForgeError("Expected a managed execution identity.")
@@ -245,13 +264,24 @@ def read_managed_logs(root: Path, run_id: str) -> dict[str, object]:
     if directory.is_symlink() or directory.resolve().parent != root.resolve():
         raise MarketForgeError("Unsafe managed execution directory.")
     logs: dict[str, object] = {}
-    for prefix in ("engine", "validation"):
-        for stream in ("stdout", "stderr"):
-            name = f"{prefix}-{stream}.log"
-            path = directory / name
-            if path.is_file() and not path.is_symlink():
-                with path.open("rb") as handle:
-                    end = handle.seek(0, os.SEEK_END)
-                    handle.seek(max(0, end - 12288))
-                    logs[name] = handle.read(12288).decode(errors="replace")
+    names = [
+        f"{prefix}-{stream}.log"
+        for prefix in ("engine", "validation")
+        for stream in ("stdout", "stderr")
+    ]
+    if supplemental is not None:
+        names.append("engine-tui.log")
+    for name in names:
+        path = directory / name
+        if path.is_file() and not path.is_symlink():
+            with path.open("rb") as handle:
+                end = handle.seek(0, os.SEEK_END)
+                if truncated is not None and end > 12288:
+                    truncated.add(name)
+                handle.seek(max(0, end - 12288))
+                content = handle.read(12288).decode(errors="replace")
+            if name == "engine-tui.log" and supplemental is not None:
+                supplemental[name] = content
+            else:
+                logs[name] = content
     return logs or {"status": "No retained engine logs"}

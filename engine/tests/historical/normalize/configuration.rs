@@ -8,7 +8,7 @@ pub(super) fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 pub(super) fn formats() -> FormatCatalog {
-    FormatCatalog::load(root().join("data/.config/historical")).unwrap()
+    FormatCatalog::load(root().join("data/.config/engine/normalize")).unwrap()
 }
 pub(super) struct Temp(pub(super) PathBuf);
 impl Temp {

@@ -20,10 +20,11 @@ from forge.cli.main import main
 from forge.historical.archives.models import DiscoveredArchive
 from forge.historical.archives.registry import CachedRemoteArchive, register_remote_archive
 from forge.historical.archives.storage.acquire import acquire
-from forge.historical.engine.managed import resolve
+from forge.historical.engine.managed import checksum, resolve
 from forge.historical.merge import service as merge
 from forge.historical.normalization import execution as normalize
 from forge.historical.pipelines.config import load_recipe
+from forge.shared.database.connection import database_environment
 from forge.shared.database.testing import testing_connection as registry_connection
 from forge.shared.database.testing import testing_dsn as registry_dsn
 from forge.shared.http.client import open_http_client
@@ -48,24 +49,30 @@ def test_prepared_stop_resume_and_new_run(
         pytest.skip("Set MARKETFORGE_TEST_PIPELINE=1 for managed engines and the testing registry.")
     root = ProjectPaths.resolve()
     dsn = registry_dsn(root.root)
-    monkeypatch.setenv("MARKETFORGE_DATABASE_URL_TEST", dsn)
-    original = root.config_dir / "historical"
-    library = workspace / "data/.config/pipeline"
+    monkeypatch.setenv("TEST_DATABASE_KEY", dsn)
+    library = workspace / "data/.config/workflows/data_engineering/pipeline"
     library.mkdir(parents=True)
-    historical = library.parent / "historical"
-    historical.mkdir()
-    shutil.copyfile(original / "general.toml", historical / "general.toml")
-    shutil.copytree(original / "profiles", historical / "profiles")
+    engine_config = workspace / "data/.config/engine"
+    engine_config.mkdir()
+    for name in ("normalize.toml", "merge.toml", "pipeline.toml"):
+        shutil.copyfile(root.engine_config_dir / name, engine_config / name)
+    shutil.copytree(root.engine_config_dir / "normalize", engine_config / "normalize")
     bin_dir = workspace / ".bin"
     bin_dir.mkdir()
     for target in ("normalize", "merge"):
         engine = resolve(root, target)
         shutil.copy2(engine, bin_dir / engine.name)
-    shutil.copyfile(root.bin_dir / "manifest.json", bin_dir / "manifest.json")
+    manifest = json.loads((root.bin_dir / "manifest.json").read_bytes())
+    if merge_override := os.environ.get("MARKETFORGE_TEST_MERGE_BINARY"):
+        fixture_binary = bin_dir / "marketforge-merge"
+        shutil.copy2(merge_override, fixture_binary)
+        manifest["targets"]["merge"]["sha256"] = checksum(fixture_binary)
+    (bin_dir / "manifest.json").write_text(json.dumps(manifest))
     # Retain generated archives, run evidence and publications in the established
     # test output tree without writing to the ordinary acquired data root.
     storage = root.data_root / "tests/historical/normalize" / f"pipeline-{uuid4()}"
-    settings = library.parent / "marketforge.toml"
+    settings = workspace / "data/.config/forge/marketforge.toml"
+    settings.parent.mkdir()
     settings.write_text(f"[storage]\ndata_root={json.dumps(str(storage))}\n")
     symbol = f"MFP{uuid4().hex[:12].upper()}USDT"
     start = datetime(2026, 7, 9, tzinfo=UTC)
@@ -137,7 +144,7 @@ scope = { kind = "instrument", identifier = "BTCUSDT" }
         return exit_code, json.loads(output.out)
 
     code, plan = invoke("plan", "tiny", "--testing")
-    assert code == 0 and plan["state"] == "planned"
+    assert code == 0 and plan["state"] == "planned", json.dumps(plan)
     assert not calls and not storage.exists()
 
     async def register_unrelated() -> int:
@@ -180,7 +187,7 @@ scope = { kind = "instrument", identifier = "BTCUSDT" }
     from textual.widgets import Input, Select
 
     async def interact(stop: bool) -> dict[str, Any]:
-        app = ForgeApp(build_context(project_root=workspace))
+        app = ForgeApp(build_context(project_root=workspace, testing=True))
         async with app.run_test(size=(105, 28)) as pilot:
             app.open_action(BY_KEY["pipeline run"])
             await pilot.pause()
@@ -220,7 +227,7 @@ scope = { kind = "instrument", identifier = "BTCUSDT" }
 
     original_recipe = recipe.read_bytes()
     recipe.write_text("version = 999")
-    (historical / "general.toml").write_text("deliberately invalid")
+    (engine_config / "normalize.toml").write_text("deliberately invalid")
 
     pinned_input = storage / "raw" / pin["relative_path"]
     isolated = pinned_input.with_suffix(".held")
@@ -266,16 +273,69 @@ scope = { kind = "instrument", identifier = "BTCUSDT" }
     merged_path = Path(json.loads(Path(merge_intent).read_text())["path"])
     assert json.loads((merged_path / "manifest.json").read_text())["events_written"] == 2
     recipe.write_bytes(original_recipe)
-    shutil.copyfile(original / "general.toml", historical / "general.toml")
-    if interface == "tui":
-        second, code = asyncio.run(interact(stop=False)), 0
-    else:
-        code, second = invoke("run", "tiny", "--testing")
+    shutil.copyfile(root.engine_config_dir / "normalize.toml", engine_config / "normalize.toml")
+    with monkeypatch.context() as fixture:
+
+        def unexpected_execution(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("Equivalent pipeline work launched a materializing engine.")
+
+        fixture.setattr(normalize, "supervise", unexpected_execution)
+        fixture.setattr(merge, "supervise", unexpected_execution)
+        if interface == "tui":
+            second, code = asyncio.run(interact(stop=False)), 0
+        else:
+            code, second = invoke("run", "tiny", "--testing")
     assert code == 0, second.get("error")
     assert second["run_id"] != run_id
     new_stages = cast(dict[str, dict[str, Any]], second["stages"])
     for stage in ("normalize", "merge"):
-        assert set(stages[stage]["primary_file_ids"]).isdisjoint(
-            new_stages[stage]["primary_file_ids"]
-        )
+        assert stages[stage]["primary_file_ids"] == new_stages[stage]["primary_file_ids"]
+        assert new_stages[stage]["result"]["disposition"] == "reused"
     assert sum(path.endswith(name) for path in calls) == 1
+
+    if interface == "cli":
+        original = Path(normalization_intent).with_name("submitted-batch.json")
+        prepared = json.loads(original.read_bytes())
+        first_job = prepared["jobs"][0]
+        second_id = (uuid4().int & (2**62 - 1)) + 1
+        new_output = storage / "datasets" / "normalized" / str(second_id)
+        another_job = {
+            **first_job,
+            "job_id": second_id,
+            "dataset_id": second_id,
+            "tasks": [
+                {**task, "stream_rank": task["stream_rank"] + 1} for task in first_job["tasks"]
+            ],
+            "output": {
+                **first_job["output"],
+                "dataset_path": str(new_output),
+                "staging_path": str(new_output.with_suffix(".staging")),
+            },
+        }
+        requested = workspace / "mixed-batch.json"
+        prepared["jobs"].append(another_job)
+        requested.write_text(json.dumps(prepared))
+        supervisor = normalize.supervise
+        submitted_counts: list[int] = []
+
+        async def record(argv: list[str], root: Path, directory: Path) -> tuple[int, bool]:
+            source = Path(argv[argv.index("--batch") + 1])
+            submitted_counts.append(
+                len(json.loads(await asyncio.to_thread(source.read_bytes))["jobs"])
+            )
+            return await supervisor(argv, root, directory)
+
+        with monkeypatch.context() as fixture, database_environment(testing=True):
+            fixture.setattr(normalize, "supervise", record)
+            mixed = asyncio.run(
+                normalize.execute_async(ProjectPaths(workspace, storage), requested)
+            )
+        assert mixed["status"] == "complete", mixed.get("error")
+        assert mixed["disposition"] == "mixed" and submitted_counts == [1]
+        assert mixed["counts"]["requested"] == 2
+        assert mixed["counts"]["reused"] == 1
+        assert mixed["counts"]["executed"] == 1
+        assert set(stages["normalize"]["primary_file_ids"]) < set(
+            mixed["catalogue_dataset_ids"].values()
+        )
+        assert new_output.is_dir()

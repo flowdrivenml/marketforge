@@ -143,7 +143,7 @@ async def discover(
     }
     monkeypatch.setattr(discovery, "registry", AsyncMock(return_value=(files[::-1], evidence, {})))
 
-    def linked(*_args: object) -> dict[tuple[str, str, str, str], str]:
+    def linked(*_args: object, **_kwargs: object) -> dict[tuple[str, str, str, str], str]:
         return links
 
     monkeypatch.setattr(discovery, "linked_submissions", linked)
@@ -275,7 +275,7 @@ def test_retained_receipt_matches_submitted_bytes_and_current_source(tmp_path: P
         json.dumps(
             {
                 "operation": "normalize",
-                "environment": "testing",
+                "environment": "production",
                 "recipe": "source",
                 "execution_id": run.name,
                 "run_id": "batch",
@@ -340,3 +340,104 @@ async def test_degraded_and_missing_remain_visible(
     assert [issue["reason"] for issue in result["blockers"]] == [
         "Some requested selections have no approved files."
     ]
+
+
+@pytest.mark.asyncio
+async def test_recipe_reuse_retains_the_original_submission_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = ProjectPaths(tmp_path, tmp_path / "data")
+    config = normalization()
+    source = tmp_path / "renamed-recipe.toml"
+    original = paths.runs_dir / "normalize-execute-original" / "submitted-batch.json"
+    original.parent.mkdir(parents=True)
+    original.write_text(
+        json.dumps(
+            {
+                "instrument_namespace": "ns",
+                "jobs": [
+                    {
+                        "dataset_id": pub + 1000,
+                        "output": {"dataset_path": f"/publications/{pub + 1000}"},
+                    }
+                    for pub in (1, 2)
+                ],
+            }
+        )
+    )
+    digest = hashlib.sha256(original.read_bytes()).hexdigest()
+    trades, trades_pub = publication(1, "trades", digest=digest)
+    depth, depth_pub = publication(2, "depth", digest=digest, family=False)
+    for pub in (trades_pub, depth_pub):
+        pub[3]["execution"] = {
+            "execution_id": original.parent.name,
+            "submitted_sha256": digest,
+        }
+    report = paths.runs_dir / "normalize-reused" / "reuse-result.json"
+    report.parent.mkdir()
+    report.write_text(
+        json.dumps(
+            {
+                "operation": "normalize",
+                "environment": "production",
+                "disposition": "reused",
+                "verification": "verified",
+                "registration": "registered",
+                "recipe_source": str(source),
+                "requested_interval": {
+                    key: discovery.utc_timestamp(value)
+                    for key, value in config.interval.model_dump().items()
+                },
+                "ranking_policy": config.ranking_policy,
+                "requests": [{"request": item.model_dump(mode="json")} for item in config.requests],
+                "reused_outputs": {
+                    str(pub): {
+                        "path": f"/publications/{pub + 1000}",
+                        "execution_id": original.parent.name,
+                        "submission_path": str(original),
+                        "submitted_sha256": digest,
+                    }
+                    for pub in (1, 2)
+                },
+            }
+        )
+    )
+    monkeypatch.setattr(
+        discovery,
+        "registry",
+        AsyncMock(return_value=(trades + depth, {1: trades_pub, 2: depth_pub}, {})),
+    )
+    result = await discovery.discover(paths, recipe(), source, config)
+    assert set(result["selected_dataset_ids"]) == {200, 100}
+    assert all(
+        item["provenance"] == (original.parent.name, digest) for item in result["candidates"]
+    )
+    original.write_bytes(original.read_bytes() + b" ")
+    blocked = await discovery.discover(paths, recipe(), source, config)
+    assert blocked["selected_dataset_ids"] == []
+
+
+@pytest.mark.asyncio
+async def test_proven_aliases_collapse_automatic_groups_but_preserve_exact_selection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _, canonical = publication(1, "trades", digest="first")
+    _, alias = publication(2, "trades", digest="second")
+    alias[3]["canonical_id"] = 1
+    candidates = {
+        1: (publication(1, "trades", digest="first")[0], canonical),
+        2: (publication(2, "trades", digest="second")[0], alias),
+    }
+    resolved = await discover(
+        monkeypatch, tmp_path, recipe(data_types=["trades"]), candidates, {1, 2}
+    )
+    assert resolved["selected_dataset_ids"] == [100]
+    assert {item["publication_id"] for item in resolved["candidates"]} == {1}
+    explicit = await discover(
+        monkeypatch,
+        tmp_path,
+        recipe(data_types=["trades"], publication_ids=[2]),
+        candidates,
+        {1, 2},
+    )
+    assert explicit["selected_dataset_ids"] == [200]

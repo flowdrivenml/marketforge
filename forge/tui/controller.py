@@ -8,7 +8,7 @@ from time import monotonic
 from typing import cast
 from uuid import uuid4
 
-from forge.shared.database.testing import TestingDatabaseError
+from forge.shared.database.connection import DatabaseError, database_environment
 from forge.shared.ownership import OwnershipConflictError, WorkspaceOwnership
 from forge.startup.context import ApplicationContext
 from forge.tui.actions import Action, Values, read_only
@@ -85,11 +85,10 @@ class Controller:
             op.progress = value
 
         async def invoke() -> object:
-            return (
-                await apply()
-                if apply is not None
-                else await self.invoke(action.key, values, self.context, progress, self.editor)
-            )
+            with database_environment(testing=self.context.testing):
+                if apply is not None:
+                    return await apply()
+                return await self.invoke(action.key, values, self.context, progress, self.editor)
 
         try:
             if (
@@ -104,7 +103,7 @@ class Controller:
             op.state = outcome(op.result)
         except asyncio.CancelledError:
             op.state = "interrupted"
-        except (OwnershipConflictError, TestingDatabaseError) as error:
+        except (OwnershipConflictError, DatabaseError) as error:
             op.state = "blocked"
             op.error = str(error)
         except Exception as error:

@@ -208,3 +208,28 @@ def test_runs_filter_and_sort_retained_duration_before_page(tmp_path: Path) -> N
         tmp_path, 1, 2, filters={"exchange": "bybit"}, sort="Duration", descending=True
     )
     assert not more and str(rows[0]["run_id"]).endswith("3")
+
+
+@pytest.mark.asyncio
+async def test_system_configuration_actions_use_shared_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from forge.tui import services
+    from forge.tui.actions import BY_KEY
+
+    paths = ProjectPaths(tmp_path, tmp_path / "data")
+    context = ApplicationContext(AppSettings(), paths, None, Console(), Console(stderr=True))
+
+    def inspect(selected: ProjectPaths, operation: str) -> dict[str, object]:
+        assert selected == paths
+        assert operation == "pipeline"
+        return {"effective": {"normalize": {}, "merge": {}}}
+
+    monkeypatch.setattr(services, "runtime_report", inspect)
+    assert BY_KEY["engine runtime"].area == "System"
+    assert await services.system("config show", {}, context, lambda _: None) == (
+        context.configuration_report()
+    )
+    assert await services.system(
+        "engine runtime", {"reference": "pipeline"}, context, lambda _: None
+    ) == {"effective": {"normalize": {}, "merge": {}}}

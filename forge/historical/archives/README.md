@@ -1,6 +1,6 @@
 # Historical acquisition
 
-Use saved TOML configurations in `data/.config/acquisition/`:
+Use saved TOML configurations in `data/.config/workflows/data_engineering/acquisition/`:
 
 ```console
 marketforge acquisition map september --testing
@@ -11,7 +11,7 @@ marketforge --json acquisition download september --testing --refresh --requests
 `NAME` and `NAME.toml` resolve through the existing managed configuration library.
 `new`, `edit`, `list`, and structural `validate` retain their existing interfaces.
 `--testing` is required. The only database connection key is
-`MARKETFORGE_DATABASE_URL_TEST`, from the environment or the workspace's literal
+`TEST_DATABASE_KEY`, from the environment or the workspace's literal
 `.secrets/postgres.env` file. Shell expressions are never executed. The connection
 must explicitly name `marketforge_test`; the server database name and testing
 identity are verified before acquisition mutations. Production has no fallback.

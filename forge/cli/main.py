@@ -17,6 +17,7 @@ from forge.cli.commands.acquisition import (
     execute_acquisition,
     list_acquisition_configs,
     new_acquisition,
+    show_acquisition_sources,
     validate_acquisition,
 )
 from forge.cli.commands.catalog import configure as configure_catalog
@@ -33,17 +34,22 @@ from forge.cli.commands.maintenance import (
     configure_plan,
     configure_runs,
     configure_storage,
+    run_doctor,
 )
 from forge.cli.commands.markets import configure as configure_markets
 from forge.cli.commands.merge import configure as configure_merge
 from forge.cli.commands.normalization import configure as configure_normalization
 from forge.cli.commands.pipeline import configure as configure_pipeline
-from forge.cli.commands.profiles import configure as configure_profiles
+from forge.cli.commands.recipe_deletion import configure_delete
 from forge.cli.commands.registration import configure as configure_registration
+from forge.cli.environment import add_database_options
+from forge.cli.help import HelpParser
 from forge.shared.config.library import resolve_config_file
+from forge.shared.database.connection import database_environment
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.terminal.console import create_console
+from forge.shared.terminal.spacing import terminal_spacing
 from forge.startup.context import ApplicationContext, build_context
 
 
@@ -60,6 +66,7 @@ class _Arguments(argparse.Namespace):
     configuration_name: str | None = None
     database_command: str | None = None
     testing: bool = False
+    production: bool = False
     refresh: bool = False
     silent: bool = False
     requests_per_second: float | None = None
@@ -72,9 +79,9 @@ def _application_version() -> str:
         return "uninstalled"
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser() -> HelpParser:
     """Build the root command parser."""
-    parser = argparse.ArgumentParser(
+    parser = HelpParser(
         prog="marketforge",
         description=("Historical market-data acquisition and Rust engine orchestration."),
         allow_abbrev=False,
@@ -84,17 +91,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--version",
         action="version",
         version=f"%(prog)s {_application_version()}",
+        help="Show the installed MarketForge version.",
     )
     parser.add_argument(
         "--project-root",
         type=Path,
-        help="MarketForge repository root.",
+        metavar="PATH",
+        help="Select the MarketForge workspace root.",
     )
     parser.add_argument(
         "--config",
         dest="config_file",
         type=Path,
-        help="Explicit application TOML configuration.",
+        metavar="PATH",
+        help="Override the Forge application TOML.",
     )
     parser.add_argument(
         "--json",
@@ -106,12 +116,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command")
 
     tui = commands.add_parser("tui", help="Open the interactive Forge workspace.")
-    tui.add_argument("--testing", action="store_true", required=True)
+    add_database_options(tui)
 
     configure_initialization(
-        commands.add_parser(
-            "init", help="Initialize testing storage, catalogue and standard rankings."
-        )
+        commands.add_parser("init", help="Initialize storage, catalogue and standard rankings.")
     )
 
     configure_engine(
@@ -159,7 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     configure_doctor(
         commands.add_parser(
-            "doctor", help="Check Python, testing database and storage prerequisites."
+            "doctor", help="Check Python, the selected database and storage prerequisites."
         )
     )
 
@@ -180,20 +188,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     acquisition_parser = commands.add_parser(
         "acquisition",
-        help="Manage historical acquisition configurations.",
+        help="Discover and download historical market-data archives.",
         allow_abbrev=False,
     )
     acquisition_commands = acquisition_parser.add_subparsers(
         dest="acquisition_command",
         required=True,
     )
+    configure_delete(
+        acquisition_commands.add_parser(
+            "delete", help="Preview or delete a managed acquisition recipe."
+        )
+    )
     configure_registration(
         acquisition_commands.add_parser(
             "register", help="Register local raw data in managed storage."
         )
-    )
-    configure_profiles(
-        acquisition_commands.add_parser("profiles", help="Manage manually authored Rust profiles.")
     )
     configure_imports(
         acquisition_commands.add_parser(
@@ -202,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     configure_plan(
         acquisition_commands.add_parser(
-            "plan", help="Plan from registry/cache without network requests."
+            "plan", help="Inspect cached discovery and sample local copies (optional)."
         )
     )
     acquisition_commands.add_parser(
@@ -211,10 +221,16 @@ def build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
 
+    acquisition_commands.add_parser(
+        "sources",
+        help="List supported historical archive combinations and scopes.",
+        allow_abbrev=False,
+    )
+
     for action, description in (
-        ("new", "Create an editable acquisition configuration."),
-        ("edit", "Edit and validate a saved acquisition configuration."),
-        ("validate", "Validate a saved acquisition configuration."),
+        ("new", "Create an acquisition recipe."),
+        ("edit", "Edit a saved recipe and check its structure."),
+        ("validate", "Check a saved recipe's structure locally."),
     ):
         action_parser = acquisition_commands.add_parser(
             action,
@@ -229,25 +245,18 @@ def build_parser() -> argparse.ArgumentParser:
         action_parser = acquisition_commands.add_parser(
             action,
             allow_abbrev=False,
-            help="Discover archive identities without downloading bodies."
+            help="Discover historical archives matching a saved recipe."
             if action == "map"
-            else "Discover and acquire bulk archives; reuse verified local files.",
+            else "Download archives or reuse verified managed copies.",
             description=(
-                "Resolve NAME in data/.config/acquisition (optional .toml suffix). "
                 "Fresh successful discovery, including empty results, is reused for six hours. "
-                "Partial failure returns exit 1 with explicit outcomes in the run report. "
                 "Results remain on stdout in silent mode; progress goes to stderr."
             ),
         )
         action_parser.add_argument(
             "configuration_name", help="Saved acquisition configuration name."
         )
-        action_parser.add_argument(
-            "--testing",
-            action="store_true",
-            required=True,
-            help="Use only the verified marketforge_test database; no production fallback.",
-        )
+        add_database_options(action_parser)
         action_parser.add_argument(
             "--refresh",
             action="store_true",
@@ -290,23 +299,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Apply pending database migrations.",
         allow_abbrev=False,
     )
-    migrate_parser.add_argument(
-        "--testing",
-        action="store_true",
-        required=True,
-        help="Explicitly select the testing database.",
-    )
+    add_database_options(migrate_parser, required=True)
     status_parser = database_commands.add_parser(
         "status",
         help="Inspect database identity and migration history.",
         allow_abbrev=False,
     )
-    status_parser.add_argument(
-        "--testing",
-        action="store_true",
-        required=True,
-        help="Explicitly select the testing database.",
-    )
+    add_database_options(status_parser)
+    parser.bind_help()
     return parser
 
 
@@ -348,16 +348,36 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the command-line interface."""
     parser = build_parser()
     arguments = _Arguments()
-    parser.parse_args(argv, namespace=arguments)
+    tokens = sys.argv[1:] if argv is None else argv
+    with terminal_spacing(enabled="--json" not in tokens):
+        parser.parse_args(tokens, namespace=arguments)
+        if arguments.testing and arguments.production:
+            parser.error("--testing and --production are mutually exclusive.")
+    with (
+        database_environment(testing=arguments.testing),
+        terminal_spacing(enabled=not arguments.as_json and arguments.command != "tui"),
+    ):
+        return _dispatch(parser, arguments)
+
+
+def _dispatch(parser: HelpParser, arguments: _Arguments) -> int:
 
     if arguments.command is None:
-        parser.print_help()
+        parser.print_root_help(arguments)
         return 0
 
     try:
+        if arguments.command == "doctor":
+            return run_doctor(
+                project_root=arguments.project_root,
+                config_file=arguments.config_file,
+                testing=arguments.testing,
+                as_json=arguments.as_json,
+            )
         context = build_context(
             project_root=arguments.project_root,
             config_file=arguments.config_file,
+            testing=arguments.testing,
         )
 
         if arguments.command == "tui":
@@ -382,7 +402,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 list_acquisition_configs(
                     directory,
                     as_json=arguments.as_json,
+                    console=context.console,
                 )
+                return 0
+
+            if arguments.acquisition_command == "sources":
+                show_acquisition_sources(context.console, as_json=arguments.as_json)
                 return 0
 
             if arguments.configuration_name is None:
@@ -398,23 +423,36 @@ def main(argv: Sequence[str] | None = None) -> int:
                     context,
                     source,
                     download=arguments.acquisition_command == "download",
-                    testing=arguments.testing,
                     refresh=arguments.refresh,
                     requests_per_second=arguments.requests_per_second,
                     silent=arguments.silent,
                     as_json=arguments.as_json,
                 )
             if arguments.acquisition_command == "new":
-                new_acquisition(source, as_json=arguments.as_json)
+                new_acquisition(
+                    source,
+                    as_json=arguments.as_json,
+                    console=context.console,
+                    root=context.paths.root,
+                )
             elif arguments.acquisition_command == "validate":
-                validate_acquisition(source, as_json=arguments.as_json)
+                return validate_acquisition(
+                    source,
+                    as_json=arguments.as_json,
+                    console=context.console,
+                    error_console=context.error_console,
+                    root=context.paths.root,
+                )
             elif arguments.acquisition_command == "edit":
                 if arguments.as_json:
                     parser.error("Interactive editing does not support --json.")
 
-                edit_acquisition(
+                return edit_acquisition(
                     source,
                     presentation=context.settings.presentation,
+                    console=context.console,
+                    error_console=context.error_console,
+                    root=context.paths.root,
                 )
             else:
                 parser.error("Unsupported acquisition command.")

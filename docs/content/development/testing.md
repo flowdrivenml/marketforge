@@ -64,7 +64,7 @@ There is no checked-in CI workflow defining an additional required matrix in thi
 
 ## Testing database and artifacts
 
-The guarded CLI and shared fixture resolver use `MARKETFORGE_DATABASE_URL_TEST` first and can fall back to the same key in `.secrets/postgres.env`. The connection checks for `marketforge_test` and the `testing` purpose marker. Some pytest integration fixtures explicitly skip without the environment variable. Follow the [testing registry setup](setup.md#set-up-the-testing-registry-when-needed) and inspect the selected fixture before running it. These operations can write real files and database records.
+The guarded CLI and shared fixture resolver use `TEST_DATABASE_KEY` first and can fall back to the same key in `.secrets/postgres.env`. The connection checks for `marketforge_test` and the `testing` purpose marker. Some pytest integration fixtures explicitly skip without the environment variable. Follow the [testing registry setup](setup.md#set-up-the-testing-registry-when-needed) and inspect the selected fixture before running it. These operations can write real files and database records.
 
 The Forge workflow fixture additionally requires `MARKETFORGE_FORGE_INTEGRATION=1`, a managed normalizer, historical runtime settings and profiles, and a testing role with schema creation privileges. It redirects catalogue, historical and ranking SQL to randomly named schemas, applies migrations there, and drops those schemas on fixture cleanup. Its ordinary cases use pytest temporary roots. The optional Databento BYOD case has external JSONL prerequisites and retains isolated output under `data/tests/historical/normalize/`. Other integration fixtures have their own cleanup scope. [Workflow fixture and tests](https://github.com/flowdrivenml/marketforge/blob/main/forge/tests/integration/forge_workflow/test_workflow.py) · [BYOD example](../examples/bring-your-own-data/databento/index.md)
 
@@ -91,3 +91,20 @@ A depth snapshot opens a book at a known state. Suppose it contains bid 100 with
 | Generated output | Keep recordings and generated data outside Git. Use a fresh output root for each run and preserve persistent historical regression evidence. Derive new expectations from source records and the contract before updating snapshots, counts or hashes. |
 
 Missing recorded input is a prerequisite failure or an explicit skip under the suite's configured rules. A fixture change should explain why its previous expectation changed and which consumer or invariant it exercises. [Historical verifier](https://github.com/flowdrivenml/marketforge/blob/main/engine/scripts/README.md) · [Notebook fixture builder](https://github.com/flowdrivenml/marketforge/blob/main/docs/content/examples/notebooks/dataset_fixtures.py)
+
+## Conversion verification
+
+The portable conversion suite generates small causal publications and exercises the production binary. The test below builds a complete output without database or provider access.
+
+```bash
+cargo test --locked --manifest-path engine/Cargo.toml --features historical \
+  --test historical_convert
+```
+
+The optional recorded check requires the exact pinned Bybit publication. A relocated copy can be selected with `MARKETFORGE_RECORDED_CONVERT_INPUT`. The prefix case materializes 4,096 events, including causal reconstruction and reference prehistory. The ignored `publishes_canonical_recorded_conversion` test is the full recorded replay and requires space for the converted publication.
+
+```bash
+cargo test --locked --manifest-path engine/Cargo.toml --features historical-real-tests \
+  --test historical_recorded_convert validates_canonical_recorded_prefix_with_causal_prehistory \
+  -- --exact --nocapture
+```

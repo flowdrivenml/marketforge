@@ -4,7 +4,8 @@ use crate::historical::normalize::config::load_processing_config;
 use std::{fs, path::PathBuf};
 use tempfile::TempDir;
 
-const EXAMPLE: &str = include_str!("../../../../../docs/historical/normalize-job-v3.example.json");
+const EXAMPLE: &str =
+    include_str!("../../../../tests/historical/fixtures/normalize-job-v3.example.json");
 const RUNTIME: &str = include_str!("../../../shared/historical/config/fixtures/runtime.toml");
 
 struct Fixture {
@@ -16,7 +17,8 @@ impl Fixture {
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
         // Copy configuration only to establish a relocated project and catalog.
-        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/historical");
+        let source =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/engine/normalize");
         fn copy(source: &Path, dest: &Path) {
             fs::create_dir_all(dest).unwrap();
             for entry in fs::read_dir(source).unwrap() {
@@ -28,12 +30,12 @@ impl Fixture {
                 }
             }
         }
-        let catalog_root = root.path().join("data/.config/historical");
+        let catalog_root = root.path().join("data/.config/engine/normalize");
         copy(&source.join("profiles"), &catalog_root.join("profiles"));
-        fs::write(catalog_root.join("general.toml"), RUNTIME).unwrap();
+        fs::write(catalog_root.with_extension("toml"), RUNTIME).unwrap();
         let catalog = FormatCatalog::load(catalog_root).unwrap();
         let runtime =
-            load_processing_config("data/.config/historical/general.toml", root.path()).unwrap();
+            load_processing_config("data/.config/engine/normalize.toml", root.path()).unwrap();
         Self {
             root,
             catalog,

@@ -55,8 +55,8 @@ pub fn plan(args: &Args, invocation: &Path) -> Result<Plan> {
         ));
     }
     super::runner::reject_symlink_ancestors(&directory)?;
-    let catalog =
-        FormatCatalog::load(root.join("data/.config/historical")).map_err(|e| e.to_string())?;
+    let catalog = FormatCatalog::load(root.join("data/.config/engine/normalize"))
+        .map_err(|e| e.to_string())?;
     let jobs = b
         .jobs
         .iter()

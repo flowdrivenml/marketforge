@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from psycopg import AsyncConnection
@@ -10,19 +11,34 @@ from psycopg.rows import TupleRow, dict_row
 from forge.historical.archives.storage.files import disk
 from forge.historical.metadata.policy import NAMESPACE, POLICY_VERSION, select_evidence, valid_spec
 from forge.historical.metadata.service import covers
-from forge.historical.profiles.service import discover, validate_catalogue
+from forge.historical.profiles.service import catalogue, discover, discover_at, validate_catalogue
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
 
 @lru_cache(maxsize=8)
 def compiled_profiles(
-    paths: ProjectPaths, signature: tuple[tuple[str, str], ...]
+    paths: ProjectPaths,
+    signature: tuple[tuple[str, str], ...],
+    root: Path | None = None,
+    executable: Path | None = None,
 ) -> dict[str, str]:
     return {
         p["id"]: p["fingerprint"]
-        for p in validate_catalogue(paths, paths.config_dir / "historical")["profiles"]
+        for p in validate_catalogue(paths, root or catalogue(paths).parent, executable)["profiles"]
     }
+
+
+async def profile_fingerprints(
+    paths: ProjectPaths, root: Path | None, executable: Path | None
+) -> dict[str, str]:
+    profiles = (
+        await disk(discover, paths) if root is None else await disk(discover_at, root / "profiles")
+    )
+    signature = tuple((item["id"], item["sha256"]) for item in profiles)
+    if root is None and executable is None:
+        return await disk(compiled_profiles, paths, signature)
+    return await disk(compiled_profiles, paths, signature, root, executable)
 
 
 async def specification(
@@ -91,7 +107,12 @@ class FamilyResolutionError(MarketForgeError):
 
 
 async def family(
-    c: AsyncConnection[TupleRow], paths: ProjectPaths, row: dict[str, Any]
+    c: AsyncConnection[TupleRow],
+    paths: ProjectPaths,
+    row: dict[str, Any],
+    *,
+    profile_root: Path | None = None,
+    executable: Path | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     async with c.cursor(row_factory=dict_row) as cursor:
         await cursor.execute(
@@ -104,8 +125,7 @@ async def family(
         raise MarketForgeError(
             "Historical family archive identities unresolved; run mf init --testing. Current catalogue membership alone does not establish historical completeness."
         )
-    signature = tuple((p["id"], p["sha256"]) for p in await disk(discover, paths))
-    fingerprints = await disk(compiled_profiles, paths, signature)
+    fingerprints = await profile_fingerprints(paths, profile_root, executable)
     profile_id = ".".join(
         (
             row["exchange"],

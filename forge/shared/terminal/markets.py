@@ -14,6 +14,7 @@ from rich.text import Text
 
 from forge.markets.models import array, obj
 from forge.markets.progress import CollectionProgress, ScopeProgress
+from forge.shared.database.connection import database_flag
 
 
 def numeric(value: object, *, compact: bool = True) -> str:
@@ -271,7 +272,7 @@ def render_market_result(
         return
     if not rows:
         console.print(
-            "No stored instruments match. Run marketforge markets sync --testing to collect metadata."
+            f"No stored instruments match. Run marketforge markets sync {database_flag()} to collect metadata."
         )
     else:
         narrow = console.width < 90
@@ -411,14 +412,14 @@ def render_ranking_result(
     if action == "build":
         console.print(Text("Created snapshot " + str(value["snapshot_id"]), style="mf.success"))
         console.print(
-            "Inspect: marketforge markets rank show " + str(value["snapshot_id"]) + " --testing"
+            f"Inspect: marketforge markets rank show {value['snapshot_id']} {database_flag()}"
         )
         return
     if action == "list":
         rows = [obj(r) for r in array(value["rankings"])]
         if not rows:
             console.print(
-                "No published rankings. Build one with: marketforge markets rank build NAME --testing"
+                f"No published rankings. Build one with: marketforge markets rank build NAME {database_flag()}"
             )
             return
         narrow = console.width < 110

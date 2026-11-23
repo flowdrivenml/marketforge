@@ -87,14 +87,14 @@ def test_requires_testing_connection_without_production_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("MARKETFORGE_DATABASE_URL_TEST", raising=False)
+    monkeypatch.delenv("TEST_DATABASE_KEY", raising=False)
     monkeypatch.setenv(
-        "MARKETFORGE_DATABASE_URL",
+        "PRODUCTION_DATABASE_KEY",
         "postgresql://unused/marketforge",
     )
 
     (tmp_path / "forge").mkdir()
     (tmp_path / "forge/pyproject.toml").touch()
     (tmp_path / "engine").mkdir()
-    with pytest.raises(MigrationError, match="MARKETFORGE_DATABASE_URL_TEST"):
+    with pytest.raises(MigrationError, match="TEST_DATABASE_KEY"):
         migrate_testing_database(project_root=tmp_path)

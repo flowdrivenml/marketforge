@@ -7,10 +7,11 @@ import hashlib
 import json
 import platform
 import subprocess
-import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Self, cast
 from uuid import uuid4
+
+from pydantic import model_validator
 
 from forge.datasets.discovery import read_object
 from forge.historical.conversion.contract import (
@@ -22,13 +23,16 @@ from forge.historical.conversion.contract import (
     build_job,
 )
 from forge.historical.conversion.discovery import discover
+from forge.historical.conversion.evidence import check_source_environment
 from forge.historical.conversion.planning import output_available, references
-from forge.historical.conversion.recipes import load_recipe
+from forge.historical.conversion.recipes import LoadedSource, PublicationSource, load_recipe
 from forge.historical.engine.managed import checksum, resolve
 from forge.historical.engine.process import Lifecycle, check, joined_io
-from forge.historical.merge.service import runtime_path
+from forge.historical.engine.runtime import read_document
 from forge.historical.normalization.service import write_job
+from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
+from forge.shared.database.connection import database_purpose, pinned_registry, selected_registry_id
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -112,33 +116,38 @@ def finish_report(report: dict[str, Any], directory: Path, dry_run: bool) -> dic
     return report
 
 
-def runtime_limits(data: bytes, requested: dict[str, int]) -> dict[str, int]:
-    settings = tomllib.loads(data.decode())["resources"]
-    memory = settings["memory_budget_bytes"]
-    if type(memory) is not int or memory % (1024 * 1024):
-        raise ValueError("Conversion runtime memory budget must be an integer number of MiB.")
-    limits = {
-        "workers": settings["workers"],
-        "memory_limit_mb": memory // (1024 * 1024),
-        "max_open_files": settings.get("normalization_limits", {}).get("open_files", 64),
-    }
-    if any(type(value) is not int or value <= 0 for value in limits.values()):
-        raise ValueError("Converter runtime requires positive integer resource limits.")
-    return {name: min(requested[name], limit) for name, limit in limits.items()}
+class ConversionRuntime(SettingsModel, frozen=True):
+    """The runtime supplies ceilings in the prepared conversion job's units."""
+
+    schema_version: Literal[1]
+    resources: Resources
+    parquet: Parquet
+
+    @model_validator(mode="after")
+    def limits(self) -> Self:
+        omitted = {"workers", "memory_limit_mb"} - self.resources.model_fields_set
+        if omitted:
+            raise ValueError("Missing resources fields: " + ", ".join(sorted(omitted)))
+        if self.parquet.row_group_target_mb > self.parquet.file_target_mb:
+            raise ValueError("parquet.row_group_target_mb cannot exceed file_target_mb")
+        for field, count in (
+            ("resources.memory_limit_mb", self.resources.memory_limit_mb),
+            ("parquet.file_target_mb", self.parquet.file_target_mb),
+        ):
+            if count >= 2**44:
+                raise ValueError(f"{field} must fit in unsigned 64-bit bytes")
+        return self
 
 
-def parquet_settings(data: bytes) -> Parquet:
-    settings = tomllib.loads(data.decode())["resources"].get("parquet", {})
-    mib = 1024 * 1024
-    values = {}
-    for name, default in (("row_group_target", 64), ("file_target", 256)):
-        size = settings.get(f"{name}_bytes", default * mib)
-        if type(size) is not int or size <= 0 or size % mib:
-            raise ValueError(f"Conversion {name}_bytes must be a positive whole number of MiB.")
-        values[f"{name}_mb"] = size // mib
-    if values["file_target_mb"] < values["row_group_target_mb"]:
-        raise ValueError("Conversion Parquet file target must be at least the row group target.")
-    return Parquet.model_validate({**values, "compression_level": 3})
+def load_runtime(source: Path, data: bytes) -> ConversionRuntime:
+    with configuration_errors(source):
+        document = read_document(source, data)
+        if type(document.get("schema_version")) is not int:
+            raise MarketForgeError(f"{source}: schema_version must be the integer 1")
+        parquet = document.get("parquet")
+        if isinstance(parquet, dict) and "compression_level" not in parquet:
+            document["parquet"] = {"compression_level": 3, **cast(dict[str, Any], parquet)}
+        return ConversionRuntime.model_validate(document)
 
 
 def prepared_binding(publication: dict[str, Any]) -> PublicationBinding:
@@ -180,15 +189,20 @@ def prepared_binding(publication: dict[str, Any]) -> PublicationBinding:
     )
 
 
-def validate_prepared_job(binary: Path, job: Path) -> str:
-    result = subprocess.run(
-        [str(binary), "--job", str(job), "--validate"],
-        cwd=job.parent,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
+def validate_prepared_job(binary: Path, job: Path, plan: Path | None = None) -> str:
+    argv = [str(binary), "--job", str(job), "--validate"]
+
+    def run(command: list[str]) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                command, cwd=job.parent, capture_output=True, text=True, check=False, timeout=60
+            )
+        except subprocess.TimeoutExpired as error:
+            raise MarketForgeError(f"Engine validation timed out for {job}.") from error
+
+    result = run([*argv, "--validation-plan", str(plan)] if plan else argv)
+    if plan and result.returncode and "unknown argument: --validation-plan" in result.stderr:
+        result = run(argv)
     if result.returncode:
         raise MarketForgeError(f"Engine validation failed for {job}: {result.stderr.strip()}")
     return result.stdout
@@ -207,15 +221,18 @@ async def prepare(
         "status": "blocked",
         "compatibility": "not_validated",
         "dry_run": dry_run,
+        "environment": database_purpose(),
         "recipe_path": str(source),
         "blockers": [],
     }
     documents: list[tuple[Path, bytes]] = []
     try:
-        recipe, upstream, recipe_data = await joined_io(load_recipe, paths, source)
+        recipe, upstream, recipe_data = await joined_io(
+            lambda: load_recipe(paths, source, retain=not dry_run)
+        )
         report.update(
             recipe=file_pin(source, recipe_data),
-            upstream=recipe.source.model_dump(),
+            upstream=recipe.source.model_dump(mode="json"),
             requested_interval=recipe.interval.model_dump(),
             selection=recipe.selection.model_dump(),
             settings=recipe.conversion.model_dump(),
@@ -224,7 +241,11 @@ async def prepare(
             note="Observed endpoints do not establish continuous coverage. Routes do not establish reference observations or freshness.",
             execution_scope="whole_merge_publication",
         )
-        discovery = await discover(paths, recipe, upstream)
+        if isinstance(upstream, PublicationSource):
+            check_source_environment(upstream)
+        registry = await selected_registry_id(paths.root)
+        with pinned_registry(registry):
+            discovery = await discover(paths, recipe, upstream)
         report.update(discovery)
         if report["blockers"]:
             return finish_report(report, directory, dry_run)
@@ -232,6 +253,8 @@ async def prepare(
         external: dict[str, Any] | None = discovery["external_reference"]
         snapshot = catalog_snapshot([*sources, *([external] if external else [])])
         artifact_pins: dict[str, Any] = {}
+        if isinstance(upstream, PublicationSource):
+            artifact_pins["publication_source"] = upstream.model_dump(mode="json")
         compatibility: list[str] = []
         snapshot_data = json_bytes(snapshot.model_dump())
         installed_catalog = catalog_pin(paths, snapshot)
@@ -252,17 +275,32 @@ async def prepare(
             compatibility.append(
                 "The current Rust converter supports atomic publication only on Linux."
             )
-        runtime = runtime_path(paths)
+        runtime = paths.runtime_config("convert")
         runtime_data = runtime.read_bytes()
-        limits = runtime_limits(runtime_data, recipe.resources.model_dump())
+        settings = load_runtime(runtime, runtime_data)
+        requested = recipe.resources.model_dump()
+        limits = {
+            name: min(requested[name], limit)
+            for name, limit in settings.resources.model_dump().items()
+        }
         report["effective_resource_limits"] = limits
-        artifact_pins["runtime"] = file_pin(directory / "general.toml", runtime_data)
+        artifact_pins["runtime"] = file_pin(directory / "convert.toml", runtime_data)
         report["runtime_origin"] = str(runtime)
-        documents.append((directory / "general.toml", runtime_data))
-        parquet = parquet_settings(runtime_data)
+        documents.append((directory / "convert.toml", runtime_data))
+        parquet = settings.parquet
         external_binding = prepared_binding(external) if external else None
 
+        from forge.historical.conversion.execution import verify_reused_conversion
+        from forge.historical.engine.work import (
+            READY_MESSAGE,
+            WorkIndex,
+            convert_key,
+            output_present,
+        )
+
         entries: list[dict[str, Any]] = []
+        ready: list[dict[str, Any]] = []
+        work_index = WorkIndex(paths.root, registry, "convert", directory.name)
         for publication in sources:
             selected = references(publication, external, recipe.reference_stream_ids)
             identity = uuid4().int & (2**63 - 1)
@@ -295,14 +333,57 @@ async def prepare(
                     "engine_validation": "not_run",
                 }
             )
-        upstream_data = await asyncio.to_thread(Path(upstream.declaration.path).read_bytes)
-        if hashlib.sha256(upstream_data).hexdigest() != upstream.declaration.sha256:
-            raise MarketForgeError("Upstream recipe changed during conversion preparation.")
-        for name, filename, data in (
+            if binary is not None:
+                key = convert_key(
+                    registry, artifact_pins["executable"]["sha256"], job.model_dump(mode="json")
+                )
+                try:
+                    candidates = await work_index.peek([key])
+                    states = report.setdefault("reuse_plan", {})
+                    states[str(job.job_id)] = {"work_key": key, "status": "would_execute"}
+                    if key in candidates:
+                        owner, claim, previous = candidates[key]
+                        if previous is None:
+                            present = await joined_io(output_present, Path(claim["path"]))
+                            states[str(job.job_id)].update(
+                                status="needs_publication_recovery" if present else "in_progress",
+                                attempt=owner,
+                            )
+                        else:
+                            await verify_reused_conversion(binary, publication, previous)
+                            states[str(job.job_id)].update(
+                                status="would_reuse", path=previous["publication"]["manifest"]
+                            )
+                            ready.append(
+                                {
+                                    **previous,
+                                    "disposition": "reused",
+                                    "reuse_message": READY_MESSAGE,
+                                }
+                            )
+                except (MarketForgeError, OSError, ValueError, KeyError) as error:
+                    report.setdefault("reuse_plan", {})[str(job.job_id)] = {
+                        "work_key": key,
+                        "status": "blocked",
+                        "reason": str(error),
+                    }
+        if ready and len(ready) == len(entries) and not dry_run and not compatibility:
+            report.update(
+                status="complete", disposition="reused", execution="not_started", jobs=ready
+            )
+            report["report_path"] = str(directory / "reuse-result.json")
+            write_job(Path(report["report_path"]), report)
+            return report
+        snapshots = [
             ("catalog_snapshot", "instruments.json", snapshot_data),
             ("recipe_snapshot", "recipe.toml", recipe_data),
-            ("upstream_snapshot", "upstream.toml", upstream_data),
-        ):
+        ]
+        if isinstance(upstream, LoadedSource):
+            upstream_data = await asyncio.to_thread(Path(upstream.declaration.path).read_bytes)
+            if hashlib.sha256(upstream_data).hexdigest() != upstream.declaration.sha256:
+                raise MarketForgeError("Upstream recipe changed during conversion preparation.")
+            snapshots.append(("upstream_snapshot", "upstream.toml", upstream_data))
+        for name, filename, data in snapshots:
             path = directory / filename
             artifact_pins[name] = file_pin(path, data)
             documents.append((path, data))
@@ -312,7 +393,7 @@ async def prepare(
                 status="generated",
                 job_path=None,
                 compatibility_blockers=compatibility,
-                validation="Dry run computed job specifications without writing or invoking the Engine.",
+                validation="Dry run computed job specifications without writing job artifacts or running Rust job validation.",
                 jobs=[
                     {
                         **{
@@ -332,7 +413,7 @@ async def prepare(
             with path.open("xb") as stream:
                 stream.write(data)
 
-        if binary is not None and "executable" in artifact_pins:
+        if binary is not None:
             lifecycle("validate")
             for entry in entries:
                 try:
@@ -350,9 +431,15 @@ async def prepare(
                             )
                         entry["validation_output"] = result.stdout
                     else:
+                        plan_path = prepared.with_suffix(".validation-plan.json")
                         entry["validation_output"] = await joined_io(
-                            validate_prepared_job, binary, prepared
+                            validate_prepared_job, binary, prepared, plan_path
                         )
+                        if plan_path.is_file():
+                            plan = read_object(plan_path)
+                            if plan.get("schema_version") != 1:
+                                raise MarketForgeError(f"Unsupported validation plan: {plan_path}")
+                            entry["planned_routes"] = plan["streams"]
                     entry["engine_validation"] = "passed"
                 except (MarketForgeError, OSError, subprocess.TimeoutExpired) as error:
                     entry["engine_validation"] = "failed"
@@ -361,7 +448,8 @@ async def prepare(
         pinned = {
             "version": 1,
             "type": COLLECTION,
-            "environment": "testing",
+            "environment": database_purpose(),
+            "registry_id": registry,
             "jobs": entries,
             "pins": artifact_pins,
             "sources": sources,
@@ -374,6 +462,8 @@ async def prepare(
         validated = all(entry["engine_validation"] == "passed" for entry in entries)
         report.update(
             status="generated",
+            environment=database_purpose(),
+            registry_id=registry,
             job_path=str(collection_path),
             compatibility="validated" if validated and not compatibility else "not_validated",
             compatibility_blockers=pinned["compatibility_blockers"],
@@ -408,7 +498,7 @@ def retained_collection(source: Path) -> tuple[Path, dict[str, Any], dict[str, A
         raise MarketForgeError("Retained conversion collection or report fingerprint changed.")
     document = read_object(collection)
     if (
-        set(document)
+        set(document) - {"registry_id"}
         != {
             "type",
             "version",
@@ -421,7 +511,7 @@ def retained_collection(source: Path) -> tuple[Path, dict[str, Any], dict[str, A
         }
         or document.get("type") != COLLECTION
         or document.get("version") != 1
-        or document.get("environment") != "testing"
+        or document.get("environment") not in ("production", "testing")
         or not isinstance(document.get("jobs"), list)
         or not document["jobs"]
     ):
@@ -429,3 +519,46 @@ def retained_collection(source: Path) -> tuple[Path, dict[str, Any], dict[str, A
             "Expected a retained Forge conversion collection or its exact per-job document."
         )
     return collection, document, report
+
+
+def validate_reference(paths: ProjectPaths, source: Path) -> dict[str, Any]:
+    """Validate either an exact Rust job or a Forge collection and its pinned jobs."""
+    from forge.historical.conversion.contract import Job
+    from forge.historical.conversion.execution import read_pin
+
+    document = read_object(source)
+    if document.get("type") == COLLECTION or (
+        source.name.startswith("job-") and source.with_name("convert.json").is_file()
+    ):
+        collection, retained, _ = retained_collection(source)
+        entries = [
+            entry
+            for entry in retained["jobs"]
+            if source == collection or entry["path"] == str(source)
+        ]
+        if not entries:
+            raise MarketForgeError("Per-job document is absent from the retained collection.")
+        jobs = [
+            read_pin(entry, collection.parent, expected=f"job-{entry['job_id']}.json")[0]
+            for entry in entries
+        ]
+        provenance = "verified collection and job fingerprints"
+    else:
+        jobs = [source]
+        provenance = "standalone job"
+    binary = resolve(paths, "convert")
+    diagnostics: list[str] = []
+    for job in jobs:
+        Job.model_validate(read_object(job))
+        diagnostics.append(validate_prepared_job(binary, job))
+    return {
+        "status": "valid",
+        "path": str(source),
+        "validation": "\n".join(diagnostics),
+        "validation_layers": {
+            "structure": "valid",
+            "provenance": provenance,
+            "engine": "passed",
+        },
+        "validated_job_count": len(jobs),
+    }

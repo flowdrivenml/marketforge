@@ -42,6 +42,7 @@ class CleanupPlan(BaseModel):
     project_root: str
     data_root: str
     raw_root: str
+    registry_id: str | None = None
     created_at: str
     filters: dict[str, object]
     overlap: bool
@@ -128,8 +129,15 @@ def write_document(path: Path, value: object, *, replace: bool = False) -> None:
             temporary.unlink(missing_ok=True)
 
 
+def plan_payload(plan: CleanupPlan) -> dict[str, object]:
+    excluded = {"digest"}
+    if plan.registry_id is None:
+        excluded.add("registry_id")
+    return plan.model_dump(exclude=excluded)
+
+
 def save_plan(paths: ProjectPaths, plan: CleanupPlan) -> Path:
-    plan.digest = digest(plan.model_dump(exclude={"digest"}))
+    plan.digest = digest(plan_payload(plan))
     destination = plan_directory(paths) / f"{plan.operation}-{plan.plan_id}.json"
     write_document(destination, plan.model_dump())
     return destination
@@ -157,7 +165,7 @@ def load_plan(paths: ProjectPaths, path: Path, operation: str) -> tuple[Path, Cl
     ):
         raise MarketForgeError("Preview belongs to another operation or configured storage root.")
     if source.name != f"{plan.operation}-{plan.plan_id}.json" or plan.digest != digest(
-        plan.model_dump(exclude={"digest"})
+        plan_payload(plan)
     ):
         raise MarketForgeError("Preview content changed; create and review a new preview.")
     if not plan.review_complete:

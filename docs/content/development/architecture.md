@@ -1,4 +1,4 @@
-# Architecture
+# System architecture
 
 Follow the boundary between application decisions and event processing. Forge resolves what to process and records where it came from. The historical Engine interprets those inputs, produces physical output, and checks publication invariants. This division lets Engine processing use pinned filesystem inputs while Forge manages database-backed selection and registration.
 
@@ -7,15 +7,21 @@ Follow the boundary between application decisions and event processing. Forge re
 config:
   flowchart:
     nodeSpacing: 16
-    rankSpacing: 28
-    padding: 7
+    rankSpacing: 18
+    padding: 6
 ---
 flowchart TB
-    API["CLI or Python"] -->|"request"| F["Forge"]
-    F -->|"HTTP"| P["Provider"]
-    F -->|"SQL"| DB["PostgreSQL"]
-    F -->|"job JSON"| E["Engine"]
-    E -->|"reads and commits"| S["Managed files"]
+    U["CLI and Forge TUI"] --> F["Forge orchestration"]
+    F <-->|"Registry metadata"| DB[("PostgreSQL")]
+    F -->|"Acquire or import"| RAW["Managed source files"]
+    F -->|"Prepare and supervise"| JOB["Prepared jobs and retained evidence"]
+    JOB --> ENG["Normalize, Merge or Convert"]
+    RAW -->|"Normalize inputs"| ENG
+    PUB["Published datasets"] -->|"Merge or Convert inputs"| ENG
+    ENG -->|"Finalize output"| PUB
+    PUB -->|"Verify and register"| F
+    PUB -->|"Scan files and manifests"| READ["Dataset discovery and inspection"]
+    DB -->|"Registry-backed inspection"| READ
 ```
 
 Forge requests archive listings and downloads over HTTP, stores managed copies, and verifies Engine output. It is the database client for these historical operations. The Engine reads job documents and committed inputs from disk. The Python dataset API can open a committed publication directly and can enrich its views when the caller supplies registry records. [CLI dispatch](https://github.com/flowdrivenml/marketforge/blob/main/forge/cli/main.py) · [Python dataset API](../reference/python-datasets.md)
@@ -29,7 +35,7 @@ Forge requests archive listings and downloads over HTTP, stores managed copies, 
 | Historical processing | The Engine binaries dispatch into `engine/src/historical/` and reuse format, conversion and persistence code under `engine/src/shared/`. Engine errors surface through exit status and operation-specific diagnostics. |
 | Discovery and inspection | `forge/datasets/discovery.py` reads manifest inventories and physical evidence. Dataset operations use Arrow for exact batches and offer Polars previews or supported lazy projections. Registry-backed terminal inspection follows a separate CLI path. |
 
-The current Forge CLI exposes distinct historical operation commands. There is no unified historical pipeline command in its dispatcher. [Prepared contracts](../reference/prepared.md)
+The fixed historical pipeline runs acquisition, normalization, then merge. Normalize consumes pinned raw copies. Merge consumes normalized publications and Convert consumes an existing physical merge, with optional reference publications. The pipeline retains its plan and attempts and can resume a managed run from retained evidence. Quote conversion remains a separate operation. [Pipeline guide](../workflows/pipeline.md) · [Prepared contracts](../reference/prepared.md)
 
 The separate Live binary loads live exchange and format configuration and runs its own application and stream graph. The normal start path restores definitions from PostgreSQL. Static validation exercises configuration without restoring that graph or contacting exchanges. Follow the entry point into `engine/src/live/application/` for runtime wiring and `engine/src/live/stream/` for processing. Live and management tests use their own Cargo features. [Live entry point](https://github.com/flowdrivenml/marketforge/blob/main/engine/src/bin/marketforge-live.rs) · [Cargo features](https://github.com/flowdrivenml/marketforge/blob/main/engine/Cargo.toml)
 
@@ -58,3 +64,5 @@ stateDiagram-v2
 ```
 
 This diagram shows the publication and registration boundary for managed normalization and merge. A final directory and registered rows have separate commit points. Failure can leave diagnostic artifacts or staging, depending on the phase. A registration retry uses a supported retained receipt and verifies committed evidence again. See the operation-specific paths in [Historical operation lifecycles](operations.md) and the [publication format reference](../reference/publications.md).
+
+Read the component chapters for implementation details. [Forge](forge.md) · [Normalization Engine](normalize.md) · [Merge Engine](merge.md) · [Conversion Engine](convert.md)

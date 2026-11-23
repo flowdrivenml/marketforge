@@ -8,7 +8,7 @@ from typing import Literal, Self
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from forge.shared.config.loader import ConfigurationLoadError
+from forge.shared.config.loader import ConfigurationLoadError, configuration_errors
 from forge.shared.config.models import SettingsModel
 
 
@@ -83,4 +83,5 @@ def load_acquisition(path: Path) -> AcquisitionConfig:
     except (OSError, UnicodeError) as exc:
         raise ConfigurationLoadError(f"Cannot read acquisition configuration: {source}") from exc
 
-    return AcquisitionConfig.model_validate(payload)
+    with configuration_errors(source):
+        return AcquisitionConfig.model_validate(payload)

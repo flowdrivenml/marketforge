@@ -515,7 +515,7 @@ fn finalization_reserves_one_boundary_workspace_and_keeps_report_admission_hones
         |task| task.stream_id.0 == stream,
     )
     .unwrap();
-    let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
+    let catalog = FormatCatalog::load(root.join("data/.config/engine/normalize")).unwrap();
     let mut job = batch
         .resolve_job(&batch.jobs[0], &catalog, &config, root)
         .unwrap();

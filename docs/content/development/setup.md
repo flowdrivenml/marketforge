@@ -4,7 +4,15 @@ Set up a checkout and verify the Python and Rust toolchains before using provide
 
 ## Install the toolchains
 
-Use Linux or macOS, Python 3.12 or newer, uv, and Cargo with a Rust toolchain that supports edition 2024. The repository has no checked-in Rust toolchain pin or declared Cargo minimum Rust version. Cargo.lock pins dependencies. Managed Engine builds target the host and reject a configured foreign target. Conversion's atomic no-replace publication implementation is Linux-only.
+On Linux or macOS, install the contributor environment and select it for the
+`uv run` commands below:
+
+```bash
+./install.sh --dev --skip-market-init
+export UV_PROJECT_ENVIRONMENT="$PWD/.install/dev"
+```
+
+For manual setup, use Python 3.12 or newer, uv, Neovim, and Rust/Cargo 1.89 or newer. The repository has no checked-in Rust toolchain pin or declared Cargo minimum Rust version. Cargo.lock pins dependencies. Managed Engine builds target the host and reject a configured foreign target. Conversion's atomic no-replace publication implementation is Linux-only.
 
 ```bash
 uv sync --project forge --locked --group dev --group lab
@@ -13,7 +21,7 @@ rustc --version
 cargo --version
 ```
 
-uv uses the Forge project environment, normally `forge/.venv`. The `dev` group includes pytest, Ruff and Pyright. The `lab` group includes PyArrow, Polars and IPython kernel support. Keep `--group lab` on commands that exercise dataset inspection or its tests. Forge installs the `mf` and `marketforge` entry points from the same package. Use `uv run --project forge …` from the checkout to select that environment explicitly. Configuration and paths derive from the checkout or the global `--project-root` argument. [Python project configuration](https://github.com/flowdrivenml/marketforge/blob/main/forge/pyproject.toml) · [Cargo features and targets](https://github.com/flowdrivenml/marketforge/blob/main/engine/Cargo.toml)
+uv uses the Forge project environment, normally `forge/.venv`. The `dev` group includes pytest, Ruff and Pyright. The `lab` group includes PyArrow, Polars, JupyterLab, and ipykernel. Keep `--group lab` on commands that exercise dataset inspection or its tests. Forge installs the `mf` and `marketforge` entry points from the same package. Use `uv run --project forge …` from the checkout to select that environment explicitly. Configuration and paths derive from the checkout or the global `--project-root` argument. [Python project configuration](https://github.com/flowdrivenml/marketforge/blob/main/forge/pyproject.toml) · [Cargo features and targets](https://github.com/flowdrivenml/marketforge/blob/main/engine/Cargo.toml)
 
 ## Check a small baseline
 
@@ -38,7 +46,7 @@ Use `merge` or `convert` as the explicit target when that stage changes. The def
 
 ## Set up the testing registry when needed
 
-Follow [installation and database setup](../getting-started/installation.md#prepare-the-testing-registry) to create a PostgreSQL database named `marketforge_test` and configure its role. Use a nonblank `MARKETFORGE_DATABASE_URL_TEST` or the same key in the checkout's `.secrets/postgres.env`. Forge reads that file as data. Keep the URL out of commands, reports, and Git.
+Follow [installation and database setup](../getting-started/installation.md#prepare-the-testing-registry) to create a PostgreSQL database named `marketforge_test` and configure its role. Use a nonblank `TEST_DATABASE_KEY` or the same key in the checkout's `.secrets/postgres.env`. Forge reads that file as data. Keep the URL out of commands, reports, and Git.
 
 ```bash
 uv run --project forge --locked mf database migrate --testing
@@ -47,9 +55,29 @@ uv run --project forge --locked mf database status --testing
 
 Migration writes to the selected database. Verify purpose `testing` and review pending migrations in the status output. Testing workflows check both the database name and the purpose marker. Some pytest fixtures require the environment variable explicitly even when a CLI would use the file. See [Testing database](testing.md#testing-database-and-artifacts) for fixture behavior. Schema setup needs no provider metadata download. Use the separate [Bybit Quick Start](../getting-started/quickstart.md) when you intend to populate market metadata and acquire archives.
 
+## Verify installer changes
+
+The installer tests use mocked package managers by default. Run them with the
+Forge development environment from the checkout:
+
+```bash
+uv run --project forge --locked --group dev pytest scripts/install/tests
+```
+
+To include the PostgreSQL test, set `MARKETFORGE_INSTALL_TEST_PG_BIN` to the
+directory containing `initdb`, `pg_ctl`, and `psql`. The test starts its own
+temporary cluster and uses separate databases. It requires a non-root user.
+
 ## Build and preview the handbook
 
-Zensical is pinned in `docs/requirements.txt`. Use a separate documentation environment.
+Zensical is pinned in `docs/requirements.txt`. The development installer makes it available in `.install/docs`:
+
+```bash
+(cd docs && ../.install/docs/bin/zensical build --strict)
+python3 docs/check_links.py
+```
+
+For a manual installation, use a separate documentation environment.
 
 ```bash
 python3 -m venv docs/.venv

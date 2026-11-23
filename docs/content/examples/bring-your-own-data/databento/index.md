@@ -27,8 +27,8 @@ mf catalog instrument add --from "$examples/instrument.toml" --testing
 mf catalog specs add --from verified-aapl-specs.toml --testing
 for kind in trades depth; do
     profile="xnas.equity.equity.$kind"
-    mf acquisition profiles validate --file "$examples/$profile.toml"
-    mf acquisition profiles add "$profile" --from "$examples/$profile.toml" --testing
+    mf normalize profiles validate --file "$examples/$profile.toml"
+    mf normalize profiles add "$profile" --from "$examples/$profile.toml" --testing
 done
 mf acquisition register plan "$examples/registration.toml" --testing
 mf acquisition register run "$examples/registration.toml" --testing

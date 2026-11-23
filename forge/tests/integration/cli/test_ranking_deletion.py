@@ -75,8 +75,8 @@ def test_preview_apply_and_output(
             ],
         }
 
-    monkeypatch.setattr(rankings, "testing_connection", connect)
-    monkeypatch.setattr(rankings, "testing_dsn", dsn)
+    monkeypatch.setattr(rankings, "database_connection", connect)
+    monkeypatch.setattr(rankings, "database_dsn", dsn)
     monkeypatch.setattr(rankings, "delete_snapshots", delete)
     args = [
         "--project-root",

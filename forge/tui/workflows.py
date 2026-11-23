@@ -1,10 +1,11 @@
 """UI workflow requests composed from the Forge domain services."""
 
-import tomllib
+from argparse import Namespace
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+from forge.cli.commands.normalization_runtime import inspection
 from forge.historical.archives.config import load_acquisition
 from forge.historical.archives.operation import run_acquisition
 from forge.historical.archives.planning import plan as acquisition_plan
@@ -15,7 +16,7 @@ from forge.historical.conversion import recipes as conversion_recipes
 from forge.historical.conversion import service as conversion
 from forge.historical.conversion.execution import execute as execute_conversion
 from forge.historical.drafts import create_import, create_registration, write_new
-from forge.historical.engine.managed import resolve
+from forge.historical.engine.runtime_config import RuntimeConfiguration
 from forge.historical.imports import models as imports
 from forge.historical.imports.formats import sample
 from forge.historical.imports.service import run_import
@@ -25,15 +26,18 @@ from forge.historical.normalization import execution as normalize
 from forge.historical.normalization.batch import prepare_batch
 from forge.historical.normalization.recipes import create_recipe, load_configuration, recipe_path
 from forge.historical.pipelines import service as pipeline
-from forge.historical.pipelines.config import load_recipe
+from forge.historical.pipelines.config import load_recipe_file
 from forge.historical.pipelines.planning import plan as pipeline_plan
 from forge.historical.profiles import service as profiles
 from forge.historical.registration import models as registration
 from forge.historical.registration import service as raw_registration
+from forge.orchestration.registry import begin_operation, checkpoint, complete_call
 from forge.shared.config.library import list_config_names, resolve_config_file, run_reference
 from forge.shared.config.toml import dumps
-from forge.shared.database.testing import testing_connection, testing_dsn
+from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.errors import MarketForgeError
+from forge.shared.identity import RunOperation
+from forge.shared.presentation.conversion import inspect_recipe
 from forge.startup.context import ApplicationContext
 from forge.tui.actions import Values
 
@@ -52,6 +56,28 @@ def file(values: Values, key: str, context: ApplicationContext) -> Path:
 async def workflow(
     key: str, v: Values, context: ApplicationContext, progress: Progress, edit: Edit
 ) -> object:
+    family, _, action = key.partition(" ")
+    if (
+        family in {"normalize", "merge", "convert"}
+        and action in {"prepare", "execute", "run", "register"}
+        and not v.get("dry_run")
+    ):
+        reference = value(v, "reference")
+        execution = await begin_operation(context.paths, RunOperation(family), action, reference)
+
+        async def call() -> dict[str, Any]:
+            result = await workflow_operation(key, v, context, progress, edit)
+            from typing import cast
+
+            return cast(dict[str, Any], result)
+
+        return await complete_call(execution, call)
+    return await workflow_operation(key, v, context, progress, edit)
+
+
+async def workflow_operation(
+    key: str, v: Values, context: ApplicationContext, progress: Progress, edit: Edit
+) -> object:
     paths = context.paths
     reference = value(v, "reference")
     family, *parts = key.split()
@@ -68,12 +94,12 @@ async def workflow(
         else:
             source = resolve_config_file(paths.pipeline_config_dir, reference)
             submitted = await disk(source.read_bytes)
-            recipe = load_recipe(submitted)
+            recipe = load_recipe_file(source, submitted)
             if action == "validate":
                 return {"status": "valid", "recipe": recipe.model_dump(mode="json")}
             if action == "plan":
                 return await pipeline_plan(paths, recipe, source)
-            run = pipeline.new(context, reference, submitted)
+            run = pipeline.new(context, reference, submitted, source=source)
         progress(run.snapshot)
         return await run.run(stop=value(v, "stop_after") == "normalize.prepare")
     if family == "acquisition" and len(parts) == 1:
@@ -90,9 +116,9 @@ async def workflow(
         config = await disk(load_acquisition, source)
         if action in {"validate", "edit"}:
             return {"status": "valid", "configuration": config.model_dump(mode="json")}
-        dsn = testing_dsn(paths.root)
+        dsn = database_dsn(paths.root)
         if action == "plan":
-            async with testing_connection(dsn) as connection:
+            async with database_connection(dsn) as connection:
                 return await acquisition_plan(
                     connection,
                     config,
@@ -111,7 +137,7 @@ async def workflow(
             requests_per_second=float(v["rate"]) if v.get("rate") else None,
         )
     if key.startswith("acquisition import "):
-        source = resolve_config_file(paths.acquisition_config_dir / "import", reference)
+        source = resolve_config_file(paths.workflow_dir("import"), reference)
         if action == "new":
             return {
                 "status": "draft_created",
@@ -121,7 +147,7 @@ async def workflow(
             }
         config = await disk(imports.load_import, source)
         if action == "run":
-            return await run_import(paths, testing_dsn(paths.root), config, source)
+            return await run_import(paths, database_dsn(paths.root), config, source)
         if action == "plan":
             return await disk(imports.plan, config)
         return await disk(inspect_import, config, action)
@@ -140,7 +166,7 @@ async def workflow(
             if action == "validate"
             else await disk(raw_registration.inspect, recipe, paths)
         )
-    if key.startswith("acquisition profiles "):
+    if key.startswith("normalize profiles "):
         if action == "list":
             return {
                 "profiles": await disk(
@@ -166,7 +192,6 @@ async def workflow(
             else await disk(profiles.inspect, source)
         )
     if family == "normalize":
-        source = recipe_path(paths, reference)
         if action == "register":
             source = file(v, "reference", context)
             return await (
@@ -174,6 +199,7 @@ async def workflow(
                 if source.name == "execution-intent.json"
                 else raw_normalized(paths, source)
             )
+        source = recipe_path(paths, reference)
         from_acquisition = value(v, "from_acquisition")
         if action == "new" or (action == "prepare" and from_acquisition):
             source = await disk(create_recipe, paths, reference, from_acquisition or None)
@@ -194,12 +220,14 @@ async def workflow(
         result = await prepare_batch(
             paths,
             recipe,
+            recipe_source=source,
             dry_run=dry,
             http=context.settings.http,
             supervised_validation=True,
             lifecycle=progress,
         )
         if action in {"run", "execute"} and not dry and result.get("status") == "prepared":
+            checkpoint(result)
             return await normalize.execute_async(
                 paths,
                 Path(str(result["batch_path"])),
@@ -211,7 +239,7 @@ async def workflow(
     if family == "merge":
         if action == "register":
             return await merge.register(paths, file(v, "reference", context), lifecycle=progress)
-        directory = paths.config_dir / "historical/merge"
+        directory = paths.workflow_dir("merge")
         if action == "new":
             return await disk(new_merge, context, reference, value(v, "from_normalize"))
         source, submitted = await disk(resolve_submission, directory, reference)
@@ -219,13 +247,9 @@ async def workflow(
             if action != "run":
                 raise MarketForgeError("Choose a merge recipe TOML for this action.")
             return await merge.execute_async(paths, source, lifecycle=progress)
-        document = tomllib.loads(await disk(source.read_text))
-        recipe = (
-            DerivedRecipe
-            if {"version", "interval", "selection"} & document.keys()
-            else merge.Recipe
-        ).model_validate(document)
+        recipe = await disk(merge.load_recipe, source)
         if action == "validate":
+            await disk(merge.validate_recipe, paths, recipe)
             return {
                 "status": "valid",
                 "path": str(source),
@@ -233,12 +257,32 @@ async def workflow(
             }
         progress("prepare")
         result = await merge.prepare_async(paths, recipe, reference, lifecycle=progress)
+        if action == "run" and result["status"] == "prepared":
+            checkpoint(result)
         return (
             await merge.execute_async(paths, Path(result["job_path"]), lifecycle=progress)
             if action == "run" and result["status"] == "prepared"
             else result
         )
     if family == "convert":
+        if parts[0] == "config":
+            service = RuntimeConfiguration(paths, "convert")
+            args = Namespace(runtime_action=action, field=v.get("field") or None, all=False)
+            return {
+                "configuration_path": str(service.path),
+                **await disk(inspection, service, args),
+            }
+        if action == "list":
+            directory = conversion_recipes.library(paths)
+            return {
+                "schema_version": 1,
+                "recipes": await disk(
+                    lambda: [
+                        inspect_recipe(paths, resolve_config_file(directory, name)).document()
+                        for name in list_config_names(directory)
+                    ]
+                ),
+            }
         if action == "new":
             route = value(v, "route")
             if route not in {"merge", "normalize", "acquisition"}:
@@ -256,19 +300,20 @@ async def workflow(
         source, submitted = await disk(
             resolve_submission, conversion_recipes.library(paths), reference
         )
+        if action == "show":
+            if submitted:
+                raise MarketForgeError("Choose a conversion recipe TOML for inspection.")
+            return await disk(lambda: inspect_recipe(paths, source).document())
         if submitted:
             if action == "run":
                 return await execute_conversion(paths, source, embedded=True, lifecycle=progress)
             if action == "validate":
-                return {
-                    "status": "valid",
-                    "validation": await disk(
-                        lambda: conversion.validate_prepared_job(resolve(paths, "convert"), source)
-                    ),
-                }
+                return await disk(conversion.validate_reference, paths, source)
             raise MarketForgeError("Choose a conversion recipe TOML for preparation.")
         if action == "validate":
-            recipe, _, _ = await disk(conversion_recipes.load_recipe, paths, source)
+            recipe, _, _ = await disk(
+                lambda: conversion_recipes.load_recipe(paths, source, retain=False)
+            )
             return {
                 "status": "valid",
                 "path": str(source),
@@ -278,6 +323,8 @@ async def workflow(
         result = await conversion.prepare(
             paths, source, dry_run=dry, embedded=True, lifecycle=progress
         )
+        if action == "run" and result["status"] == "generated":
+            checkpoint(result)
         return (
             await execute_conversion(
                 paths, Path(result["job_path"]), embedded=True, lifecycle=progress
@@ -316,7 +363,7 @@ def inspect_import(config: imports.ImportConfig, action: str) -> object:
 
 def new_merge(context: ApplicationContext, name: str, upstream: str) -> object:
     paths = context.paths
-    path = resolve_config_file(paths.config_dir / "historical/merge", name)
+    path = resolve_config_file(paths.workflow_dir("merge"), name)
     document = merge.TEMPLATE
     evidence: dict[str, Any] = {}
     if upstream:

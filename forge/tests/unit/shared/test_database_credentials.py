@@ -38,8 +38,10 @@ def test_nonempty_environment_wins_without_reading_file(
     workspace: Path, monkeypatch: pytest.MonkeyPatch, testing: bool, key: str
 ) -> None:
     write_credentials(workspace, f'{key}="malformed\n')
-    monkeypatch.setenv(key, "  explicit-value  ")
-    assert resolve_database_dsn(testing=testing, project_root=workspace) == "explicit-value"
+    monkeypatch.setenv(key, "  dbname=marketforge_test  ")
+    assert (
+        resolve_database_dsn(testing=testing, project_root=workspace) == "dbname=marketforge_test"
+    )
 
 
 @pytest.mark.parametrize("environment", [None, "", " \t "])
@@ -64,18 +66,18 @@ def test_missing_or_blank_environment_falls_back_to_same_file_key(
     "assignment,expected",
     [
         (
-            "  export   MARKETFORGE_DATABASE_URL_TEST = 'literal value # included'  # comment",
+            "  export   TEST_DATABASE_KEY = 'literal value # included'  # comment",
             "literal value # included",
         ),
         (
-            "MARKETFORGE_DATABASE_URL_TEST = \"host=localhost password='quoted'\" # comment",
+            "TEST_DATABASE_KEY = \"host=localhost password='quoted'\" # comment",
             "host=localhost password='quoted'",
         ),
-        (r'MARKETFORGE_DATABASE_URL_TEST = "back\\slash\"quote"', 'back\\slash"quote'),
-        ("MARKETFORGE_DATABASE_URL_TEST = plain-value   # comment", "plain-value"),
-        ("MARKETFORGE_DATABASE_URL_TEST = value#fragment", "value#fragment"),
+        (r'TEST_DATABASE_KEY = "back\\slash\"quote"', 'back\\slash"quote'),
+        ("TEST_DATABASE_KEY = plain-value   # comment", "plain-value"),
+        ("TEST_DATABASE_KEY = value#fragment", "value#fragment"),
         (
-            "MARKETFORGE_DATABASE_URL_TEST='${HOME} $(touch never) `literal`'",
+            "TEST_DATABASE_KEY='${HOME} $(touch never) `literal`'",
             "${HOME} $(touch never) `literal`",
         ),
     ],
@@ -152,13 +154,13 @@ def test_migrations_and_status_use_shared_resolution_without_database_access(
     workspace: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    write_credentials(workspace, f"{TEST_DATABASE_KEY}=resolved-testing-value\n")
+    write_credentials(workspace, f"{TEST_DATABASE_KEY}=dbname=marketforge_test\n")
     reached_connection = Mock(side_effect=RuntimeError("connection intercepted"))
     monkeypatch.setattr("psycopg.connect", reached_connection)
     for operation in (migrate_testing_database, inspect_testing_database):
         with pytest.raises(RuntimeError, match="intercepted"):
             operation(project_root=workspace)
-        assert reached_connection.call_args.args == ("resolved-testing-value",)
+        assert reached_connection.call_args.args == ("dbname=marketforge_test",)
     assert reached_connection.call_count == 2
 
 
@@ -170,9 +172,9 @@ def test_explicit_migration_dsn_is_pinned(
     reached_connection = Mock(side_effect=RuntimeError("connection intercepted"))
     monkeypatch.setattr("psycopg.connect", reached_connection)
     with pytest.raises(RuntimeError, match="intercepted"):
-        migrate_testing_database(project_root=workspace, dsn="explicit-value")
-    assert reached_connection.call_args.args == ("explicit-value",)
-    with pytest.raises(MigrationError, match="must not be empty"):
+        migrate_testing_database(project_root=workspace, dsn="dbname=marketforge_test")
+    assert reached_connection.call_args.args == ("dbname=marketforge_test",)
+    with pytest.raises(MigrationError, match="must explicitly select"):
         migrate_testing_database(project_root=workspace, dsn="")
     assert reached_connection.call_count == 1
 

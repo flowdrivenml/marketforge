@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import LiteralString
 
 from psycopg import AsyncConnection
@@ -9,10 +10,9 @@ from psycopg.rows import TupleRow, dict_row
 
 from forge.historical.archives.storage.files import contained, disk
 from forge.historical.engine.managed import checksum
-from forge.historical.metadata.resolution import compiled_profiles, family, specification
+from forge.historical.metadata.resolution import family, profile_fingerprints, specification
 from forge.historical.normalization.resolution import positive_decimal, require
 from forge.historical.normalization.selection import RegisteredInput
-from forge.historical.profiles.service import discover
 from forge.markets.models import array, obj
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
@@ -54,7 +54,13 @@ def bitget_spot_pair(identifier: str) -> tuple[str, str]:
 
 
 async def resolve_archive(
-    connection: AsyncConnection[TupleRow], paths: ProjectPaths, row: dict[str, object], content: str
+    connection: AsyncConnection[TupleRow],
+    paths: ProjectPaths,
+    row: dict[str, object],
+    content: str,
+    *,
+    profile_root: Path | None = None,
+    executable: Path | None = None,
 ) -> ResolvedArchive:
     require(row["status"] == "complete", f"Local archive {row['id']} is not complete.")
     path = contained(paths.raw_dir, str(row["relative_path"])).resolve()
@@ -98,8 +104,7 @@ async def resolve_archive(
             row.get("format_profile") == profile_id and binding.get("profile_id") == profile_id,
             "Registered profile is incompatible with the normalization identity.",
         )
-        signature = tuple((p["id"], p["sha256"]) for p in await disk(discover, paths))
-        fingerprints = await disk(compiled_profiles, paths, signature)
+        fingerprints = await profile_fingerprints(paths, profile_root, executable)
         require(
             fingerprints.get(profile_id) == binding["profile_fingerprint"],
             "Registered profile fingerprint differs from the installed interpretation.",
@@ -304,7 +309,9 @@ async def resolve_archive(
             kind == "family",
             "Base-coin scopes require an explicit supported concrete/family mapping.",
         )
-        members, resolution = await family(connection, paths, row)
+        members, resolution = await family(
+            connection, paths, row, profile_root=profile_root, executable=executable
+        )
         require(
             row["instrument_type"] != "option",
             "Rust schema-v4 currently has no supported option offline catalogue/profile contract.",

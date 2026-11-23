@@ -1,12 +1,14 @@
 """Bulk map/download orchestration, bounded workers, and durable run reports."""
 
 import asyncio
+import hashlib
 import json
+import tomllib
 from collections import deque
 from contextlib import AsyncExitStack
 from dataclasses import asdict
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import NotRequired, TypedDict, cast
 
 import httpx
 from psycopg import AsyncConnection
@@ -33,15 +35,17 @@ from forge.historical.archives.sources.base import (
     ProbeEvent,
     UnsupportedRequestError,
 )
-from forge.historical.archives.sources.exchanges import ExchangeSource
+from forge.historical.archives.sources.exchanges import HISTORICAL_EXCHANGES, ExchangeSource
 from forge.historical.archives.storage.acquire import acquire, root_key
 from forge.historical.archives.storage.files import ArchiveFileError, contained, disk, fingerprint
 from forge.orchestration.artifacts import RunArtifacts
+from forge.orchestration.registry import begin, complete_call, current_execution
 from forge.shared.async_work import bounded_map
-from forge.shared.database.testing import TestingDatabaseError, testing_connection
+from forge.shared.database.connection import DatabaseError, database_connection
+from forge.shared.errors import MarketForgeError
 from forge.shared.http.client import HttpClient
 from forge.shared.http.configured import open_configured_http_client
-from forge.shared.identity import new_run_id
+from forge.shared.identity import RunId, RunOperation, parse_run_id
 from forge.startup.context import ApplicationContext
 
 
@@ -53,7 +57,7 @@ def failure_message(error: Exception) -> str:
         return f"HTTP {error.response.status_code}; verify upstream access or refresh archive locations."
     if isinstance(error, httpx.TransportError):
         return "HTTP transport failed; retry after checking connectivity."
-    if isinstance(error, (DiscoveryError, ArchiveFileError, TestingDatabaseError)):
+    if isinstance(error, (DiscoveryError, ArchiveFileError, DatabaseError)):
         return str(error)
     return f"{type(error).__name__}; inspect configuration, database access, and upstream compatibility."
 
@@ -70,21 +74,42 @@ class OperationReport(TypedDict):
     archive_outcomes: str
     report: str
     selection: dict[str, object]
+    operation: NotRequired[str]
+    action: NotRequired[str]
+    recipe: NotRequired[str | None]
+    environment: NotRequired[str]
+    registry_id: NotRequired[str]
+    interval: NotRequired[dict[str, object]]
+    started_at: NotRequired[str]
+    finished_at: NotRequired[str]
+    logical_run_id: NotRequired[str]
+    execution_registry_warning: NotRequired[str]
+    recipe_sha256: NotRequired[str]
+    bytes_written: NotRequired[int | None]
 
 
 class Reporter:
     def __init__(
-        self, context: ApplicationContext, *, total_requests: int, observer: ProgressObserver | None
+        self,
+        context: ApplicationContext,
+        *,
+        run_id: RunId,
+        artifact_root: Path,
+        total_requests: int,
+        observer: ProgressObserver | None,
     ) -> None:
         self.context = context
         self.observer = observer
         self.progress = ProgressState(total_requests)
-        self.run_id = new_run_id()
-        self.artifacts = RunArtifacts.for_run(context.paths, self.run_id)
+        self.run_id = run_id
+        self.metadata: dict[str, object] = {}
+        self.artifacts = RunArtifacts(artifact_root)
         self.selected: list[AcquiredArchive] = []
         self.counts = self.progress.files
         self.requests: list[dict[str, object]] = []
         self._lock = asyncio.Lock()
+        self.measured_downloads = 0
+        self.measured_bytes = 0
 
     def emit(self, event: ProgressEvent) -> None:
         snapshot = self.progress.apply(event)
@@ -101,8 +126,13 @@ class Reporter:
 
     def _append(self, document: dict[str, object]) -> None:
         with self.artifacts.events.open("a", encoding="utf-8") as output:
-            output.write(json.dumps(document) + "\n")
+            output.write(json.dumps({**document, "run_id": str(self.run_id)}) + "\n")
             output.flush()
+
+        size = document.get("bytes_written")
+        if document.get("status") == "completed" and type(size) is int:
+            self.measured_downloads += 1
+            self.measured_bytes += size
 
     async def save(self, status: str) -> OperationReport:
         result: OperationReport = {
@@ -123,6 +153,14 @@ class Reporter:
                 ),
             ).model_dump(mode="json"),
         }
+        from datetime import UTC, datetime
+
+        result.update(cast(OperationReport, self.metadata))
+        result["finished_at"] = datetime.now(UTC).isoformat()
+        if result.get("action") == "download":
+            result["bytes_written"] = (
+                self.measured_bytes if self.measured_downloads == self.counts.completed else None
+            )
         await disk(
             self.artifacts.report.write_text, json.dumps(result, indent=2) + "\n", encoding="utf-8"
         )
@@ -153,7 +191,7 @@ async def _download_scan(
 
     async def worker() -> None:
         nonlocal failures
-        async with testing_connection(dsn) as local_connection:
+        async with database_connection(dsn) as local_connection:
 
             async def refresh_location(item: CachedRemoteArchive) -> CachedRemoteArchive:
                 nonlocal refreshed
@@ -400,11 +438,83 @@ async def run_acquisition(
     observer: ProgressObserver | None = None,
     resume_report: OperationReport | None = None,
 ) -> OperationReport:
+    """Register a logical acquisition before discovery or transfer starts."""
+    previous = (
+        parse_run_id(resume_report["run_id"])
+        if resume_report is not None and resume_report.get("operation") == "acquisition"
+        else None
+    )
+    execution = await begin(
+        context.paths,
+        RunOperation.ACQUISITION,
+        "download" if download else "map",
+        recipe=source_file.stem if source_file else None,
+        source=source_file,
+        identity=previous,
+        resume=previous is not None,
+        evidence=resume_report if previous is not None else None,
+        dsn=dsn,
+    )
+    return cast(
+        OperationReport,
+        await complete_call(
+            execution,
+            lambda: _run_acquisition(
+                context,
+                configuration,
+                dsn=dsn,
+                download=download,
+                refresh=refresh,
+                requests_per_second=requests_per_second,
+                silent=silent,
+                source_file=source_file,
+                transport=transport,
+                observer=observer,
+                resume_report=resume_report,
+            ),
+        ),
+    )
+
+
+async def _run_acquisition(
+    context: ApplicationContext,
+    configuration: AcquisitionConfig,
+    *,
+    dsn: str,
+    download: bool,
+    refresh: bool = False,
+    requests_per_second: float | None = None,
+    silent: bool = False,
+    source_file: Path | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+    observer: ProgressObserver | None = None,
+    resume_report: OperationReport | None = None,
+) -> OperationReport:
     """Execute one historical owner operation; caller holds WorkspaceOwnership."""
-    reporter = Reporter(context, total_requests=len(configuration.requests), observer=observer)
-    await disk(reporter.artifacts.root.mkdir, parents=True, exist_ok=False)
+    execution = current_execution()
+    assert execution is not None
+    reporter = Reporter(
+        context,
+        run_id=parse_run_id(execution.id),
+        artifact_root=execution.acquisition_root,
+        total_requests=len(configuration.requests),
+        observer=observer,
+    )
+    reporter.metadata = {
+        "operation": "acquisition",
+        "action": execution.action,
+        "recipe": source_file.stem if source_file else None,
+        "environment": execution.purpose,
+        "registry_id": execution.registry,
+        "interval": configuration.interval.model_dump(mode="json"),
+        "started_at": execution.started_at.isoformat(),
+    }
+    await disk(reporter.artifacts.root.mkdir, parents=True, exist_ok=True)
     if source_file is not None:
         submitted = await disk(source_file.read_bytes)
+        if AcquisitionConfig.model_validate(tomllib.loads(submitted.decode())) != configuration:
+            raise MarketForgeError("The acquisition recipe changed before execution.")
+        reporter.metadata["recipe_sha256"] = hashlib.sha256(submitted).hexdigest()
         await disk(reporter.artifacts.submitted_config.write_bytes, submitted)
     clients: dict[str, HttpClient] = {}
     scope_locks = tuple(asyncio.Lock() for _ in range(640))
@@ -436,7 +546,7 @@ async def run_acquisition(
             ] = prior
 
     async def process(index: int) -> bool:
-        async with testing_connection(dsn) as connection:
+        async with database_connection(dsn) as connection:
             await process_connected(index, connection)
         return True
 
@@ -629,12 +739,11 @@ async def run_acquisition(
     try:
         # Preflight identity before any network work; clients are initialized once,
         # serially, then shared by all three request workers.
-        async with testing_connection(dsn):
+        async with database_connection(dsn):
             pass
         async with AsyncExitStack() as stack:
             for exchange in sorted(
-                {r.exchange for r in configuration.requests}
-                & {"binance", "bybit", "okx", "gateio", "bitget"}
+                {r.exchange for r in configuration.requests} & set(HISTORICAL_EXCHANGES)
             ):
                 cap = {"gateio": 1.0, "bitget": 0.5, "bybit": 1.0, "okx": 2.5}.get(exchange, 2.0)
                 clients[exchange] = await stack.enter_async_context(

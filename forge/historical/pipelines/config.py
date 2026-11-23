@@ -1,6 +1,7 @@
 """One historical request, compiled into the existing service inputs."""
 
 import tomllib
+from pathlib import Path
 from typing import Self
 
 from pydantic import Field, model_validator
@@ -12,6 +13,7 @@ from forge.historical.archives.sources.exchanges import validate_request
 from forge.historical.merge.config import TimelineOrdering, unix_ns
 from forge.historical.merge.service import Recipe
 from forge.historical.normalization.config import NormalizationRecipe, NormalizationSource
+from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
 
 
@@ -73,3 +75,8 @@ class PipelineRecipe(SettingsModel, frozen=True):
 
 def load_recipe(submitted: bytes) -> PipelineRecipe:
     return PipelineRecipe.model_validate(tomllib.loads(submitted.decode("utf-8")))
+
+
+def load_recipe_file(source: Path, submitted: bytes) -> PipelineRecipe:
+    with configuration_errors(source):
+        return load_recipe(submitted)

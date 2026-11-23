@@ -369,7 +369,7 @@ impl MaterializationPartitionWorker {
             reporter.finish(writer.metrics().events_written);
         }
         if progress.is_none() && std::env::var_os("MARKETFORGE_PROFILE").is_some() {
-            eprintln!(
+            crate::historical::normalize::progress::log::diagnostic(format_args!(
                 "[materialize-profile] partition={} windows={} \
          planning={:.3}s decoding={:.3}s \
          building={:.3}s writing={:.3}s \
@@ -387,7 +387,7 @@ impl MaterializationPartitionWorker {
                 self.decoder.cursor_openings(),
                 self.decoder.cursor_evictions(),
                 self.decoder.peak_open_cursors(),
-            );
+            ));
         }
 
         Ok(MaterializationPartitionResult {

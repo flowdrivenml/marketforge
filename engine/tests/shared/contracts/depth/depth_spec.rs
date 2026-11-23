@@ -5,8 +5,8 @@ use marketforge_engine::{
 use std::collections::BTreeSet;
 #[test]
 fn compiles_all_depth_normalization_specs() {
-    let root =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/historical");
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../data/.config/engine/normalize");
     let catalog = FormatCatalog::load(root).unwrap();
     let mut kinds = BTreeSet::new();
     let mut identities = BTreeSet::new();

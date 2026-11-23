@@ -103,8 +103,8 @@ def test_json_preview_and_exact_saved_apply(
             "outcomes": [],
         }
 
-    monkeypatch.setattr(storage_cleanup, "testing_dsn", dsn)
-    monkeypatch.setattr(storage_cleanup, "testing_connection", connect)
+    monkeypatch.setattr(storage_cleanup, "database_dsn", dsn)
+    monkeypatch.setattr(storage_cleanup, "database_connection", connect)
     monkeypatch.setattr(storage_cleanup, "preview", controlled)
     monkeypatch.setattr(storage_cleanup, "apply", apply)
     args = ["--project-root", str(workspace), "--json", "storage", operation, "--testing"]
@@ -150,7 +150,7 @@ def test_invalid_destructive_commands_fail_before_connection(
     def forbidden(root: Path) -> str:
         raise AssertionError("invalid request reached PostgreSQL")
 
-    monkeypatch.setattr(storage_cleanup, "testing_dsn", forbidden)
+    monkeypatch.setattr(storage_cleanup, "database_dsn", forbidden)
     assert (
         main(["--project-root", str(workspace), "--json", "storage", *arguments, "--testing"]) == 2
     )
@@ -273,8 +273,8 @@ def test_prune_interactive_review_confirms_once_or_skips_prompt(
             },
         }
 
-    monkeypatch.setattr(storage_cleanup, "testing_dsn", dsn)
-    monkeypatch.setattr(storage_cleanup, "testing_connection", connect)
+    monkeypatch.setattr(storage_cleanup, "database_dsn", dsn)
+    monkeypatch.setattr(storage_cleanup, "database_connection", connect)
     monkeypatch.setattr(storage_cleanup, "preview", controlled)
     monkeypatch.setattr(storage_cleanup, "apply", applied)
     monkeypatch.setattr(storage_cleanup, "interactive_terminal", lambda: terminal)

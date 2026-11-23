@@ -326,7 +326,7 @@ fn performance_settings_default_validate_and_roundtrip() {
 #[test]
 fn shared_runtime_preserves_operation_specific_validation() {
     let root = TempDir::new().unwrap();
-    let path = Path::new("runtime.toml");
+    let path = Path::new("general.toml");
     fs::write(
         root.path().join(path),
         format!("{TOML}\n[merge]\npartitions_per_worker = 0\n"),
@@ -340,4 +340,37 @@ fn shared_runtime_preserves_operation_specific_validation() {
         normalization.resources.parquet.row_group_target_bytes
     );
     assert!(load_merge_runtime_settings(path, root.path()).is_err());
+}
+
+#[test]
+fn independent_io_documents_reject_stage_specific_and_invalid_fields() {
+    let root = TempDir::new().unwrap();
+    let merge = root.path().join("merge.toml");
+    let convert = root.path().join("convert.toml");
+    let base = r#"schema_version = 1
+[resources]
+workers = 2
+memory_limit_mb = 512
+max_open_files = 32
+[parquet]
+row_group_target_mb = 16
+file_target_mb = 64
+compression_level = 5
+"#;
+    let merge_document = format!("{base}\n[partitioning]\npartitions_per_worker = 9\n");
+    fs::write(&merge, &merge_document).unwrap();
+    fs::write(&convert, base).unwrap();
+    let settings = load_merge_runtime_settings(&merge, root.path()).unwrap();
+    assert_eq!(settings.partitioning.partitions_per_worker, 9);
+    let (resources, parquet) = load_conversion_runtime_settings(&convert, root.path()).unwrap();
+    assert_eq!(resources, settings.resources);
+    assert_eq!(parquet.compression_level, 5);
+    assert!(load_conversion_runtime_settings(&merge, root.path()).is_err());
+    fs::write(&convert, base.replace("workers = 2", "workers = 0")).unwrap();
+    assert!(
+        load_conversion_runtime_settings(&convert, root.path())
+            .unwrap_err()
+            .to_string()
+            .contains("resources.workers")
+    );
 }
