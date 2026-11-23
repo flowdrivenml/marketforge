@@ -5061,7 +5061,7 @@
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>--publication-id<span class="w"> </span>PUBLICATION_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 mf<span class="w"> </span>runs<span class="w"> </span>report<span class="w"> </span>NORMALIZATION_RUN_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
-<p>In <code>mf merge edit first_merge</code>, add or replace <code>publication_ids = [101, 102]</code> <strong>inside the existing</strong> <code>[selection]</code> table. Replace the illustrative IDs with the publications for the intended generation and requested streams. Keep only one <code>[selection]</code> table. Preview preparation again and check both the selected publication IDs and the selected file count. See <a href="../../configuration/merge/#selection-and-ambiguity">selection rules</a>.</p>
+<p>In <code>mf merge edit first_merge</code>, add or replace <code>publication_ids = [101]</code> <strong>inside the existing</strong> <code>[selection]</code> table. Replace the illustrative ID with the intended trades publication. For multiple requested streams, list all publications needed from the intended generation. Keep only one <code>[selection]</code> table. Preview preparation again and check both the selected publication IDs and the selected file count. See <a href="../../configuration/merge/#selection-and-ambiguity">selection rules</a>.</p>
 <h2 id="5-run-the-merge">5. Run the merge</h2>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>merge<span class="w"> </span>run<span class="w"> </span>first_merge<span class="w"> </span>--testing
 </code></pre></div>
@@ -5083,7 +5083,7 @@ mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> <
 mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>FILE_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 mf<span class="w"> </span>datasets<span class="w"> </span>verify<span class="w"> </span>FILE_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
-<p>Replace the uppercase placeholders with identities from your result or run history. The publication view shows the manifest and primary-file inventory. See the <a href="../../reference/cli/merge/#identifiers">identity table</a>. Its partitions can contain several physical files. For causal output, read in timeline order and keep reconstruction context when replaying book state. See <a href="../../reference/publication-merge/">merged publications</a>.</p>
+<p>Replace the uppercase placeholders with identities from your result or run history. The publication view shows its manifest and primary-file inventory. Each partition can contain several physical files. See the <a href="../../reference/cli/merge/#identifiers">identity table</a>. For causal output, read in timeline order and keep reconstruction context when replaying book state. See <a href="../../reference/publication-merge/">merged publications</a>.</p>
 <p><a id="supported-layouts"></a>
 <a id="merge-tests"></a><a id="optional-recording-compatibility"></a>
 <a id="timeline-ordering"></a></p>

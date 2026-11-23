@@ -7025,7 +7025,9 @@ Pinned file and manifest checksums
 <hr />
 <h2 id="file-checksum-pinning">File Checksum Pinning</h2>
 <p>The merge input contains:</p>
-<div class="highlight"><pre><span></span><code><span class="nt">"sha256"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;primary-file-sha256&gt;"</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"sha256"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;primary-file-sha256&gt;"</span>
+<span class="p">}</span>
 </code></pre></div>
 <h3 id="what-is-sha-256">What is SHA-256?</h3>
 <p>It is a cryptographic checksum used to identify file contents.</p>
@@ -7225,7 +7227,9 @@ Update
 <hr />
 <h2 id="chronological-ordering">Chronological Ordering</h2>
 <p>The merge job can contain:</p>
-<div class="highlight"><pre><span></span><code><span class="nt">"timeline_ordering"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chronological"</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"timeline_ordering"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chronological"</span>
+<span class="p">}</span>
 </code></pre></div>
 <h3 id="what-does-this-mean">What does this mean?</h3>
 <p>The merger constructs the supported chronological timeline using event timestamps and the applicable tie-breaking rules.</p>
@@ -7240,7 +7244,9 @@ Update
 <hr />
 <h2 id="causal-ordering">Causal Ordering</h2>
 <p>The merge job can also contain:</p>
-<div class="highlight"><pre><span></span><code><span class="nt">"timeline_ordering"</span><span class="p">:</span><span class="w"> </span><span class="s2">"causal"</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"timeline_ordering"</span><span class="p">:</span><span class="w"> </span><span class="s2">"causal"</span>
+<span class="p">}</span>
 </code></pre></div>
 <h3 id="why-is-causal-ordering-necessary">Why is causal ordering necessary?</h3>
 <p>Some depth publications contain source-order or reconstruction dependencies that timestamp sorting alone cannot safely represent.</p>
