@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../python-datasets/">
       
       
@@ -27,7 +24,7 @@
       
       
       <link rel="icon" href="../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
@@ -38,13 +35,12 @@
       
         
       
-      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -3563,6 +3559,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#remove-retained-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Remove retained runs
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#deduplicate-equivalent-publications" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4744,6 +4751,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#remove-retained-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Remove retained runs
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#deduplicate-equivalent-publications" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5042,6 +5060,8 @@ mf<span class="w"> </span>runs<span class="w"> </span>reconcile<span class="w"> 
 </tbody>
 </table>
 <p>For a verified committed dataset with incomplete registration, use the original registry and the operation’s registration procedure. <a href="../cli/normalize/#registration-and-recovery">Normalization recovery</a> · <a href="../cli/merge/#registration-and-recovery">Merge recovery</a></p>
+<h2 id="remove-retained-runs">Remove retained runs</h2>
+<p>Use <a href="../cli/runs/#delete-runs"><code>mf runs delete</code></a> to preview an exact run selection and apply the saved plan. Full deletion removes eligible run evidence and the indexed history payload. History-only removal hides the entry and preserves its evidence. Dataset retirement and storage cleanup are separate operations. When run evidence serves registration recovery, source discovery, reuse or resume, review the blocker before deciding which removal mode to use.</p>
 <h2 id="deduplicate-equivalent-publications">Deduplicate equivalent publications</h2>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>deduplicate<span class="w"> </span>--testing<span class="w"> </span>--operation<span class="w"> </span>merge
 </code></pre></div>
@@ -5214,8 +5234,7 @@ mf<span class="w"> </span>datasets<span class="w"> </span>refresh-summary<span c
       <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../assets/javascripts/keyboard.js"></script>
       

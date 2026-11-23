@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../merge/">
       
       
@@ -27,7 +24,7 @@
       
       
       <link rel="icon" href="../../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
@@ -38,13 +35,12 @@
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -2484,6 +2480,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#recipe-and-runtime-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recipe and runtime tools
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#synopsis-and-arguments" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4729,6 +4736,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#recipe-and-runtime-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recipe and runtime tools
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#synopsis-and-arguments" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4997,6 +5015,63 @@
 
 <h1 id="conversion-commands">Conversion commands</h1>
 <p>Generate and submit quote-conversion jobs for verified merge publications. <a href="../../../workflows/conversion/">Workflow and prerequisites</a> · <a href="../">Shared CLI behavior</a></p>
+<h2 id="recipe-and-runtime-tools">Recipe and runtime tools</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mf convert list</code></td>
+<td>Inspect the managed conversion recipe library locally.</td>
+</tr>
+<tr>
+<td><code>mf convert show RECIPE</code></td>
+<td>Inspect the declared policy and current upstream binding.</td>
+</tr>
+<tr>
+<td><code>mf convert edit RECIPE</code></td>
+<td>Validate and save an editor draft. Requires a terminal.</td>
+</tr>
+<tr>
+<td><code>mf convert delete NAME [--apply [--force]]</code></td>
+<td>Preview or remove one managed recipe. Its publications and retained artifacts remain available.</td>
+</tr>
+<tr>
+<td><code>mf convert config show [--all \| --section SECTION]</code></td>
+<td>Inspect base runtime settings.</td>
+</tr>
+<tr>
+<td><code>mf convert config get FIELD</code></td>
+<td>Inspect one configured and effective field.</td>
+</tr>
+<tr>
+<td><code>mf convert config schema [--field FIELD]</code></td>
+<td>Read the managed Rust converter's schema.</td>
+</tr>
+<tr>
+<td><code>mf convert config validate</code></td>
+<td>Validate the complete base runtime through Rust.</td>
+</tr>
+<tr>
+<td><code>mf convert config set FIELD VALUE [--apply]</code></td>
+<td>Preview or atomically apply a typed change.</td>
+</tr>
+<tr>
+<td><code>mf convert config unset FIELD [--apply]</code></td>
+<td>Preview or restore an optional field's default.</td>
+</tr>
+<tr>
+<td><code>mf convert config edit</code></td>
+<td>Validate a private draft and confirm before saving. Requires a terminal.</td>
+</tr>
+</tbody>
+</table>
+<p>The <a href="../../runtime/#merge-and-conversion-runtime">runtime reference</a> describes the base file and its relationship to prepared jobs. Run <code>mf engine build convert</code> if the installed converter lacks runtime schema inspection or managed TUI support.</p>
+<p>Execution reports verified publications and their reusable output references. Use <code>mf datasets show --output-ref REF --testing</code> for a testing result. Converted outputs use the durable output index. Catalogue registration is unavailable.</p>
 <h2 id="synopsis-and-arguments">Synopsis and arguments</h2>
 <h3 id="mf-convert-new"><code>mf convert new</code></h3>
 <div class="highlight"><pre><span></span><code>mf convert new [-h]
@@ -5247,8 +5322,7 @@ mf<span class="w"> </span>convert<span class="w"> </span>run<span class="w"> </s
       <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../../assets/javascripts/keyboard.js"></script>
       

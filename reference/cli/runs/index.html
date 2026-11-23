@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../storage/">
       
       
@@ -27,7 +24,7 @@
       
       
       <link rel="icon" href="../../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
@@ -38,13 +35,12 @@
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -2346,6 +2342,34 @@
       </span>
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#delete-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Delete runs
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Delete runs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#apply-and-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Apply and recovery
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -4756,6 +4780,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#delete-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Delete runs
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Delete runs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#apply-and-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Apply and recovery
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#json-results" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4981,6 +5033,11 @@
 <td><code>--limit N</code>, <code>--offset N</code>, <code>--dry-run</code> or <code>--apply</code></td>
 <td>Preview or apply index finalization from retained evidence</td>
 </tr>
+<tr>
+<td><code>mf runs delete</code></td>
+<td>Exact indexed run IDs, optional <code>--with-children</code> or <code>--history-only</code>, or <code>--apply --plan PATH</code></td>
+<td>Preview or apply a reviewed run deletion</td>
+</tr>
 </tbody>
 </table>
 <p>For <code>list</code>, filters are exact and run before paging. <code>--operation</code> accepts <code>acquisition</code>, <code>normalize</code>, <code>merge</code>, <code>convert</code>, and <code>pipeline</code>. <code>--action</code>, <code>--status</code>, and <code>--recipe</code> match the recorded fields. <code>--start</code> and <code>--end</code> accept timezone-qualified ISO 8601 timestamps and filter run start in <code>[start, end)</code>. Results are ordered by descending start time, then run ID. The default limit is 100, range 1–1,000. Offset defaults to zero, range 0–100,000. The count in terminal output describes the page.</p>
@@ -5112,6 +5169,38 @@ mf<span class="w"> </span>runs<span class="w"> </span>report<span class="w"> </s
 mf<span class="w"> </span>runs<span class="w"> </span>reconcile<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span>
 </code></pre></div>
 <p>Both commands default to preview. The shared paging range matches <code>list</code>. Use the <a href="../../history-maintenance/">maintenance reference</a> for eligibility, decision codes and explicit apply syntax. A preview with blocked or unresolved candidates can still return successfully. Inspect the candidate decisions separately from the process exit code.</p>
+<h2 id="delete-runs">Delete runs</h2>
+<p>Use the public Forge ID from the selected registry. Delete needs an exact indexed run ID. Engine execution IDs, publication IDs, attempt IDs and local artifact paths have separate purposes. Production is the default. Use the same environment for preview and apply. Existing registries need the run-deletion migration. Check the selected database with <code>mf database status --testing</code> or the corresponding production selector.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>runs<span class="w"> </span>delete<span class="w"> </span>FAILED_RUN_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>runs<span class="w"> </span>delete<span class="w"> </span>RUN_ID_1<span class="w"> </span>RUN_ID_2<span class="w"> </span>--testing
+mf<span class="w"> </span>runs<span class="w"> </span>delete<span class="w"> </span>PIPELINE_RUN_ID<span class="w"> </span>--testing<span class="w"> </span>--with-children
+mf<span class="w"> </span>runs<span class="w"> </span>delete<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span>--history-only
+mf<span class="w"> </span>runs<span class="w"> </span>delete<span class="w"> </span>--testing<span class="w"> </span>--apply<span class="w"> </span>--plan<span class="w"> </span><span class="s2">"PLAN_PATH"</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full deletion (default)</td>
+<td>Remove the indexed run payload, attempts and resource associations, plus the reviewed, exclusively owned disposable files and empty directories. A marker preserves the public run identity and deletion state. Detached paths with unproven ownership are retained. An unrecognized file inside an owned tree blocks full deletion.</td>
+</tr>
+<tr>
+<td><code>--history-only</code></td>
+<td>Hide the run from ordinary history while preserving its recorded status, attempts, resources, relationships, and files. The result reports zero files removed and zero bytes reclaimed.</td>
+</tr>
+</tbody>
+</table>
+<p>Resource associations are pointers. Removing one leaves its referenced archive or publication intact. Both modes preserve raw archives, managed acquisition records, processed publications and their files, catalogue metadata, recipes, and runtime configuration. Execution intents, prepared work, selection reports, pipeline checkpoints and reusable results can still have consumers after an action finishes. Review the exact blocking path and identity in the preview. For example, use the operation's registration recovery procedure when a verified publication still needs its execution intent. Use history-only removal when you want to hide the run while preserving required evidence.</p>
+<p><code>--with-children</code> expands descendants through indexed relationships and deduplicates overlapping selections. Review every expanded ID. A full deletion with surviving descendants is blocked. A surviving parent's recorded references to the child remain historical evidence. Active owned work blocks removal. For a nonterminal record, preview <code>mf runs reconcile --testing</code> and assess the retained outcome. Age alone cannot establish that work has ended.</p>
+<h3 id="apply-and-recovery">Apply and recovery</h3>
+<p>Preview writes a plan under the workspace data root in <code>.jobs/run-cleanup/</code> and reports its location. Apply uses that saved plan alone. It accepts no replacement run IDs or mode flags and requires no additional confirmation. The plan pins the environment, registry identity, selections, descendants, attempts, dependencies, and reviewed file inventory. A changed run, new child, new claim, changed dependency, or changed inventory can block apply. Review a new plan if a fresh apply is blocked. A blocked batch leaves targets unchanged.</p>
+<p>Full deletion records a receipt and marks history as retiring before file removal. It records confirmed unlinks as they happen and removes the indexed payload after cleanup finishes. If cleanup is interrupted, run <code>mf runs show RUN_ID --testing</code> to find the marker and receipt, then retry <strong>the original</strong> <code>--apply --plan</code> command. A file already absent during retry is tracked separately from confirmed removals. If the retry is blocked, inspect the receipt and the reported path or dependency before taking further action. Removed file bytes measure logical file sizes. Actual filesystem reclamation is unmeasured for full deletion.</p>
+<p>Explicit <code>show</code> explains the removal. After history-only removal, <code>logs</code> and <code>report</code> can still read retained evidence. Full deletion reports evidence unavailable through the removed run ID. Legacy indexing skips removal markers. Reconciliation leaves full-deletion markers alone and keeps history-only entries hidden if their metadata is finalized.</p>
 <h2 id="json-results">JSON results</h2>
 <p>Place <a href="../#global-options">global <code>--json</code></a> before <code>runs</code>.</p>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">10</span>
@@ -5119,6 +5208,9 @@ mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </s
 mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </span>report<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
 </code></pre></div>
 <p>List returns schema version 2 with <code>runs</code>, <code>offset</code>, and <code>more</code>. Indexed show returns a schema version 2 record with attempts, resources, children, and truncation flags. Historical show can return a retained report instead. Events return <code>run_id</code>, <code>events</code>, and a truncation flag or missing status. Engine logs return named streams or a status. Report returns the underlying operation document or an availability record regardless of <code>--section</code>. Maintenance returns <code>dry_run</code>, <code>offset</code>, and per-item <code>outcomes</code>. Terminal-only supplementary log streams and projected report summaries do not change those contracts.</p>
+<p>Deletion uses its own structured result. Preview includes the plan location, reviewed targets, estimates and blockers. Apply includes the receipt location, state and confirmed effects. A blocked or partial deletion exits nonzero. An unknown ID fails. A completed plan can be reapplied to inspect its recorded outcome.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </span>delete<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
+</code></pre></div>
 
 
 
@@ -5217,8 +5309,7 @@ mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </s
       <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../../assets/javascripts/keyboard.js"></script>
       
