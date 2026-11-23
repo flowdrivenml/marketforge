@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../pipeline/">
       
       
@@ -27,24 +24,23 @@
       
       
       <link rel="icon" href="../../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
-        <title>Dataset commands - MarketForge</title>
+        <title>Datasets CLI reference - MarketForge</title>
       
     
     
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -115,7 +111,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Dataset commands
+              Datasets CLI reference
             
           </span>
         </div>
@@ -1570,6 +1566,8 @@
       
         
       
+        
+      
     
     
     
@@ -1593,7 +1591,7 @@
   <span class="md-ellipsis">
     
   
-  Inspect datasets
+  Inspect history and data
 
     
   </span>
@@ -1609,7 +1607,7 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Inspect datasets
+  Inspect history and data
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -1628,7 +1626,34 @@
   <span class="md-ellipsis">
     
   
-  Inspect registered datasets
+  Explore historical datasets
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect execution history
 
     
   </span>
@@ -1965,6 +1990,8 @@
       
         
       
+        
+      
     
     
     
@@ -2212,7 +2239,7 @@
   <span class="md-ellipsis">
     
   
-  Execution history and retained evidence
+  Runs CLI reference
 
     
   </span>
@@ -2464,7 +2491,7 @@
   <span class="md-ellipsis">
     
   
-  Dataset commands
+  Datasets CLI reference
 
     
   </span>
@@ -2481,7 +2508,7 @@
   <span class="md-ellipsis">
     
   
-  Dataset commands
+  Datasets CLI reference
 
     
   </span>
@@ -2507,22 +2534,61 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#synopsis-and-arguments" class="md-nav__link">
+  <a href="#browsing-commands" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Synopsis and arguments
+        Browsing commands
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Synopsis and arguments">
+    <nav class="md-nav" aria-label="Browsing commands">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#mf-datasets-list" class="md-nav__link">
+  <a href="#supported-filters" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>mf datasets list</code>
+        Supported filters
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understanding-dataset-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Understanding dataset coverage
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-inspection-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        File inspection commands
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File inspection commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#file-level-contributions-vs-publication-level-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        File-level contributions vs. publication-level selection
       </span>
     </span>
   </a>
@@ -2530,109 +2596,38 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#mf-datasets-find" class="md-nav__link">
+  <a href="#verification-vs-data-integrity" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>mf datasets find</code>
+        Verification vs. data integrity
       </span>
     </span>
   </a>
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#mf-datasets-show" class="md-nav__link">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registered-metadata-maintenance" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>mf datasets show</code>
+        Registered metadata maintenance
       </span>
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Registered metadata maintenance">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#mf-datasets-streams" class="md-nav__link">
+  <a href="#migrate-existing-registrations" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>mf datasets streams</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets lineage</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-coverage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets coverage</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-verify" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets verify</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets schema</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-head" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets head</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-migrate-registration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets migrate-registration</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-refresh-summary" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets refresh-summary</code>
+        Migrate existing registrations
       </span>
     </span>
   </a>
@@ -2656,283 +2651,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#json-dataset-inspection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        JSON dataset inspection
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="JSON dataset inspection">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#why-use-json" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why use JSON?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#json-previews" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        JSON previews
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-wide-change-json-output" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does <code>--wide</code> change JSON output?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-json-ignore-pagination" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does JSON ignore pagination?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#understanding-dataset-coverage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Understanding Dataset Coverage
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#file-level-contributions-vs-publication-level-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        File-Level Contributions vs. Publication-Level Selection
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="File-Level Contributions vs. Publication-Level Selection">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Example
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-not-attach-every-source-to-every-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why not attach every source to every file?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#expand-the-publication-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Expand the publication selection
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-is-this-useful-for-merging" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why is this useful for merging?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-publication-change-the-dataset" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does <code>--publication</code> change the dataset?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#verification-vs-data-integrity" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verification vs. Data Integrity
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Verification vs. Data Integrity">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#file-verification" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        File verification
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#processing-integrity" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Processing integrity
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#historical-completeness" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Historical completeness
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#three-different-guarantees" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Three different guarantees
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#registered-metadata-maintenance" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Registered Metadata Maintenance
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#how-marketforge-displays-datasets" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        How MarketForge Displays Datasets
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="How MarketForge Displays Datasets">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#compact-and-wide-views" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Compact and wide views
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#precise-timestamps" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Precise timestamps
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#terminal-width" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Terminal width
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#multi-stream-labels" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Multi-stream labels
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#tokyo-night-colors" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2940,515 +2658,6 @@
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Tokyo Night colors">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#available-color-modes" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Available color modes
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#plain-output" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Plain output
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-silent-mode-hide-dataset-inspection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does silent mode hide dataset inspection?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-color-affect-dataset-contents" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does color affect dataset contents?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#working-with-datasets-in-python" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Working with Datasets in Python
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#browsing-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Browsing Commands
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Browsing Commands">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#list" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        List
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#find" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Find
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#coverage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Coverage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#supported-filters" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Supported filters
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#file-inspection-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        File Inspection Commands
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="File Inspection Commands">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#show-file-details" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Show file details
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#show-streams" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Show streams
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#show-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Show lineage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#show-schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Show schema
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#preview-records" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Preview records
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#verify-a-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verify a file
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#refresh-metadata" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Refresh metadata
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#migrate-existing-registrations" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Migrate existing registrations
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Migrate existing registrations">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#preview-legacy-migration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Preview legacy migration
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#apply-legacy-migration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Apply legacy migration
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#json-output" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        JSON Output
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="JSON Output">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#why-use-json_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why use JSON?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#important-details" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Important details
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-questions" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Common Questions
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-dataset-inspection-problems" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Common Dataset Inspection Problems
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Common Dataset Inspection Problems">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#no-datasets-are-listed" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        No datasets are listed
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-file-id-cannot-be-found" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        A file ID cannot be found
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#the-dataset-belongs-to-an-unexpected-publication" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        The dataset belongs to an unexpected publication
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-market-search-returns-a-mixed-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        A market search returns a mixed file
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-search-by-time-returns-a-file-without-matching-rows" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        A search by time returns a file without matching rows
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#coverage-seems-incomplete" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Coverage seems incomplete
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#the-schema-command-fails" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        The schema command fails
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-preview-does-not-show-a-required-column" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        A preview does not show a required column
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-requested-column-does-not-exist" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        A requested column does not exist
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#previewed-timestamps-lack-precision" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Previewed timestamps lack precision
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#unexpected-row-counts" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Unexpected row counts
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#lineage-does-not-list-every-publication-input-as-a-file-contribution" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Lineage does not list every publication input as a file contribution
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#verification-reports-a-checksum-mismatch" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verification reports a checksum mismatch
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#verification-reports-a-missing-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verification reports a missing file
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#refreshing-a-summary-does-not-repair-a-damaged-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Refreshing a summary does not repair a damaged file
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#registration-migration-reports-conflicts" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Registration migration reports conflicts
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#registration-recovery-fails" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Registration recovery fails
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -4438,6 +3647,33 @@
     
   
   Python dataset API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history-maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Run and dataset maintenance
 
     
   </span>
@@ -5523,22 +4759,61 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#synopsis-and-arguments" class="md-nav__link">
+  <a href="#browsing-commands" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Synopsis and arguments
+        Browsing commands
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Synopsis and arguments">
+    <nav class="md-nav" aria-label="Browsing commands">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#mf-datasets-list" class="md-nav__link">
+  <a href="#supported-filters" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>mf datasets list</code>
+        Supported filters
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understanding-dataset-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Understanding dataset coverage
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-inspection-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        File inspection commands
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File inspection commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#file-level-contributions-vs-publication-level-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        File-level contributions vs. publication-level selection
       </span>
     </span>
   </a>
@@ -5546,109 +4821,38 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#mf-datasets-find" class="md-nav__link">
+  <a href="#verification-vs-data-integrity" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>mf datasets find</code>
+        Verification vs. data integrity
       </span>
     </span>
   </a>
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#mf-datasets-show" class="md-nav__link">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registered-metadata-maintenance" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>mf datasets show</code>
+        Registered metadata maintenance
       </span>
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Registered metadata maintenance">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#mf-datasets-streams" class="md-nav__link">
+  <a href="#migrate-existing-registrations" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>mf datasets streams</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets lineage</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-coverage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets coverage</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-verify" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets verify</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets schema</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-head" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets head</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-migrate-registration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets migrate-registration</code>
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mf-datasets-refresh-summary" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code>mf datasets refresh-summary</code>
+        Migrate existing registrations
       </span>
     </span>
   </a>
@@ -5672,283 +4876,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#json-dataset-inspection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        JSON dataset inspection
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="JSON dataset inspection">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#why-use-json" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why use JSON?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#json-previews" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        JSON previews
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-wide-change-json-output" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does <code>--wide</code> change JSON output?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-json-ignore-pagination" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does JSON ignore pagination?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#understanding-dataset-coverage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Understanding Dataset Coverage
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#file-level-contributions-vs-publication-level-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        File-Level Contributions vs. Publication-Level Selection
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="File-Level Contributions vs. Publication-Level Selection">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Example
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-not-attach-every-source-to-every-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why not attach every source to every file?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#expand-the-publication-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Expand the publication selection
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-is-this-useful-for-merging" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why is this useful for merging?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-publication-change-the-dataset" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does <code>--publication</code> change the dataset?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#verification-vs-data-integrity" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verification vs. Data Integrity
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Verification vs. Data Integrity">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#file-verification" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        File verification
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#processing-integrity" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Processing integrity
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#historical-completeness" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Historical completeness
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#three-different-guarantees" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Three different guarantees
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#registered-metadata-maintenance" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Registered Metadata Maintenance
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#how-marketforge-displays-datasets" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        How MarketForge Displays Datasets
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="How MarketForge Displays Datasets">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#compact-and-wide-views" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Compact and wide views
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#precise-timestamps" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Precise timestamps
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#terminal-width" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Terminal width
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#multi-stream-labels" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Multi-stream labels
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#tokyo-night-colors" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5956,515 +4883,6 @@
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Tokyo Night colors">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#available-color-modes" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Available color modes
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#plain-output" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Plain output
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-silent-mode-hide-dataset-inspection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does silent mode hide dataset inspection?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-color-affect-dataset-contents" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does color affect dataset contents?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#working-with-datasets-in-python" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Working with Datasets in Python
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#browsing-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Browsing Commands
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Browsing Commands">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#list" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        List
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#find" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Find
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#coverage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Coverage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#supported-filters" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Supported filters
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#file-inspection-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        File Inspection Commands
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="File Inspection Commands">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#show-file-details" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Show file details
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#show-streams" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Show streams
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#show-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Show lineage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#show-schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Show schema
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#preview-records" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Preview records
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#verify-a-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verify a file
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#refresh-metadata" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Refresh metadata
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#migrate-existing-registrations" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Migrate existing registrations
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Migrate existing registrations">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#preview-legacy-migration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Preview legacy migration
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#apply-legacy-migration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Apply legacy migration
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#json-output" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        JSON Output
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="JSON Output">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#why-use-json_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why use JSON?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#important-details" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Important details
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-questions" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Common Questions
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-dataset-inspection-problems" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Common Dataset Inspection Problems
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Common Dataset Inspection Problems">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#no-datasets-are-listed" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        No datasets are listed
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-file-id-cannot-be-found" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        A file ID cannot be found
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#the-dataset-belongs-to-an-unexpected-publication" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        The dataset belongs to an unexpected publication
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-market-search-returns-a-mixed-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        A market search returns a mixed file
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-search-by-time-returns-a-file-without-matching-rows" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        A search by time returns a file without matching rows
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#coverage-seems-incomplete" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Coverage seems incomplete
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#the-schema-command-fails" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        The schema command fails
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-preview-does-not-show-a-required-column" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        A preview does not show a required column
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-requested-column-does-not-exist" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        A requested column does not exist
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#previewed-timestamps-lack-precision" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Previewed timestamps lack precision
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#unexpected-row-counts" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Unexpected row counts
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#lineage-does-not-list-every-publication-input-as-a-file-contribution" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Lineage does not list every publication input as a file contribution
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#verification-reports-a-checksum-mismatch" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verification reports a checksum mismatch
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#verification-reports-a-missing-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verification reports a missing file
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#refreshing-a-summary-does-not-repair-a-damaged-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Refreshing a summary does not repair a damaged file
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#registration-migration-reports-conflicts" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Registration migration reports conflicts
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#registration-recovery-fails" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Registration recovery fails
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -6536,6 +4954,8 @@
       
         
           
+        
+      
         
       
         
@@ -6639,715 +5059,40 @@
   
 
 
-<h1 id="dataset-commands">Dataset commands</h1>
-<p>Inspect registered primary files and their publication, provenance and integrity evidence. <a href="../../../workflows/datasets/">Workflow and prerequisites</a> · <a href="../">Shared CLI behavior</a></p>
-<h2 id="synopsis-and-arguments">Synopsis and arguments</h2>
-<h3 id="mf-datasets-list"><code>mf datasets list</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets list [-h] [--testing | --production] [--wide] [--precise]
-                                 [--operation {normalize,merge}]
-                                 [--data-type {trade,l2,trade_l2,trades,depth,order_book_l2,combined}]
-                                 [--status STATUS] [--exchange EXCHANGE]
-                                 [--instrument INSTRUMENT]
-                                 [--instrument-type INSTRUMENT_TYPE]
-                                 [--market-category MARKET_CATEGORY]
-                                 [--publication PUBLICATION] [--start START]
-                                 [--end END] [--limit LIMIT] [--offset OFFSET]
-</code></pre></div>
+<h1 id="datasets-cli-reference">Datasets CLI reference</h1>
+<p>Browse normalized and merged registry publications and converted outputs from the durable work index. Start with <a href="../../../workflows/datasets/">Explore historical datasets</a>. Raw acquisitions use <a href="../storage/">Storage</a>. Production is the default. Select exactly one of <code>--testing</code> and <code>--production</code> when specifying an environment, and use the same <a href="../../../concepts/identity/#registry-identity">registry identity</a> for related IDs.</p>
+<h2 id="browsing-commands">Browsing commands</h2>
 <table>
 <thead>
 <tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
+<th>Command</th>
+<th>Terminal default</th>
+<th>Explicit views</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
+<td><code>mf datasets list</code></td>
+<td>One row per evidenced timeline segment</td>
+<td><code>timelines</code>, <code>publications</code>, <code>files</code></td>
 </tr>
 <tr>
-<td><code>--wide</code></td>
-<td>Default <code>false</code>.</td>
+<td><code>mf datasets find</code></td>
+<td>One row per matching publication or indexed output</td>
+<td><code>publications</code>, <code>files</code></td>
 </tr>
 <tr>
-<td><code>--precise</code></td>
-<td>Default <code>false</code>. Display full nanosecond UTC timestamps.</td>
-</tr>
-<tr>
-<td><code>--operation</code></td>
-<td>Optional. Accepted <code>normalize</code>, <code>merge</code>.</td>
-</tr>
-<tr>
-<td><code>--data-type</code></td>
-<td>Optional. Accepted <code>trade</code>, <code>l2</code>, <code>trade_l2</code>, <code>trades</code>, <code>depth</code>, <code>order_book_l2</code>, <code>combined</code>.</td>
-</tr>
-<tr>
-<td><code>--status</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--exchange</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--instrument</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--instrument-type</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--market-category</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--publication</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--start</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--end</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--limit</code></td>
-<td>Default <code>50</code>.</td>
-</tr>
-<tr>
-<td><code>--offset</code></td>
-<td>Default <code>0</code>.  Integer.</td>
+<td><code>mf datasets coverage</code></td>
+<td>One row per grouped observed extent</td>
+<td><code>coverage</code>, <code>files</code></td>
 </tr>
 </tbody>
 </table>
-<h3 id="mf-datasets-find"><code>mf datasets find</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets find [-h] [--testing | --production]
-                                 [--operation {normalize,merge}]
-                                 [--data-type {trade,l2,trade_l2,trades,depth,order_book_l2,combined}]
-                                 [--status STATUS] [--exchange EXCHANGE]
-                                 [--instrument INSTRUMENT]
-                                 [--instrument-type INSTRUMENT_TYPE]
-                                 [--market-category MARKET_CATEGORY]
-                                 [--publication PUBLICATION] [--start START]
-                                 [--end END] [--limit LIMIT] [--offset OFFSET]
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--view<span class="w"> </span>timelines<span class="w"> </span>--sort<span class="w"> </span>start
+mf<span class="w"> </span>datasets<span class="w"> </span>find<span class="w"> </span>--testing<span class="w"> </span>--search<span class="w"> </span>BTCUSDT<span class="w"> </span>--view<span class="w"> </span>publications
+mf<span class="w"> </span>datasets<span class="w"> </span>coverage<span class="w"> </span>--testing<span class="w"> </span>--operation<span class="w"> </span>merge<span class="w"> </span>--data-type<span class="w"> </span>depth
 </code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
-</tr>
-<tr>
-<td><code>--operation</code></td>
-<td>Optional. Accepted <code>normalize</code>, <code>merge</code>.</td>
-</tr>
-<tr>
-<td><code>--data-type</code></td>
-<td>Optional. Accepted <code>trade</code>, <code>l2</code>, <code>trade_l2</code>, <code>trades</code>, <code>depth</code>, <code>order_book_l2</code>, <code>combined</code>.</td>
-</tr>
-<tr>
-<td><code>--status</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--exchange</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--instrument</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--instrument-type</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--market-category</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--publication</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--start</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--end</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--limit</code></td>
-<td>Default <code>50</code>.</td>
-</tr>
-<tr>
-<td><code>--offset</code></td>
-<td>Default <code>0</code>.  Integer.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="mf-datasets-show"><code>mf datasets show</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets show [-h] [--testing | --production] id
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>Required. Integer.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="mf-datasets-streams"><code>mf datasets streams</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets streams [-h] [--testing | --production] id
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>Required. Integer.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="mf-datasets-lineage"><code>mf datasets lineage</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets lineage [-h] [--testing | --production] [--publication]
-                                    [--checksums] [--limit LIMIT]
-                                    id
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>Required. Integer.</td>
-</tr>
-<tr>
-<td><code>--publication</code></td>
-<td>Default <code>false</code>. Expand publication-level selection.</td>
-</tr>
-<tr>
-<td><code>--checksums</code></td>
-<td>Default <code>false</code>. Show retained raw input checksums.</td>
-</tr>
-<tr>
-<td><code>--limit</code></td>
-<td>Default <code>25</code>.  Maximum rows per lineage section.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="mf-datasets-coverage"><code>mf datasets coverage</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets coverage [-h] [--testing | --production]
-                                     [--operation {normalize,merge}]
-                                     [--data-type {trade,l2,trade_l2,trades,depth,order_book_l2,combined}]
-                                     [--status STATUS] [--exchange EXCHANGE]
-                                     [--instrument INSTRUMENT]
-                                     [--instrument-type INSTRUMENT_TYPE]
-                                     [--market-category MARKET_CATEGORY]
-                                     [--publication PUBLICATION]
-                                     [--start START] [--end END]
-                                     [--limit LIMIT] [--offset OFFSET]
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
-</tr>
-<tr>
-<td><code>--operation</code></td>
-<td>Optional. Accepted <code>normalize</code>, <code>merge</code>.</td>
-</tr>
-<tr>
-<td><code>--data-type</code></td>
-<td>Optional. Accepted <code>trade</code>, <code>l2</code>, <code>trade_l2</code>, <code>trades</code>, <code>depth</code>, <code>order_book_l2</code>, <code>combined</code>.</td>
-</tr>
-<tr>
-<td><code>--status</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--exchange</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--instrument</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--instrument-type</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--market-category</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--publication</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--start</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--end</code></td>
-<td>Optional.</td>
-</tr>
-<tr>
-<td><code>--limit</code></td>
-<td>Default <code>50</code>.</td>
-</tr>
-<tr>
-<td><code>--offset</code></td>
-<td>Default <code>0</code>.  Integer.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="mf-datasets-verify"><code>mf datasets verify</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets verify [-h] [--testing | --production] id
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>Required. Integer.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="mf-datasets-schema"><code>mf datasets schema</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets schema [-h] [--testing | --production] id
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>Required. Integer.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="mf-datasets-head"><code>mf datasets head</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets head [-h] [--testing | --production] [--limit LIMIT]
-                                 [--column COLUMN] [--wide] [--precise]
-                                 id
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>Required. Integer.</td>
-</tr>
-<tr>
-<td><code>--limit</code></td>
-<td>Default <code>10</code>.</td>
-</tr>
-<tr>
-<td><code>--column</code></td>
-<td>Optional. Repeatable.</td>
-</tr>
-<tr>
-<td><code>--wide</code></td>
-<td>Default <code>false</code>. Show all stored columns by default.</td>
-</tr>
-<tr>
-<td><code>--precise</code></td>
-<td>Default <code>false</code>. Show exact nanosecond UTC timestamps.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="mf-datasets-migrate-registration"><code>mf datasets migrate-registration</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets migrate-registration [-h] [--testing | --production] --all
-                                                 [--dry-run]
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
-</tr>
-<tr>
-<td><code>--all</code></td>
-<td>Required.</td>
-</tr>
-<tr>
-<td><code>--dry-run</code></td>
-<td>Default <code>false</code>.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="mf-datasets-refresh-summary"><code>mf datasets refresh-summary</code></h3>
-<div class="highlight"><pre><span></span><code>mf datasets refresh-summary [-h] [--testing | --production] id
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Argument or option</th>
-<th>Parser contract</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>Required. Integer.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="json-results">JSON results</h2>
-<p>List and find return <code>{datasets, interval_semantics, limit, offset}</code> in JSON mode. <code>datasets</code> is an array, including when no files match. <code>limit</code> and <code>offset</code> are integers. <code>interval_semantics</code> is descriptive text. Each array member has a numeric registry file <code>id</code>, numeric <code>publication_id</code>, text <code>engine_dataset_id</code> and <code>engine_job_id</code>, and an <code>instrument_namespace</code>. File fields are <code>storage_root</code>, <code>storage_path</code>, <code>storage_format</code>, <code>primary_file</code>, <code>manifest_path</code>, <code>manifest_sha256</code>, and <code>file_sha256</code>. <code>operation</code>, <code>data_type</code>, <code>status</code> and <code>summary</code> describe the record. Inclusive observed endpoints use nullable integer <code>start_timestamp_ns</code>/ <code>end_timestamp_ns</code> and nullable text <code>first_observed_utc</code>/ <code>last_observed_utc</code>.</p>
-<table>
-<thead>
-<tr>
-<th>Action</th>
-<th>Top-level keys</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Show</td>
-<td><code>file</code>, <code>publication</code></td>
-</tr>
-<tr>
-<td>Streams</td>
-<td><code>id</code>, <code>scope</code>, <code>streams</code></td>
-</tr>
-<tr>
-<td>Schema</td>
-<td><code>id</code>, <code>columns</code></td>
-</tr>
-<tr>
-<td>Head</td>
-<td><code>id</code>, <code>rows</code></td>
-</tr>
-<tr>
-<td>Lineage</td>
-<td><code>id</code>, <code>file_contributions</code>, <code>publication_selection</code></td>
-</tr>
-<tr>
-<td>Verify a primary file</td>
-<td><code>id</code>, <code>scope</code>, <code>status</code>, <code>file_sha256</code>, <code>entire_publication_verified</code></td>
-</tr>
-</tbody>
-</table>
-<p>Decimal values in head JSON use strings, including nested trade and depth values. Timestamp columns remain integers. Use a parser that preserves integers beyond the IEEE-754 exact range. Read the display-independent rules in <a href="../../../concepts/identity/">identity and provenance</a>.</p>
-<h2 id="json-dataset-inspection">JSON dataset inspection</h2>
-<p>Most dataset commands support global JSON output.</p>
-<p>For example:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing
-</code></pre></div>
-<p>Or:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
-</code></pre></div>
-<p>The global <code>--json</code> option must appear before <code>datasets</code>.</p>
-<h3 id="why-use-json">Why use JSON?</h3>
-<p>JSON is useful when:</p>
-<ul>
-<li>Writing scripts.</li>
-<li>Extracting file IDs.</li>
-<li>Inspecting complete metadata.</li>
-<li>Comparing processing results.</li>
-<li>Building automation around registered datasets.</li>
-<li>Working with other command-line tools.</li>
-</ul>
-<h3 id="json-previews">JSON previews</h3>
-<p>For <code>datasets head</code>, JSON output includes all stored columns by default unless you explicitly select columns.</p>
-<p>For example:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>head<span class="w"> </span>FILE_ID<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--limit<span class="w"> </span><span class="m">5</span>
-</code></pre></div>
-<p>Exact decimal values are serialized as strings.</p>
-<p>This helps avoid losing decimal precision through ordinary JSON number handling.</p>
-<h3 id="does-wide-change-json-output">Does <code>--wide</code> change JSON output?</h3>
-<p>The wide and compact display modes primarily control terminal presentation.</p>
-<p>JSON retains the underlying response structure.</p>
-<p>For dataset previews, use <code>--column</code> when you want to request a smaller set of physical fields.</p>
-<h3 id="does-json-ignore-pagination">Does JSON ignore pagination?</h3>
-<p>No.</p>
-<p>List, find, and coverage still use their requested file limits and offsets.</p>
-<p>JSON does not automatically return the entire registered dataset collection.</p>
-<hr />
-<h2 id="understanding-dataset-coverage">Understanding Dataset Coverage</h2>
-<h2 id="file-level-contributions-vs-publication-level-selection">File-Level Contributions vs. Publication-Level Selection</h2>
-<p>This is an important distinction.</p>
-<p>A publication may select many input files, but one individual output part may contain records from only some of them.</p>
-<h3 id="example">Example</h3>
-<p>Suppose a normalization publication uses three raw archives:</p>
-<div class="highlight"><pre><span></span><code>Archive A
-Archive B
-Archive C
-</code></pre></div>
-<p>The Engine produces two primary files:</p>
-<div class="highlight"><pre><span></span><code>Publication
-    |
-    +-- File 1
-    |      |
-    |      +-- Archive A
-    |      +-- Archive B
-    |
-    +-- File 2
-           |
-           +-- Archive B
-           +-- Archive C
-</code></pre></div>
-<p>The publication-level input selection is:</p>
-<div class="highlight"><pre><span></span><code>A, B, C
-</code></pre></div>
-<p>However, File 1 does not necessarily contain data from Archive C.</p>
-<p>Likewise, File 2 does not necessarily contain data from Archive A.</p>
-<h3 id="why-not-attach-every-source-to-every-file">Why not attach every source to every file?</h3>
-<p>That would incorrectly suggest that every selected source contributed records to every output part.</p>
-<p>MarketForge therefore distinguishes:</p>
-<p><strong>File-level contributions</strong></p>
-<p>The source inputs that are proven to have contributed to the selected primary file.</p>
-<p><strong>Publication-level selection</strong></p>
-<p>The complete set of inputs selected for the overall processing publication.</p>
-<h3 id="expand-the-publication-selection">Expand the publication selection</h3>
-<p>Use:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--publication
-</code></pre></div>
-<p>This includes the shared publication-level selection information.</p>
-<h3 id="why-is-this-useful-for-merging">Why is this useful for merging?</h3>
-<p>A merged publication may select several normalized files.</p>
-<p>However, attributing a particular merged output part to one input file can require additional evidence.</p>
-<p>For example, if a represented stream was selected from exactly one primary input file, the contribution may be established precisely.</p>
-<p>If several files from the same parent publication were selected, the available evidence may only support attribution to the publication as a whole.</p>
-<p>MarketForge preserves this distinction.</p>
-<p>It does not invent exact file-level contributions when the evidence is insufficient.</p>
-<h3 id="does-publication-change-the-dataset">Does <code>--publication</code> change the dataset?</h3>
-<p>No.</p>
-<p>It expands the lineage inspection.</p>
-<p>The physical Parquet file remains unchanged.</p>
-<hr />
-<h2 id="verification-vs-data-integrity">Verification vs. Data Integrity</h2>
-<p>Dataset verification and processing integrity are different.</p>
-<h3 id="file-verification">File verification</h3>
-<p>File verification answers:</p>
-<p><strong>"Does this file still match the registered bytes?"</strong></p>
-<p>For example, a SHA-256 comparison can establish that the current Parquet file matches its recorded fingerprint.</p>
-<h3 id="processing-integrity">Processing integrity</h3>
-<p>Processing integrity answers different questions.</p>
-<p>For example:</p>
-<ul>
-<li>Were source records parsed successfully?</li>
-<li>Were required order-book snapshots available?</li>
-<li>Were sequence gaps detected?</li>
-<li>Were timestamp regressions observed?</li>
-<li>Were the applicable integrity policies satisfied?</li>
-<li>Was the publication accepted with clean or degraded integrity?</li>
-</ul>
-<p>These checks occur during the relevant Engine processing and publication workflow.</p>
-<h3 id="historical-completeness">Historical completeness</h3>
-<p>Historical completeness is another separate question:</p>
-<p><strong>"Does this dataset contain every market event that should exist for the intended period?"</strong></p>
-<p>Neither a matching checksum nor a successful processing result automatically proves this.</p>
-<p>A source provider may have supplied incomplete historical data.</p>
-<h3 id="three-different-guarantees">Three different guarantees</h3>
-<table>
-<thead>
-<tr>
-<th>Question</th>
-<th>Relevant evidence</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Are the registered file bytes intact?</td>
-<td>Dataset verification.</td>
-</tr>
-<tr>
-<td>Did processing satisfy its required integrity rules?</td>
-<td>Engine reports and publication evidence.</td>
-</tr>
-<tr>
-<td>Is the historical market record complete?</td>
-<td>Source coverage evidence and applicable continuity guarantees.</td>
-</tr>
-</tbody>
-</table>
-<p>These distinctions matter when using historical data for backtesting and quantitative research.</p>
-<p>For example, a file can be perfectly intact while containing a gap inherited from the original source.</p>
-<hr />
-<h2 id="registered-metadata-maintenance">Registered Metadata Maintenance</h2>
-<h2 id="how-marketforge-displays-datasets">How MarketForge Displays Datasets</h2>
-<p>The dataset CLI uses MarketForge's existing terminal theme.</p>
-<p>It is designed to present large amounts of dataset information in a compact, readable way.</p>
-<p>For example, the dataset browser groups files by publication and instrument rather than displaying an unstructured list of filesystem paths.</p>
-<h3 id="compact-and-wide-views">Compact and wide views</h3>
-<p>The default list uses compact file names.</p>
-<p>For example:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing
-</code></pre></div>
-<p>Use:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--wide
-</code></pre></div>
-<p>to display additional path information.</p>
-<h3 id="precise-timestamps">Precise timestamps</h3>
-<p>The default terminal view displays timestamps to whole seconds.</p>
-<p>Use:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--precise
-</code></pre></div>
-<p>for nanosecond precision.</p>
-<h3 id="terminal-width">Terminal width</h3>
-<p>The display adapts to the available terminal width.</p>
-<p>Wide terminals may show tables.</p>
-<p>Narrower terminals may use stacked records.</p>
-<p>This changes the presentation, not the underlying dataset metadata.</p>
-<h3 id="multi-stream-labels">Multi-stream labels</h3>
-<p>A file representing several instruments may be displayed under a mixed-membership heading.</p>
-<p>This helps distinguish it from files containing only one logical stream.</p>
-<p>Each physical file retains its registered file ID.</p>
-<hr />
-<h2 id="tokyo-night-colors">Tokyo Night colors</h2>
-<p>MarketForge uses its Tokyo Night-inspired terminal palette.</p>
-<p>You can control terminal colors through the application configuration:</p>
-<div class="highlight"><pre><span></span><code>data/.config/forge/marketforge.toml
-</code></pre></div>
-<p>For example:</p>
-<div class="highlight"><pre><span></span><code><span class="k">[presentation]</span>
-<span class="n">mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"progress"</span>
-<span class="n">color</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"auto"</span>
-</code></pre></div>
-<h3 id="available-color-modes">Available color modes</h3>
-<table>
-<thead>
-<tr>
-<th>Mode</th>
-<th>Behavior</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>auto</code></td>
-<td>Detect supported terminal color capabilities.</td>
-</tr>
-<tr>
-<td><code>always</code></td>
-<td>Enable colors for supported interactive output.</td>
-</tr>
-<tr>
-<td><code>never</code></td>
-<td>Disable colors.</td>
-</tr>
-</tbody>
-</table>
-<p>Automatic mode respects the <code>NO_COLOR</code> environment variable.</p>
-<h3 id="plain-output">Plain output</h3>
-<p>If you prefer a plain terminal view:</p>
-<div class="highlight"><pre><span></span><code><span class="k">[presentation]</span>
-<span class="n">color</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"never"</span>
-</code></pre></div>
-<p>Redirected dataset output and global JSON use plain output.</p>
-<h3 id="does-silent-mode-hide-dataset-inspection">Does silent mode hide dataset inspection?</h3>
-<p>No.</p>
-<p>The presentation setting:</p>
-<div class="highlight"><pre><span></span><code><span class="n">mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"silent"</span>
-</code></pre></div>
-<p>suppresses supported progress displays.</p>
-<p>It does not prevent requested dataset inspection results from being shown.</p>
-<h3 id="does-color-affect-dataset-contents">Does color affect dataset contents?</h3>
-<p>No.</p>
-<p>Terminal colors only change presentation.</p>
-<p>They do not change Parquet data, timestamp precision, dataset registration, or processing integrity.</p>
-<hr />
-<h2 id="working-with-datasets-in-python">Working with Datasets in Python</h2>
-<h2 id="browsing-commands">Browsing Commands</h2>
-<h3 id="list">List</h3>
-<div class="highlight"><pre><span></span><code>mf datasets list --testing [FILTERS] [--wide] [--precise]
-</code></pre></div>
-<p>Displays registered primary files.</p>
-<h3 id="find">Find</h3>
-<div class="highlight"><pre><span></span><code>mf datasets find --testing [FILTERS]
-</code></pre></div>
-<p>Searches registered files by market and content information.</p>
-<h3 id="coverage">Coverage</h3>
-<div class="highlight"><pre><span></span><code>mf datasets coverage --testing [FILTERS]
-</code></pre></div>
-<p>Summarizes observed envelopes for the current filtered file page.</p>
+<p>All three commands read retained summaries. Filtering and grouping precede paging. <code>--limit</code> defaults to 50 and accepts 1–1,000. <code>--offset</code> is nonnegative and defaults to zero. The page unit is the selected view. Publication rows summarize whole outputs, including bounded membership previews, primary-file counts, recorded size and recorded state or integrity. A membership filter can match only part of an output. File rows show registered primaries or numbered converted parts. Their recorded row counts describe stored rows. See the <a href="../../publications/">publication formats</a> for partition and physical-row definitions.</p>
 <h3 id="supported-filters">Supported filters</h3>
 <table>
 <thead>
@@ -7358,232 +5103,234 @@ Archive C
 </thead>
 <tbody>
 <tr>
-<td><code>--operation normalize|merge</code></td>
-<td>Processing operation.</td>
+<td><code>--operation</code></td>
+<td>Exact processing stage. Accepts <code>normalize</code>, <code>merge</code>, <code>convert</code>.</td>
 </tr>
 <tr>
-<td><code>--data-type TYPE</code></td>
-<td>Trade, depth, or combined content.</td>
+<td><code>--exchange</code>, <code>--instrument</code></td>
+<td>Case-insensitive exact exchange or symbol in explicit views. Instrument also accepts an exact canonical instrument ID.</td>
 </tr>
 <tr>
-<td><code>--status STATUS</code></td>
-<td>Stored file status.</td>
+<td><code>--instrument-type</code>, <code>--market-category</code></td>
+<td>Exact stored category values, such as <code>perpetual</code> and <code>linear</code>.</td>
 </tr>
 <tr>
-<td><code>--publication ID</code></td>
-<td>Engine publication identity.</td>
+<td><code>--data-type</code></td>
+<td><code>trade</code> or <code>trades</code>, <code>l2</code>, <code>depth</code> or <code>order_book_l2</code>, <code>trade_l2</code> or <code>combined</code>. Trade and depth filters can match memberships inside a combined file. In publication view, <code>combined</code> can match separate primaries if both kinds satisfy the filters.</td>
 </tr>
 <tr>
-<td><code>--exchange VENUE</code></td>
-<td>Registered exchange code.</td>
+<td><code>--status</code></td>
+<td>Exact recorded state. Ordinary explicit views select complete, active outputs by default. Superseded history remains accessible through dedicated inspection.</td>
 </tr>
 <tr>
-<td><code>--instrument VALUE</code></td>
-<td>Exact symbol or canonical instrument ID.</td>
+<td><code>--start</code>, <code>--end</code></td>
+<td>Overlap with a half-open query interval. Use signed 64-bit integer Unix nanoseconds or timezone-qualified ISO 8601 timestamps. Explicit views test membership bounds when present.</td>
 </tr>
 <tr>
-<td><code>--instrument-type TYPE</code></td>
-<td>Registered instrument type.</td>
+<td><code>--publication-id</code></td>
+<td>Exact registry publication ID. In timeline view selects segments containing that publication and retains their other qualifying contributors.</td>
 </tr>
 <tr>
-<td><code>--market-category CATEGORY</code></td>
-<td>Registered market category.</td>
+<td><code>--engine-publication-id</code>, <code>--publication</code></td>
+<td>Exact Engine publication ID. Both preserve the Engine ID domain. Timeline selection retains the other qualifying contributors.</td>
 </tr>
 <tr>
-<td><code>--start TIMESTAMP</code></td>
-<td>Inclusive search start.</td>
+<td><code>--output-ref</code>, <code>--target-quote</code></td>
+<td>Exact indexed conversion work key, or target quote normalized to uppercase.</td>
 </tr>
 <tr>
-<td><code>--end TIMESTAMP</code></td>
-<td>Exclusive search end.</td>
-</tr>
-<tr>
-<td><code>--limit N</code></td>
-<td>Number of file rows per page.</td>
-</tr>
-<tr>
-<td><code>--offset N</code></td>
-<td>Starting position within the matching file rows.</td>
+<td><code>--search</code></td>
+<td>Case-insensitive substring match over retained symbol, exchange, stream and supported reference fields.</td>
 </tr>
 </tbody>
 </table>
-<p>The file-page limit defaults to 50 and accepts values from 1 to 1000.</p>
-<p>The offset defaults to zero.</p>
-<hr />
-<h2 id="file-inspection-commands">File Inspection Commands</h2>
-<h3 id="show-file-details">Show file details</h3>
-<div class="highlight"><pre><span></span><code>mf datasets show FILE_ID --testing
+<p>The four identity selectors <code>--publication-id</code>, <code>--engine-publication-id</code>, <code>--publication</code>, and <code>--output-ref</code> are mutually exclusive. <code>list</code> and <code>find</code> accept <code>--sort id</code>, <code>observed</code>, <code>size</code>, and <code>stage</code> for publication and file views. <code>id</code> is ascending, <code>observed</code> sorts by descending first observed timestamp, and <code>size</code> is descending. Timeline view supports <code>id</code> (default stage and identity order), <code>observed</code>, <code>stage</code>, <code>instrument</code>, <code>exchange</code>, <code>start</code> and <code>end</code>. Timeline start and end sorts are ascending. Coverage uses a fixed identity order.</p>
+<p>For <code>list</code> and <code>find</code>, <code>--wide</code> shows file paths in file view. In timeline view, <code>--wide</code> prints exact inspection commands. <code>--precise</code> retains nanosecond display precision. These flags change terminal presentation.</p>
+<h2 id="understanding-dataset-coverage">Understanding dataset coverage</h2>
+<p>A timeline is a navigation grouping. The identity includes stage, exchange, instrument namespace and canonical ID, market, data kind, stream, and retained representation. Merge uses a resolvable upstream namespace when available. Unresolved namespaces are isolated by publication. Conversion also separates target quote and work-key variant. A publication can contribute to several identities, so the number of segments and the distinct output count describe different units.</p>
+<table>
+<thead>
+<tr>
+<th>Interval evidence</th>
+<th>How to interpret it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Requested interval</td>
+<td>The processing window, with an inclusive start and exclusive end</td>
+</tr>
+<tr>
+<td>Nominal interval</td>
+<td>A source or archive declaration. It can describe expected extent.</td>
+</tr>
+<tr>
+<td>Observed extent</td>
+<td>Inclusive first and last recorded event timestamps for a member</td>
+</tr>
+<tr>
+<td>Evidence-backed coverage</td>
+<td>Requires independent evidence of continuity or completeness</td>
+</tr>
+<tr>
+<td>Known gap</td>
+<td>Requires evidence that an interval was missing. Event silence alone leaves continuity unknown.</td>
+</tr>
+</tbody>
+</table>
+<p>Within one identity, the timeline joins overlapping observed spans, including spans that share the same endpoint. Disjoint spans remain separate, even for a one-nanosecond separation. Membership with unusable bounds is grouped separately when identity is known. There is no inferred gap tolerance. The implementation groups retained observations without upgrading them to proven continuous coverage. For conversion, the observation derives from source publication membership constrained by the converted output’s bounds.</p>
+<p>Coverage aggregates observed endpoints and counts distinct supporting registry files and outputs. It can report a single extent across disjoint spans. Use timelines to inspect the separate spans and their contributors. Neither view attributes whole mixed-file row or byte counts to every instrument.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>timeline<span class="w"> </span>show<span class="w"> </span>TIMELINE_REFERENCE<span class="w"> </span>--testing<span class="w"> </span>--precise
 </code></pre></div>
-<p>Reads the selected file's registered metadata.</p>
-<h3 id="show-streams">Show streams</h3>
-<div class="highlight"><pre><span></span><code>mf datasets streams FILE_ID --testing
+<p>Use the versioned reference from <code>list --wide</code> or explicit timeline JSON. It identifies the selected registry, segment and contributing evidence. Pagination and sorting preserve its identity. It can resolve the original contributors after later outputs extend a timeline. Changed or no longer selectable evidence can require a fresh reference. The command returns contributing publications and their recorded bounds. See <a href="../../../concepts/identity/#inspection-identifiers">Dataset identifiers</a>.</p>
+<h2 id="file-inspection-commands">File inspection commands</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Reference and options</th>
+<th>Reads</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>show</code></td>
+<td><code>FILE_ID</code>, <code>--publication-id PUBLICATION_ID</code>, or <code>--output-ref OUTPUT_REF</code>. Optional <code>--wide</code>.</td>
+<td>Registered metadata or indexed conversion manifest summary</td>
+</tr>
+<tr>
+<td><code>streams</code></td>
+<td>Same reference choices as <code>show</code></td>
+<td>Recorded memberships for a file or publication, or source membership for conversion</td>
+</tr>
+<tr>
+<td><code>lineage</code></td>
+<td><code>FILE_ID</code> or <code>--output-ref OUTPUT_REF</code>. Registered terminal output supports <code>--publication</code>, <code>--checksums</code>, <code>--limit N</code> (default 25 per section).</td>
+<td>Proven contributions and publication selection, or the selected conversion source</td>
+</tr>
+<tr>
+<td><code>verify</code></td>
+<td><code>FILE_ID</code> or <code>--output-ref OUTPUT_REF</code>, optionally with <code>--part N</code> for conversion</td>
+<td>Selected physical files and retained fingerprints</td>
+</tr>
+<tr>
+<td><code>schema</code></td>
+<td><code>FILE_ID</code> or <code>--output-ref OUTPUT_REF --part N</code></td>
+<td>Parquet column types and nullability</td>
+</tr>
+<tr>
+<td><code>head</code></td>
+<td>Same reference choices as <code>schema</code>, plus <code>--limit N</code>, repeatable <code>--column NAME</code>, <code>--wide</code>, <code>--precise</code></td>
+<td>Bounded stored rows</td>
+</tr>
+</tbody>
+</table>
+<p>A positional identifier always identifies a registry primary file. A registered publication’s inspection includes a bounded file list. Page the full inventory with <code>list --view files --publication-id</code>. For conversion, copy the full lowercase 64-character work key. Part numbers are one-based positions in the recorded output inventory, and the key and part together identify a file.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>--publication-id<span class="w"> </span>PUBLICATION_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>streams<span class="w"> </span>--publication-id<span class="w"> </span>PUBLICATION_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span>--testing<span class="w"> </span>--publication<span class="w"> </span>--checksums
+mf<span class="w"> </span>datasets<span class="w"> </span>schema<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>head<span class="w"> </span>FILE_ID<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">5</span><span class="w"> </span>--column<span class="w"> </span>event_timestamp_ns<span class="w"> </span>--precise
+mf<span class="w"> </span>datasets<span class="w"> </span>verify<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
 </code></pre></div>
-<p>Displays registered stream memberships and observed intervals.</p>
-<h3 id="show-lineage">Show lineage</h3>
-<div class="highlight"><pre><span></span><code>mf datasets lineage FILE_ID --testing
-    [--publication]
-    [--checksums]
-    [--limit N]
+<p>Head defaults to 10 rows and accepts 1–1,000. The terminal uses a bounded column projection unless <code>--wide</code> or explicit columns are supplied. JSON defaults to all stored columns unless columns are selected. Exact decimal values in JSON are strings and timestamp fields remain integer nanoseconds. Preserve those integers in downstream code. Converted previews retain original and target schema fields, such as <code>price</code> and <code>price_target</code>.</p>
+<h3 id="file-level-contributions-vs-publication-level-selection">File-level contributions vs. publication-level selection</h3>
+<p>Registered lineage distinguishes direct raw archive and upstream primary-file links from the full publication selection. In terminal mode, <code>--publication</code> expands that selection and <code>--checksums</code> shows recorded raw input fingerprints. JSON includes both levels without the display limit. Conversion lineage reports the selected source publication. To trace reused output or identify the producing logical run, compare the publication identifiers and paths against retained run evidence. <a href="../../../workflows/runs/#from-a-merged-publication-to-its-source">Run-to-output workflow</a></p>
+<h3 id="verification-vs-data-integrity">Verification vs. data integrity</h3>
+<p>Registered verification checks the selected primary file and its shared manifest against their fingerprints. It leaves the remaining files outside the check. There is no registry publication-wide selector for this command. Indexed conversion verification checks the retained fingerprint inventory, or the selected part plus manifest when <code>--part</code> is present. Checks are read-only and can fail on missing, changed or unsafe paths. Recorded completion, recorded processing integrity, fresh fingerprint verification and historical completeness are separate properties.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>--output-ref<span class="w"> </span>OUTPUT_REF<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>schema<span class="w"> </span>--output-ref<span class="w"> </span>OUTPUT_REF<span class="w"> </span>--part<span class="w"> </span><span class="m">1</span><span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>verify<span class="w"> </span>--output-ref<span class="w"> </span>OUTPUT_REF<span class="w"> </span>--part<span class="w"> </span><span class="m">1</span><span class="w"> </span>--testing
 </code></pre></div>
-<p>Displays proven file-level contributions and the relevant publication selection.</p>
-<h3 id="show-schema">Show schema</h3>
-<div class="highlight"><pre><span></span><code>mf datasets schema FILE_ID --testing
+<h2 id="registered-metadata-maintenance">Registered metadata maintenance</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Syntax and effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>deduplicate</code></td>
+<td><code>mf datasets deduplicate --testing</code> saves a preview. Accepts <code>--operation normalize\|merge\|convert\|all</code>, <code>--apply</code>, <code>--plan PLAN</code>, <code>--force</code>, and <code>--accept-unverified-legacy-references</code> subject to the <a href="../../history-maintenance/#deduplicate-equivalent-publications">cleanup rules</a>.</td>
+</tr>
+<tr>
+<td><code>delete</code></td>
+<td><code>mf datasets delete --testing --publication-id PUBLICATION_ID</code> saves a preview. Accepts repeatable <code>--publication-id</code>, <code>--output-ref</code>, and <code>--retain-publication-id</code>, and <code>--cascade</code> during preview. Apply takes <code>--apply --plan PLAN</code> and the conditional legacy-risk acknowledgement. <a href="../../history-maintenance/#delete-explicit-testing-outputs">Testing-only deletion</a></td>
+</tr>
+<tr>
+<td><code>supersession</code></td>
+<td><code>mf datasets supersession PUBLICATION_ID --testing</code> reads a retirement or invalidation record. Use <code>--output-ref OUTPUT_REF</code> instead of the positional ID for a deleted testing conversion.</td>
+</tr>
+<tr>
+<td><code>migrate-registration</code></td>
+<td><code>mf datasets migrate-registration --testing --all --dry-run</code> previews migration. Omitting <code>--dry-run</code> applies it.</td>
+</tr>
+<tr>
+<td><code>refresh-summary</code></td>
+<td><code>mf datasets refresh-summary FILE_ID --testing</code> rewrites the stored inspection summary from retained publication evidence.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="migrate-existing-registrations">Migrate existing registrations</h3>
+<p>Migration reads and validates retained publication evidence to expand eligible legacy aggregate records into primary-file registrations. It retains the migration relationship. Inspect a migrated legacy ID with <code>show</code> to obtain replacement file IDs. Summary refresh modifies the selected registry row and leaves the physical file unchanged. Use the <a href="../../history-maintenance/#migrate-or-refresh-registrations">maintenance reference</a> for recovery and preview effects. These maintenance commands currently print JSON even in normal terminal mode.</p>
+<p><a id="json-dataset-inspection"></a>
+<a id="json-output"></a></p>
+<h2 id="json-results">JSON results</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">10</span>
+mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--view<span class="w"> </span>timelines<span class="w"> </span>--limit<span class="w"> </span><span class="m">10</span>
 </code></pre></div>
-<p>Reads the selected physical Parquet schema.</p>
-<h3 id="preview-records">Preview records</h3>
-<div class="highlight"><pre><span></span><code>mf datasets head FILE_ID --testing
-    [--limit N]
-    [--column NAME ...]
-    [--wide]
-    [--precise]
-</code></pre></div>
-<p>Displays a bounded preview.</p>
-<p>The default row limit is 10.</p>
-<p>The accepted range is 1–1000.</p>
-<h3 id="verify-a-file">Verify a file</h3>
-<div class="highlight"><pre><span></span><code>mf datasets verify FILE_ID --testing
-</code></pre></div>
-<p>Checks the selected primary file and its shared manifest against registered fingerprints.</p>
-<h3 id="refresh-metadata">Refresh metadata</h3>
-<div class="highlight"><pre><span></span><code>mf datasets refresh-summary FILE_ID --testing
-</code></pre></div>
-<p>Updates the file's derived metadata in PostgreSQL.</p>
-<hr />
-<h2 id="migrate-existing-registrations">Migrate existing registrations</h2>
-<h3 id="preview-legacy-migration">Preview legacy migration</h3>
-<div class="highlight"><pre><span></span><code>mf datasets migrate-registration --all --testing --dry-run
-</code></pre></div>
-<p>Verifies eligible legacy registrations and reports the proposed file-level records without applying the registration changes.</p>
-<h3 id="apply-legacy-migration">Apply legacy migration</h3>
-<div class="highlight"><pre><span></span><code>mf datasets migrate-registration --all --testing
-</code></pre></div>
-<p>Migrates eligible legacy normalization aggregates into file-level registrations.</p>
-<p>Legacy merge aggregates currently require separate supported evidence and are reported as conflicts.</p>
-<hr />
-<h2 id="json-output">JSON Output</h2>
-<p>The global JSON option can be used with dataset inspection commands.</p>
-<p>For example:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing
-</code></pre></div>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>find<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--exchange<span class="w"> </span>bybit<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--instrument<span class="w"> </span>BTCUSDT
-</code></pre></div>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
-</code></pre></div>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
-</code></pre></div>
-<h3 id="why-use-json_1">Why use JSON?</h3>
-<p>JSON is useful for automated inspection and downstream processing.</p>
-<p>For example, you can extract:</p>
-<ul>
-<li>File IDs.</li>
-<li>Physical paths.</li>
-<li>Publication identities.</li>
-<li>Stream memberships.</li>
-<li>Observed timestamps.</li>
-<li>Row counts.</li>
-<li>Lineage information.</li>
-</ul>
-<h3 id="important-details">Important details</h3>
-<p>Global <code>--json</code> must appear before <code>datasets</code>.</p>
-<p>File pagination still applies.</p>
-<p>For <code>head</code>, JSON includes all stored columns by default unless an explicit column selection is supplied.</p>
-<p>Exact decimal values are represented as strings.</p>
-<hr />
-<h2 id="common-questions">Common Questions</h2>
-<h2 id="common-dataset-inspection-problems">Common Dataset Inspection Problems</h2>
-<h3 id="no-datasets-are-listed">No datasets are listed</h3>
-<p><strong>Possible cause:</strong> No matching files are registered in the selected testing database.</p>
-<p>Inspect the relevant normalization or merge result.</p>
-<p>Check that publication registration completed.</p>
-<p>Also verify that you are using the intended testing database.</p>
-<h3 id="a-file-id-cannot-be-found">A file ID cannot be found</h3>
-<p><strong>Possible cause:</strong> The ID is incorrect, belongs to another registry, or refers to a legacy registration.</p>
-<p>List the current files:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing
-</code></pre></div>
-<p>If the ID is from an older aggregate registration, inspect its migration status.</p>
-<h3 id="the-dataset-belongs-to-an-unexpected-publication">The dataset belongs to an unexpected publication</h3>
-<p><strong>Possible cause:</strong> The file ID belongs to another processing run.</p>
-<p>Inspect:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
-</code></pre></div>
-<p>Review the Engine publication identity and source lineage.</p>
-<h3 id="a-market-search-returns-a-mixed-file">A market search returns a mixed file</h3>
-<p><strong>Possible cause:</strong> The selected physical Parquet file contains several registered streams.</p>
-<p>Inspect:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>streams<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
-</code></pre></div>
-<p>The file can legitimately represent multiple instruments.</p>
-<h3 id="a-search-by-time-returns-a-file-without-matching-rows">A search by time returns a file without matching rows</h3>
-<p><strong>Possible cause:</strong> The file's observed envelope overlaps the requested interval, but no actual event occurs inside that narrower range.</p>
-<p>Use physical record inspection or the Python API to perform exact row-level filtering.</p>
-<h3 id="coverage-seems-incomplete">Coverage seems incomplete</h3>
-<p><strong>Possible cause:</strong> The selected page does not contain every matching file.</p>
-<p>Check the pagination information.</p>
-<p>Continue through the remaining file pages when a complete registry-level inventory is required.</p>
-<h3 id="the-schema-command-fails">The schema command fails</h3>
-<p><strong>Possible cause:</strong> PyArrow is missing, the file is unavailable, or the Parquet schema cannot be read.</p>
-<p>Confirm the research dependency is installed.</p>
-<p>Also inspect the registered file path and verification status.</p>
-<h3 id="a-preview-does-not-show-a-required-column">A preview does not show a required column</h3>
-<p><strong>Possible cause:</strong> The compact view hides that field.</p>
-<p>Use:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>head<span class="w"> </span>FILE_ID<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--wide<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--limit<span class="w"> </span><span class="m">5</span>
-</code></pre></div>
-<p>Or inspect the schema and request the column explicitly.</p>
-<h3 id="a-requested-column-does-not-exist">A requested column does not exist</h3>
-<p><strong>Possible cause:</strong> The selected publication uses a different physical schema.</p>
-<p>Inspect:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>schema<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
-</code></pre></div>
-<p>Use the actual stored field names.</p>
-<h3 id="previewed-timestamps-lack-precision">Previewed timestamps lack precision</h3>
-<p><strong>Possible cause:</strong> The default terminal view shows whole seconds.</p>
-<p>Use:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>head<span class="w"> </span>FILE_ID<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--precise
-</code></pre></div>
-<h3 id="unexpected-row-counts">Unexpected row counts</h3>
-<p><strong>Possible cause:</strong> You are comparing different kinds of records.</p>
-<p>For example, depth observations can produce multiple canonical price-level rows.</p>
-<p>Inspect the publication information and relevant processing metrics.</p>
-<p>Do not assume the number of physical Parquet rows equals the number of original source messages.</p>
-<h3 id="lineage-does-not-list-every-publication-input-as-a-file-contribution">Lineage does not list every publication input as a file contribution</h3>
-<p><strong>Possible cause:</strong> Not every selected publication input has proven contribution to the individual primary file.</p>
-<p>Use:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--publication
-</code></pre></div>
-<p>Review file-level contributions separately from the full publication selection.</p>
-<h3 id="verification-reports-a-checksum-mismatch">Verification reports a checksum mismatch</h3>
-<p><strong>Possible cause:</strong> The file or manifest differs from its registered fingerprint.</p>
-<p>Inspect the physical file and reported path.</p>
-<p>Do not overwrite the stored checksum to conceal the mismatch.</p>
-<p>Investigate the original publication and recovery options.</p>
-<h3 id="verification-reports-a-missing-file">Verification reports a missing file</h3>
-<p><strong>Possible cause:</strong> The registered path no longer contains the expected primary file.</p>
-<p>Check the configured data root and publication location.</p>
-<p>Do not manually recreate an empty file under the expected name.</p>
-<h3 id="refreshing-a-summary-does-not-repair-a-damaged-file">Refreshing a summary does not repair a damaged file</h3>
-<p><strong>Possible cause:</strong> <code>refresh-summary</code> updates metadata but does not verify or rewrite the Parquet contents.</p>
-<p>Use <code>datasets verify</code> for the supported physical integrity check.</p>
-<h3 id="registration-migration-reports-conflicts">Registration migration reports conflicts</h3>
-<p><strong>Possible cause:</strong> A legacy publication cannot be verified or lacks the required supported migration evidence.</p>
-<p>Inspect the migration report.</p>
-<p>Legacy merge aggregates are not automatically converted through the current normalization-focused migration path.</p>
-<h3 id="registration-recovery-fails">Registration recovery fails</h3>
-<p><strong>Possible cause:</strong> The committed publication, manifest, or required provenance does not satisfy the applicable verification contract.</p>
-<p>Inspect the registration error.</p>
-<p>Recovery cannot turn incomplete staging files into valid published datasets.</p>
-<hr />
+<p>JSON <code>list</code>, <code>find</code> and <code>coverage</code> without an explicit view retain the registered-file page with <code>datasets</code>, <code>limit</code>, <code>offset</code>, and <code>interval_semantics</code>. Specify a view for conversion, newer reference filters, text search and non-default sorting. Legacy pages keep the historical file filtering behavior.</p>
+<p>Explicit views return schema version 1 with <code>view</code>, <code>environment</code>, <code>total</code>, <code>limit</code>, <code>offset</code>, <code>has_more</code>, and the corresponding array <code>timelines</code>, <code>publications</code>, <code>datasets</code>, or <code>coverage</code>. Timelines include full contributor references plus <code>timeline_counts</code>, <code>matching_publications</code> and <code>stage_publications</code>. Other views expose stage counts in <code>stages</code>. <code>conversion_index</code> distinguishes an available, unavailable or out-of-filter index. Unreadable indexed manifests are reported separately. Timeline details return the selected <code>timeline</code> and environment. File inspection returns action-specific objects. Availability and supersession can change the response. <a href="../#global-options">Global JSON and errors</a></p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Principal JSON fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>show FILE_ID</code></td>
+<td><code>file</code>, <code>publication</code>. Migrated legacy IDs can return <code>replacement_files</code>.</td>
+</tr>
+<tr>
+<td><code>show --publication-id</code></td>
+<td><code>publication</code> and a paged <code>files</code> result</td>
+</tr>
+<tr>
+<td><code>show --output-ref</code></td>
+<td><code>output</code> with indexed result and part inventory</td>
+</tr>
+<tr>
+<td><code>streams</code></td>
+<td><code>scope</code> and <code>streams</code>, with the selected identity or its retained metadata</td>
+</tr>
+<tr>
+<td><code>lineage FILE_ID</code></td>
+<td><code>id</code>, <code>file_contributions</code>, <code>publication_selection</code></td>
+</tr>
+<tr>
+<td>Converted lineage</td>
+<td><code>file</code>, <code>publication_selection</code></td>
+</tr>
+<tr>
+<td><code>schema</code>, <code>head</code></td>
+<td>File identity or output reference and part, plus <code>columns</code> or <code>rows</code></td>
+</tr>
+<tr>
+<td>Registered verify</td>
+<td><code>id</code>, <code>status</code>, <code>scope</code>, <code>file_sha256</code>, <code>entire_publication_verified</code> (false)</td>
+</tr>
+<tr>
+<td>Converted verify</td>
+<td><code>output_ref</code>, <code>part</code>, <code>status</code>, <code>scope</code>, <code>artifacts_checked</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="tokyo-night-colors">Tokyo Night colors</h2>
+<p>Dataset browsing uses the shared theme. Redirected dataset output is plain text. See <a href="../../../configuration/application/">application presentation settings</a> for terminal color configuration and <a href="../../python-datasets/">Python dataset inspection</a> for analytical use.</p>
 
 
 
@@ -7682,8 +5429,7 @@ Archive C
       <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../../assets/javascripts/keyboard.js"></script>
       

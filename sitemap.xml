@@ -181,6 +181,9 @@
         <loc>https://flowdrivenml.github.io/marketforge/reference/cli/storage/</loc>
       </url>
       <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/history-maintenance/</loc>
+      </url>
+      <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/prepared-conversion/</loc>
       </url>
       <url>
@@ -296,5 +299,8 @@
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/workflows/pipeline/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/runs/</loc>
       </url>
 </urlset>

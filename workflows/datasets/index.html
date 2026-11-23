@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,35 +14,33 @@
       
       
       
-      
         <link rel="prev" href="../pipeline/">
       
       
-        <link rel="next" href="../notebooks/">
+        <link rel="next" href="../runs/">
       
       
         
       
       
       <link rel="icon" href="../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
-        <title>Inspect registered datasets - MarketForge</title>
+        <title>Explore historical datasets - MarketForge</title>
       
     
     
       
         
       
-      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -115,7 +111,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Inspect registered datasets
+              Explore historical datasets
             
           </span>
         </div>
@@ -1574,6 +1570,8 @@
       
         
       
+        
+      
     
     
     
@@ -1597,7 +1595,7 @@
   <span class="md-ellipsis">
     
   
-  Inspect datasets
+  Inspect history and data
 
     
   </span>
@@ -1613,7 +1611,7 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Inspect datasets
+  Inspect history and data
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -1641,7 +1639,7 @@
   <span class="md-ellipsis">
     
   
-  Inspect registered datasets
+  Explore historical datasets
 
     
   </span>
@@ -1658,7 +1656,7 @@
   <span class="md-ellipsis">
     
   
-  Inspect registered datasets
+  Explore historical datasets
 
     
   </span>
@@ -1684,10 +1682,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#migrate-existing-registrations" class="md-nav__link">
+  <a href="#find-an-instrument-and-period" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Migrate existing registrations
+        Find an instrument and period
       </span>
     </span>
   </a>
@@ -1695,10 +1693,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#tokyo-night-colors" class="md-nav__link">
+  <a href="#open-a-timeline-and-publication" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Tokyo Night colors
+        Open a timeline and publication
       </span>
     </span>
   </a>
@@ -1706,151 +1704,13 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#inspect-from-python" class="md-nav__link">
+  <a href="#inspect-a-primary-file" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Inspect from Python
+        Inspect a primary file
       </span>
     </span>
   </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#inspect-lineage-and-verify-files" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Inspect lineage and verify files
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Inspect lineage and verify files">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#inspect-file-level-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Inspect File-Level Lineage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-does-the-command-show" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What does the command show?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#raw-archive-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Raw archive lineage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#parent-dataset-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Parent dataset lineage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-distinguish-the-two" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why distinguish the two?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#inspect-source-checksums" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Inspect Source Checksums
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-are-checksums-useful" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why are checksums useful?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-displaying-a-checksum-verify-the-current-raw-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does displaying a checksum verify the current raw file?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#combine-publication-and-checksum-inspection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Combine publication and checksum inspection
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#lineage-display-limits" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Lineage display limits
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#full-json-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Full JSON lineage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1858,288 +1718,7 @@
   <a href="#verifying-datasets" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Verifying Datasets
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Verifying Datasets">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#preview-a-registration-migration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Preview a Registration Migration
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-use-dry-run" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why use dry-run?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-does-the-preview-inspect" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What does the preview inspect?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-dry-run-read-parquet-files" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does dry-run read Parquet files?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-does-the-preview-report" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What does the preview report?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-is-all-required" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why is <code>--all</code> required?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#can-i-preview-one-arbitrary-legacy-id" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Can I preview one arbitrary legacy ID?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#apply-the-registration-migration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Apply the Registration Migration
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-happens-during-migration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What happens during migration?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-migration-rewrite-the-parquet-files" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does migration rewrite the Parquet files?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-migration-rerun-normalization" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does migration rerun normalization?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-happens-to-source-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What happens to source lineage?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#can-the-migration-be-repeated" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Can the migration be repeated?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-if-some-registrations-fail" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What if some registrations fail?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-about-legacy-merge-registrations" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What about legacy merge registrations?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#how-do-i-inspect-an-old-id-afterward" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        How do I inspect an old ID afterward?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recover-missing-file-registrations" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Recover Missing File Registrations
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recover-a-normalized-publication" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Recover a normalized publication
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recover-one-normalized-primary-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Recover one normalized primary file
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recover-a-merged-publication" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Recover a merged publication
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-use-the-processing-specific-registration-command" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why use the processing-specific registration command?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#can-i-recover-using-an-execution-intent" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Can I recover using an execution intent?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-registration-only-recovery-reprocess-data" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does registration-only recovery reprocess data?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-if-the-output-is-incomplete" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What if the output is incomplete?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#dataset-presentation" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Dataset Presentation
+        Verifying datasets
       </span>
     </span>
   </a>
@@ -2150,6 +1729,33 @@
   
 </nav>
       
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect execution history
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2477,6 +2083,8 @@
       
         
       
+        
+      
     
     
     
@@ -2722,7 +2330,7 @@
   <span class="md-ellipsis">
     
   
-  Execution history and retained evidence
+  Runs CLI reference
 
     
   </span>
@@ -2965,7 +2573,7 @@
   <span class="md-ellipsis">
     
   
-  Dataset commands
+  Datasets CLI reference
 
     
   </span>
@@ -3955,6 +3563,33 @@
     
   
   Python dataset API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/history-maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Run and dataset maintenance
 
     
   </span>
@@ -5040,10 +4675,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#migrate-existing-registrations" class="md-nav__link">
+  <a href="#find-an-instrument-and-period" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Migrate existing registrations
+        Find an instrument and period
       </span>
     </span>
   </a>
@@ -5051,10 +4686,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#tokyo-night-colors" class="md-nav__link">
+  <a href="#open-a-timeline-and-publication" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Tokyo Night colors
+        Open a timeline and publication
       </span>
     </span>
   </a>
@@ -5062,151 +4697,13 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#inspect-from-python" class="md-nav__link">
+  <a href="#inspect-a-primary-file" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Inspect from Python
+        Inspect a primary file
       </span>
     </span>
   </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#inspect-lineage-and-verify-files" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Inspect lineage and verify files
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Inspect lineage and verify files">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#inspect-file-level-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Inspect File-Level Lineage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-does-the-command-show" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What does the command show?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#raw-archive-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Raw archive lineage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#parent-dataset-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Parent dataset lineage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-distinguish-the-two" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why distinguish the two?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#inspect-source-checksums" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Inspect Source Checksums
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-are-checksums-useful" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why are checksums useful?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-displaying-a-checksum-verify-the-current-raw-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does displaying a checksum verify the current raw file?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#combine-publication-and-checksum-inspection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Combine publication and checksum inspection
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#lineage-display-limits" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Lineage display limits
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#full-json-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Full JSON lineage
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -5214,288 +4711,7 @@
   <a href="#verifying-datasets" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Verifying Datasets
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Verifying Datasets">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#preview-a-registration-migration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Preview a Registration Migration
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-use-dry-run" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why use dry-run?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-does-the-preview-inspect" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What does the preview inspect?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-dry-run-read-parquet-files" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does dry-run read Parquet files?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-does-the-preview-report" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What does the preview report?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-is-all-required" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why is <code>--all</code> required?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#can-i-preview-one-arbitrary-legacy-id" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Can I preview one arbitrary legacy ID?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#apply-the-registration-migration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Apply the Registration Migration
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-happens-during-migration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What happens during migration?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-migration-rewrite-the-parquet-files" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does migration rewrite the Parquet files?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-migration-rerun-normalization" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does migration rerun normalization?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-happens-to-source-lineage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What happens to source lineage?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#can-the-migration-be-repeated" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Can the migration be repeated?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-if-some-registrations-fail" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What if some registrations fail?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-about-legacy-merge-registrations" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What about legacy merge registrations?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#how-do-i-inspect-an-old-id-afterward" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        How do I inspect an old ID afterward?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recover-missing-file-registrations" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Recover Missing File Registrations
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recover-a-normalized-publication" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Recover a normalized publication
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recover-one-normalized-primary-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Recover one normalized primary file
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recover-a-merged-publication" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Recover a merged publication
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-use-the-processing-specific-registration-command" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why use the processing-specific registration command?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#can-i-recover-using-an-execution-intent" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Can I recover using an execution intent?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-registration-only-recovery-reprocess-data" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does registration-only recovery reprocess data?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-if-the-output-is-incomplete" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What if the output is incomplete?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#dataset-presentation" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Dataset Presentation
+        Verifying datasets
       </span>
     </span>
   </a>
@@ -5618,6 +4834,8 @@
       
         
       
+        
+      
     
     
     
@@ -5627,7 +4845,7 @@
           
   
   <span class="md-ellipsis">
-    Inspect datasets
+    Inspect history and data
   </span>
 
         </a>
@@ -5649,253 +4867,62 @@
   
 
 
-<h1 id="inspect-registered-datasets">Inspect registered datasets</h1>
-<p>For local Python discovery, previews and schema inspection, see the <a href="../notebooks/">Jupyter workflow</a>.</p>
-<p>Run from the checkout with the <a href="../../getting-started/installation/">testing registry and Arrow inspection tools</a>. Start with the file IDs returned by normalization or merge. To discover them later, use <code>mf datasets find --testing --exchange bybit --instrument BTCUSDT --instrument-type perpetual --market-category linear</code>.</p>
-<p>For each ID, run <code>mf datasets show ID --testing</code> to identify the owning publication, <code>mf datasets schema ID --testing</code> for physical types, and <code>mf datasets head ID --testing --limit 5 --precise</code> for stored records. <code>mf datasets verify ID --testing</code> checks the selected file and shared manifest fingerprints. <code>mf datasets streams ID --testing</code> reports stream membership and observed bounds. <code>mf datasets lineage ID --testing --publication</code> includes the publication's input selections.</p>
-<p>An observed envelope gives the earliest and latest timestamps. For depth, inspect the publication's indexed observations and reconstruction boundaries before treating rows as a usable book. Preserve the shared manifest and auxiliary files. To merge, first check layout, stream namespace and required parts in the <a href="../merge/#supported-layouts">merge guide</a>.</p>
-<h2 id="migrate-existing-registrations">Migrate existing registrations</h2>
-<p>See <a href="../../reference/cli/datasets/#migrate-existing-registrations">registry migration and recovery</a>.</p>
-<h2 id="tokyo-night-colors">Tokyo Night colors</h2>
-<p>See <a href="../../reference/cli/datasets/#tokyo-night-colors">terminal presentation settings</a>.</p>
-<h2 id="inspect-from-python">Inspect from Python</h2>
-<p>Use a primary file path returned by normalization, or its path shown by <code>datasets show</code>. With the lab dependencies installed, open the physical file through the checkout's dataset API:</p>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">forge.datasets.discovery</span><span class="w"> </span><span class="kn">import</span> <span class="n">open_dataset</span>
-
-<span class="n">dataset</span> <span class="o">=</span> <span class="n">open_dataset</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">dataset</span><span class="o">.</span><span class="n">schema</span><span class="p">())</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">dataset</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">"event_timestamp_ns"</span><span class="p">,</span> <span class="s2">"price"</span><span class="p">]))</span>
+<h1 id="explore-historical-datasets">Explore historical datasets</h1>
+<p>Start here when MarketForge has already processed historical market data. A run records an operation, its attempts and its outcome. A publication is an output of that work, with a manifest and one or more primary data files. Use <a href="../runs/">execution history</a> to investigate the processing and this guide to inspect the output.</p>
+<h2 id="find-an-instrument-and-period">Find an instrument and period</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--instrument<span class="w"> </span>BTCUSDT<span class="w"> </span>--sort<span class="w"> </span>start
 </code></pre></div>
-<p>Substitute the returned primary path for <code>path</code>. Use <code>batches(columns=..., start=..., end=...)</code> for bounded Arrow iteration with optional half-open timestamp filtering. To interpret depth observations, use the publication's event index and boundary metadata. <a href="../../getting-started/quickstart/#verify-both-outputs">Bybit example</a></p>
-<h2 id="inspect-lineage-and-verify-files">Inspect lineage and verify files</h2>
-<h3 id="inspect-file-level-lineage">Inspect File-Level Lineage</h3>
-<p>To inspect the registered contributions to a particular primary file, use:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
+<p>These examples use the testing registry. Select the environment that produced the data. Production is the default, and the same numeric ID can identify different objects in the two registries.</p>
+<p>The default terminal view groups members of available outputs into historical timeline segments. Check the exchange and market alongside the symbol. Bybit spot BTCUSDT and Bybit linear perpetual BTCUSDT are different instruments. Market labels include Spot, Perpetual · Linear, Perpetual · Inverse, Future · Linear, and Equity.</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>What you are browsing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="../normalize/">Normalized</a></td>
+<td>Source records transformed into canonical market-data representations</td>
+</tr>
+<tr>
+<td><a href="../merge/">Merged</a></td>
+<td>Selected normalized streams combined into an ordered publication</td>
+</tr>
+<tr>
+<td><a href="../conversion/">Converted</a></td>
+<td>Merged data valued in a target quote using reference observations. Browse it through the conversion index</td>
+</tr>
+</tbody>
+</table>
+<p>A timeline identifies trades or depth (L2) separately. A single publication can contain Trades + Depth and contribute to several timelines across data kinds, instruments or exchanges. Timeline rows point to existing outputs. They share those outputs with other timeline rows.</p>
+<h2 id="open-a-timeline-and-publication">Open a timeline and publication</h2>
+<p>Compare the recorded UTC bounds with the period you need. Separate spans can reflect event silence or limitations in the retained evidence. Recorded first and last events establish observed extent. Check the <a href="../../reference/cli/datasets/#understanding-dataset-coverage">coverage reference</a> before treating a span as uninterrupted data.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--instrument<span class="w"> </span>BTCUSDT<span class="w"> </span>--limit<span class="w"> </span><span class="m">5</span><span class="w"> </span>--wide
+mf<span class="w"> </span>datasets<span class="w"> </span>timeline<span class="w"> </span>show<span class="w"> </span>TIMELINE_REFERENCE<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>--publication-id<span class="w"> </span>PUBLICATION_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>streams<span class="w"> </span>--publication-id<span class="w"> </span>PUBLICATION_ID<span class="w"> </span>--testing
 </code></pre></div>
-<h3 id="what-does-the-command-show">What does the command show?</h3>
-<p>The lineage view distinguishes between raw archive inputs and parent dataset inputs.</p>
-<p>For example:</p>
-<p><strong>Normalization output</strong></p>
-<p>A normalized file may have proven contributions from registered raw archives.</p>
-<p><strong>Merge output</strong></p>
-<p>A merged file may have contributions from registered normalized dataset files.</p>
-<h3 id="raw-archive-lineage">Raw archive lineage</h3>
-<p>For a normalized trade dataset, the lineage may identify:</p>
-<div class="highlight"><pre><span></span><code>Raw Archive 101
-Raw Archive 102
-Raw Archive 103
+<p>Copy the timeline reference from the command printed by <code>--wide</code>. Pick a registry publication ID from the timeline detail. Publication inspection shows the output’s recorded scope, size and files. Streams identifies the logical streams within that scope. Multiple streams can share an instrument, and a combined file can contain several streams.</p>
+<p>Use <code>mf datasets list --testing --view publications</code> to browse whole outputs or the file view to find the individual primaries. A converted output has an indexed work reference. Use <code>mf datasets show --output-ref OUTPUT_REF --testing</code> with the exact key printed for it. Its numbered parts are local to that output. <a href="../../concepts/identity/#inspection-identifiers">Identifier reference</a></p>
+<p><a id="inspect-lineage-and-verify-files"></a></p>
+<h2 id="inspect-a-primary-file">Inspect a primary file</h2>
+<p>Choose a real file ID from publication inspection or the file view. Use the same ID for each command below.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--view<span class="w"> </span>files<span class="w"> </span>--publication-id<span class="w"> </span>PUBLICATION_ID
+mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>schema<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>head<span class="w"> </span>FILE_ID<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">5</span><span class="w"> </span>--column<span class="w"> </span>event_timestamp_ns<span class="w"> </span>--precise
+mf<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span>--testing<span class="w"> </span>--publication
 </code></pre></div>
-<p>These are illustrative local archive IDs.</p>
-<p>The records can include information about the exchange, source filename, archive scope, and recorded interval.</p>
-<h3 id="parent-dataset-lineage">Parent dataset lineage</h3>
-<p>For a merged file, the lineage may identify:</p>
-<div class="highlight"><pre><span></span><code>Normalized Dataset 301
-Normalized Dataset 302
-</code></pre></div>
-<p>These are illustrative PostgreSQL file dataset IDs.</p>
-<p>This helps trace the merged result back to its registered normalized inputs.</p>
-<h3 id="why-distinguish-the-two">Why distinguish the two?</h3>
-<p>Raw archives and normalized datasets are different types of inputs.</p>
-<p>A normalization publication normally derives from raw market-data recordings.</p>
-<p>A merge publication derives from compatible normalized datasets.</p>
-<p>Separating these relationships makes the processing history easier to understand.</p>
-<hr />
-<h3 id="inspect-source-checksums">Inspect Source Checksums</h3>
-<p>Lineage can also display retained raw-input checksums.</p>
-<p>Use:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--checksums
-</code></pre></div>
-<h3 id="why-are-checksums-useful">Why are checksums useful?</h3>
-<p>A checksum helps identify the exact file contents associated with a registered source.</p>
-<p>For example, two archives may have identical filenames but different contents.</p>
-<p>Their SHA-256 checksums can distinguish them.</p>
-<p>This is useful when investigating:</p>
-<ul>
-<li>Source-file changes.</li>
-<li>Duplicate or conflicting recordings.</li>
-<li>Reproducibility.</li>
-<li>Historical processing evidence.</li>
-<li>Unexpected data differences.</li>
-</ul>
-<h3 id="does-displaying-a-checksum-verify-the-current-raw-file">Does displaying a checksum verify the current raw file?</h3>
-<p>No.</p>
-<p>The lineage command displays retained checksum evidence.</p>
-<p>It does not automatically rehash every original raw archive during ordinary lineage inspection.</p>
-<p>For current raw-file integrity, use the applicable storage verification command.</p>
-<h3 id="combine-publication-and-checksum-inspection">Combine publication and checksum inspection</h3>
-<p>You can request both:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--publication<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--checksums<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--limit<span class="w"> </span><span class="m">10</span>
-</code></pre></div>
-<p>This displays a bounded set of lineage entries together with the expanded publication selection.</p>
-<h3 id="lineage-display-limits">Lineage display limits</h3>
-<p>The terminal lineage view defaults to:</p>
-<div class="highlight"><pre><span></span><code>25 rows per section
-</code></pre></div>
-<p>The accepted limit is:</p>
-<div class="highlight"><pre><span></span><code>1–1000
-</code></pre></div>
-<p>For example:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--limit<span class="w"> </span><span class="m">100</span>
-</code></pre></div>
-<p>The limit affects displayed lineage entries, not the underlying registered relationships.</p>
-<h3 id="full-json-lineage">Full JSON lineage</h3>
-<p>For machine-readable lineage:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
-</code></pre></div>
-<p>JSON returns the underlying file-contribution and publication-selection information.</p>
-<p>This is useful when performing more detailed provenance analysis.</p>
-<hr />
-<h2 id="verifying-datasets">Verifying Datasets</h2>
-<h3 id="preview-a-registration-migration">Preview a Registration Migration</h3>
-<p>Before changing the registry, inspect which legacy registrations need migration.</p>
-<p>First, ensure the database schema is current:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>database<span class="w"> </span>migrate<span class="w"> </span>--testing
-</code></pre></div>
-<p>Then run:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>migrate-registration<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--all<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--dry-run
-</code></pre></div>
-<h3 id="why-use-dry-run">Why use dry-run?</h3>
-<p>The migration may involve existing publication records and file relationships.</p>
-<p>A dry-run allows you to inspect the proposed work before applying database changes.</p>
-<h3 id="what-does-the-preview-inspect">What does the preview inspect?</h3>
-<p>The migration workflow examines eligible legacy aggregate registrations.</p>
-<p>It verifies the corresponding committed publication evidence.</p>
-<p>This can include reading existing files and checking their SHA-256 fingerprints.</p>
-<h3 id="does-dry-run-read-parquet-files">Does dry-run read Parquet files?</h3>
-<p>It can read existing publication file bytes to perform the required verification.</p>
-<p>Therefore, dry-run should not be interpreted as a metadata-only operation.</p>
-<p>However, it does not apply the final file-level registration changes.</p>
-<h3 id="what-does-the-preview-report">What does the preview report?</h3>
-<p>The result can include:</p>
-<ul>
-<li>Legacy dataset IDs.</li>
-<li>Corresponding publication identities.</li>
-<li>Primary files eligible for registration.</li>
-<li>Existing matching file registrations.</li>
-<li>Retained raw-input relationships.</li>
-<li>Potential conflicts.</li>
-<li>The number of primary files involved.</li>
-</ul>
-<h3 id="why-is-all-required">Why is <code>--all</code> required?</h3>
-<p>The migration is an explicit registry-wide operation for the supported legacy aggregate selection.</p>
-<p>MarketForge requires:</p>
-<div class="highlight"><pre><span></span><code>--all
-</code></pre></div>
-<p>to make that scope explicit.</p>
-<p>Both preview and apply use the selected registry. The examples pass <code>--testing</code> to keep them in the testing workspace.</p>
-<h3 id="can-i-preview-one-arbitrary-legacy-id">Can I preview one arbitrary legacy ID?</h3>
-<p>The documented migration command requires <code>--all</code>.</p>
-<p>It does not expose a separate single-ID migration action through this CLI.</p>
-<p>Inspect the preview result to understand the individual legacy registrations included in the operation.</p>
-<hr />
-<h3 id="apply-the-registration-migration">Apply the Registration Migration</h3>
-<p>Once you have reviewed the preview, apply the migration:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>migrate-registration<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--all<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing
-</code></pre></div>
-<h3 id="what-happens-during-migration">What happens during migration?</h3>
-<p>For eligible legacy normalization registrations, MarketForge:</p>
-<ol>
-<li>Verifies the committed publication.</li>
-<li>Checks the retained publication fingerprints.</li>
-<li>Resolves the primary files.</li>
-<li>Reuses the existing registered raw-input relationships.</li>
-<li>Creates or reuses the corresponding file-level records.</li>
-<li>Preserves the legacy aggregate reference and its historical relationships.</li>
-</ol>
-<h3 id="does-migration-rewrite-the-parquet-files">Does migration rewrite the Parquet files?</h3>
-<p>No.</p>
-<p>The migration updates database registration information.</p>
-<p>It leaves the published Parquet files and their manifests in place.</p>
-<h3 id="does-migration-rerun-normalization">Does migration rerun normalization?</h3>
-<p>No.</p>
-<p>It uses the existing committed publication and its retained evidence.</p>
-<p>It does not decode the original exchange archives again.</p>
-<h3 id="what-happens-to-source-lineage">What happens to source lineage?</h3>
-<p>The migration reuses the relevant registered raw-input relationships.</p>
-<p>This helps preserve the historical relationship between the existing publication and its original sources.</p>
-<h3 id="can-the-migration-be-repeated">Can the migration be repeated?</h3>
-<p>Yes.</p>
-<p>The supported migration is designed to reuse compatible existing file-level registrations.</p>
-<p>Repeated application should not create duplicate primary file identities for identical evidence.</p>
-<h3 id="what-if-some-registrations-fail">What if some registrations fail?</h3>
-<p>The migration can report conflicts for individual legacy aggregates.</p>
-<p>Independent successful conversions may already have been applied before a later conflict is reported.</p>
-<p>A nonzero exit code does not necessarily mean no changes were made.</p>
-<p>Inspect the result carefully.</p>
-<h3 id="what-about-legacy-merge-registrations">What about legacy merge registrations?</h3>
-<p>The current migration path does not automatically convert legacy merge aggregates.</p>
-<p>These are reported as conflicts because the required historical merge input evidence cannot always be established through the supported migration procedure.</p>
-<p>Do not invent missing lineage to make them pass.</p>
-<h3 id="how-do-i-inspect-an-old-id-afterward">How do I inspect an old ID afterward?</h3>
-<p>Use:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>LEGACY_ID<span class="w"> </span>--testing
-</code></pre></div>
-<p>Replace <code>LEGACY_ID</code> with an actual legacy aggregate ID.</p>
-<p>When the migration mapping exists, MarketForge can report the replacement file IDs.</p>
-<p>Use those file IDs for subsequent inspection.</p>
-<hr />
-<h3 id="recover-missing-file-registrations">Recover Missing File Registrations</h3>
-<p>Sometimes Engine has committed a valid publication, but Forge could not complete the database registration.</p>
-<p>For example, PostgreSQL might become unavailable after normalization finishes.</p>
-<p>In this situation, you may already have a valid committed publication on disk.</p>
-<p>Rerunning the entire processing workload could be unnecessary.</p>
-<p>MarketForge provides registration-only recovery through the relevant processing command.</p>
-<h3 id="recover-a-normalized-publication">Recover a normalized publication</h3>
-<p>Use:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>register<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>/path/to/normalized-publication/manifest.json<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing
-</code></pre></div>
-<p>Replace the path with an actual committed manifest.</p>
-<h3 id="recover-one-normalized-primary-file">Recover one normalized primary file</h3>
-<p>You can also specify one primary Parquet file:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>register<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>/path/to/publication/streams/STREAM/trades/part-000000.parquet<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing
-</code></pre></div>
-<h3 id="recover-a-merged-publication">Recover a merged publication</h3>
-<p>For a committed merge manifest:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>merge<span class="w"> </span>register<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>/path/to/merged-publication/manifest.json<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing
-</code></pre></div>
-<p>Or one merged primary file:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>merge<span class="w"> </span>register<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>/path/to/publication/timeline/partition-000000/part-000000.parquet<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing
-</code></pre></div>
-<h3 id="why-use-the-processing-specific-registration-command">Why use the processing-specific registration command?</h3>
-<p>Normalization and merging have different publication contracts.</p>
-<p>The corresponding registration services understand their applicable output structures and evidence.</p>
-<p>Use the command associated with the operation that created the publication.</p>
-<h3 id="can-i-recover-using-an-execution-intent">Can I recover using an execution intent?</h3>
-<p>Yes.</p>
-<p>The supported registration-only workflows can accept retained execution-intent receipts.</p>
-<p>These help locate and verify the committed outputs associated with a previous processing attempt.</p>
-<p>See the normalization and merge guides for the appropriate recovery procedures.</p>
-<h3 id="does-registration-only-recovery-reprocess-data">Does registration-only recovery reprocess data?</h3>
-<p>No.</p>
-<p>It verifies existing committed output and registers eligible files.</p>
-<p>It does not repeat normalization or merging.</p>
-<h3 id="what-if-the-output-is-incomplete">What if the output is incomplete?</h3>
-<p>An incomplete staging directory is not automatically a valid committed publication.</p>
-<p>Registration requires the applicable committed files and verification evidence.</p>
-<p>If Engine never completed publication, investigate the processing failure rather than trying to register incomplete files.</p>
-<hr />
-<h2 id="dataset-presentation">Dataset Presentation</h2>
+<p>Schema reports stored Arrow types and nullable fields. Head previews stored rows from the selected Parquet file. Repeat <code>--column</code> to choose more fields after inspecting the schema. A physical file count can differ from the number of partitions. Stored rows can also include reconstruction records depending on the publication format. <a href="../../reference/publications/">Publication formats</a></p>
+<p>Lineage separates sources proven to contribute to the selected file from inputs selected at publication scope. For a merged file, follow the returned parent file IDs to their normalized publications. To find the producing run, match the output IDs and paths against <a href="../runs/#from-a-merged-publication-to-its-source">retained run reports</a>.</p>
+<h2 id="verifying-datasets">Verifying datasets</h2>
+<p>Use <code>mf datasets verify FILE_ID --testing</code> to check the selected primary file and shared manifest against their registered fingerprints. The recorded processing integrity and the result of this fresh check describe different evidence. To analyze the data, continue with <a href="../notebooks/">notebooks</a> or <a href="../../reference/python-datasets/">Python dataset inspection</a>.</p>
+<p><a id="migrate-existing-registrations"></a>
+<a id="recover-missing-file-registrations"></a></p>
+<p>For older IDs, missing registrations or retired outputs, consult <a href="../../reference/history-maintenance/">run and dataset maintenance</a>.</p>
 
 
 
@@ -5944,13 +4971,13 @@ Normalized Dataset 302
         
         
           
-          <a href="../notebooks/" class="md-footer__link md-footer__link--next" aria-label="Next: Explore datasets in Jupyter">
+          <a href="../runs/" class="md-footer__link md-footer__link--next" aria-label="Next: Inspect execution history">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Explore datasets in Jupyter
+                Inspect execution history
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -5994,8 +5021,7 @@ Normalized Dataset 302
       <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../assets/javascripts/keyboard.js"></script>
       

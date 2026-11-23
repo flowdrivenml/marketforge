@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../storage/">
       
       
@@ -27,24 +24,23 @@
       
       
       <link rel="icon" href="../../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
-        <title>Execution history and retained evidence - MarketForge</title>
+        <title>Runs CLI reference - MarketForge</title>
       
     
     
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -115,7 +111,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Execution history and retained evidence
+              Runs CLI reference
             
           </span>
         </div>
@@ -1570,6 +1566,8 @@
       
         
       
+        
+      
     
     
     
@@ -1593,7 +1591,7 @@
   <span class="md-ellipsis">
     
   
-  Inspect datasets
+  Inspect history and data
 
     
   </span>
@@ -1609,7 +1607,7 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Inspect datasets
+  Inspect history and data
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -1628,7 +1626,34 @@
   <span class="md-ellipsis">
     
   
-  Inspect registered datasets
+  Explore historical datasets
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect execution history
 
     
   </span>
@@ -1965,6 +1990,8 @@
       
         
       
+        
+      
     
     
     
@@ -2221,7 +2248,7 @@
   <span class="md-ellipsis">
     
   
-  Execution history and retained evidence
+  Runs CLI reference
 
     
   </span>
@@ -2238,7 +2265,7 @@
   <span class="md-ellipsis">
     
   
-  Execution history and retained evidence
+  Runs CLI reference
 
     
   </span>
@@ -2275,6 +2302,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#run-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Run lifecycle
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#logs-and-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Logs and reports
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#attempts-and-recovery" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2290,6 +2339,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Historical evidence and index maintenance
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#json-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        JSON results
       </span>
     </span>
   </a>
@@ -2535,7 +2595,7 @@
   <span class="md-ellipsis">
     
   
-  Dataset commands
+  Datasets CLI reference
 
     
   </span>
@@ -3525,6 +3585,33 @@
     
   
   Python dataset API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history-maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Run and dataset maintenance
 
     
   </span>
@@ -4621,6 +4708,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#run-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Run lifecycle
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#logs-and-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Logs and reports
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#attempts-and-recovery" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4636,6 +4745,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Historical evidence and index maintenance
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#json-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        JSON results
       </span>
     </span>
   </a>
@@ -4710,6 +4830,8 @@
       
         
           
+        
+      
         
       
         
@@ -4813,71 +4935,186 @@
   
 
 
-<h1 id="execution-history-and-retained-evidence">Execution history and retained evidence</h1>
-<p>New historical operations use <code>&lt;operation&gt;-&lt;uuid&gt;</code> logical run IDs. The five
-operations are <code>acquisition</code>, <code>normalize</code>, <code>merge</code>, <code>convert</code>, and <code>pipeline</code>.
-Acquisition mapping and downloading both use <code>acquisition-</code>. Their <code>action</code>
-records which activity ran.</p>
-<p>PostgreSQL stores bounded execution metadata, timestamps, ordered attempts and
-typed resource references. Complete reports, events, submitted jobs and pinned
-Engine evidence remain on disk. A logical run under <code>data/runs/</code> can point to
-separate Engine preparation and execution directories. Engine job, publication,
-registered file and attempt identifiers each retain their own meaning.</p>
+<h1 id="runs-cli-reference">Runs CLI reference</h1>
+<p>Runs covers logical Forge operations, attempts, child runs, and retained evidence. Start with <a href="../../../workflows/runs/">inspect execution history</a> for practical examples. Use <a href="../../../concepts/identity/#registry-identity">registry identity</a> to choose the environment. Production is the default, and <code>--testing</code> and <code>--production</code> are mutually exclusive.</p>
 <h2 id="browse-the-selected-registry">Browse the selected registry</h2>
-<p>Production is the default. Add <code>--testing</code> to select the testing registry.
-Filter <code>runs list</code> by <code>--operation</code>, <code>--action</code>, <code>--status</code>, <code>--recipe</code>,
-<code>--start</code> or <code>--end</code>. Time bounds are timezone-aware ISO 8601 start-time bounds.
-The start is inclusive and the end is exclusive. Filters are exact. Use
-<code>--limit</code> and <code>--offset</code> to page the newest runs. Exchange and instrument
-filters require indexed associations and are not exposed by this interface.</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--operation<span class="w"> </span>acquisition<span class="w"> </span>--action<span class="w"> </span>map<span class="w"> </span>--limit<span class="w"> </span><span class="m">20</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
-mf<span class="w"> </span>runs<span class="w"> </span>show<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
-mf<span class="w"> </span>runs<span class="w"> </span>report<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
-mf<span class="w"> </span>runs<span class="w"> </span>logs<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments and options</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mf runs list</code></td>
+<td>Filters below, plus <code>--limit N</code>, <code>--offset N</code></td>
+<td>Read indexed run metadata</td>
+</tr>
+<tr>
+<td><code>mf runs show RUN_ID</code></td>
+<td>Exact run reference, accepts <code>--limit</code></td>
+<td>Read lifecycle, timing, attempts, child runs and resources</td>
+</tr>
+<tr>
+<td><code>mf runs logs RUN_ID</code></td>
+<td>Exact run reference, optional <code>--limit N</code></td>
+<td>Read retained event prefix or fixed Engine streams</td>
+</tr>
+<tr>
+<td><code>mf runs report RUN_ID</code></td>
+<td>Exact reference, optional <code>--section</code>, accepts <code>--limit</code></td>
+<td>Read the retained operation report or attempt outcome</td>
+</tr>
+<tr>
+<td><code>mf runs index-legacy</code></td>
+<td><code>--limit N</code>, <code>--offset N</code>, <code>--dry-run</code> or <code>--apply</code></td>
+<td>Preview legacy indexing or write verified index entries</td>
+</tr>
+<tr>
+<td><code>mf runs reconcile</code></td>
+<td><code>--limit N</code>, <code>--offset N</code>, <code>--dry-run</code> or <code>--apply</code></td>
+<td>Preview or apply index finalization from retained evidence</td>
+</tr>
+</tbody>
+</table>
+<p>For <code>list</code>, filters are exact and run before paging. <code>--operation</code> accepts <code>acquisition</code>, <code>normalize</code>, <code>merge</code>, <code>convert</code>, and <code>pipeline</code>. <code>--action</code>, <code>--status</code>, and <code>--recipe</code> match the recorded fields. <code>--start</code> and <code>--end</code> accept timezone-qualified ISO 8601 timestamps and filter run start in <code>[start, end)</code>. Results are ordered by descending start time, then run ID. The default limit is 100, range 1–1,000. Offset defaults to zero, range 0–100,000. The count in terminal output describes the page.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>runs<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--operation<span class="w"> </span>normalize<span class="w"> </span>--action<span class="w"> </span>run<span class="w"> </span>--status<span class="w"> </span>completed<span class="w"> </span>--limit<span class="w"> </span><span class="m">10</span>
+mf<span class="w"> </span>runs<span class="w"> </span>show<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
 </code></pre></div>
-<p>Replace <code>RUN_ID</code> with a recorded identifier. List and indexed show use
-schema version 2. Show includes a duration when the run has finished, and
-bounded attempt, resource and child-run lists. Report and logs use the retained
-sources and their original contracts. Running records have unknown liveness
-when no terminal evidence has been reconciled.</p>
+<p>Use the full <code>operation-UUID</code> from the index. Supported retained references include bare legacy UUIDs and recognized managed execution directories for normalization, merge and conversion. Historical inspection can fall back to local evidence if there is no indexed legacy record. A canonical ID absent from the selected registry returns an error. Managed references must match a supported directory format. Arbitrary filesystem paths are outside this interface.</p>
+<p>Indexed <code>show</code> reports up to 1,000 attempts, 4,096 resources, and 1,000 child runs. It flags truncated attempt and resource lists. Terminal tables show smaller samples and report when they limit a returned section. The <code>--limit</code> accepted by <code>show</code> and <code>report</code> does not change these bounds or report size limits. There is no attempt selector. Use the attempt number and UUID in <code>show</code> and the retained outcome or report pointer for that attempt.</p>
+<h2 id="run-lifecycle">Run lifecycle</h2>
+<table>
+<thead>
+<tr>
+<th>Object</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Run</td>
+<td>Logical operation with an action, recipe when available, registry identity, timing and recorded status</td>
+</tr>
+<tr>
+<td>Attempt</td>
+<td>Numbered execution attempt with its own UUID, timing, outcome and report pointers</td>
+</tr>
+<tr>
+<td>Child run</td>
+<td>Separately indexed run linked to its parent in the registry</td>
+</tr>
+<tr>
+<td>Resource</td>
+<td>Stage- and attempt-associated reference for an input, output or artifact</td>
+</tr>
+<tr>
+<td>Report</td>
+<td>Retained operation evidence, which may live in a separate Engine preparation or execution directory</td>
+</tr>
+</tbody>
+</table>
+<p>Resource kinds include discovery scans, remote and local archives, prepared batches and jobs, Engine execution references, source and output Engine publications, registry publications, primary-file IDs, converted paths, reports, and child runs. Read their labels before using an ID. A registry publication reference can describe a source or an output. <a href="../../../concepts/identity/#inspection-identifiers">Identifier domains</a></p>
+<table>
+<thead>
+<tr>
+<th>Recorded status</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>running</code></td>
+<td>Work began or the index still awaits finalization. Liveness is unknown.</td>
+</tr>
+<tr>
+<td><code>prepared</code></td>
+<td>Preparation reached its recorded ready state</td>
+</tr>
+<tr>
+<td><code>completed</code></td>
+<td>Recorded action succeeded under its own contract</td>
+</tr>
+<tr>
+<td><code>partial</code></td>
+<td>Some requested work succeeded, or a later step such as registration remains incomplete</td>
+</tr>
+<tr>
+<td><code>blocked</code></td>
+<td>A prerequisite, selection or compatibility check prevented progression</td>
+</tr>
+<tr>
+<td><code>failed</code></td>
+<td>The action recorded failure</td>
+</tr>
+<tr>
+<td><code>interrupted</code>, <code>cancelled</code></td>
+<td>The retained evidence records interruption or cancellation</td>
+</tr>
+<tr>
+<td><code>stopped</code></td>
+<td>The operation recorded a stop, for example at a pipeline checkpoint</td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td>The indexed status could not be established from the domain result</td>
+</tr>
+</tbody>
+</table>
+<p>Engine execution, physical verification, and registration are separate outcomes. A reused result can point to an earlier verified output. A report describes its retained evidence; current physical availability requires a suitable dataset check. A retry of a logical run can produce a new attempt, while lower-level retries or Engine jobs need not create one. See <a href="../pipeline/">pipeline resume</a> and <a href="../../prepared-forge/">prepared jobs and evidence</a>.</p>
+<h2 id="logs-and-reports">Logs and reports</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>runs<span class="w"> </span>logs<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span>
+mf<span class="w"> </span>runs<span class="w"> </span>report<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span>--section<span class="w"> </span>outputs
+</code></pre></div>
+<p>Events use a prefix of the retained JSONL in file order, bounded to 1 MiB and up to <code>--limit</code> events, default 100, range 1–1,000. Invalid lines are marked in the result. Fixed Engine and validation stdout and stderr streams use independent 12 KiB tails. The terminal can also show a bounded Engine TUI diagnostic stream when retained. Engine tails do not use the event count limit. Some event producers omit time, level, or stage. There is no follow mode or log filtering by level or stage.</p>
+<p>Report sections accept <code>all</code> (default), <code>summary</code>, <code>inputs</code>, <code>outputs</code>, <code>diagnostics</code>, and <code>artifacts</code>. Details vary by operation and phase.</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Evidence you may find</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Acquisition</td>
+<td>Request outcomes and discoveries, then completed downloads, reuse and failures where applicable</td>
+</tr>
+<tr>
+<td>Normalization</td>
+<td>Preparation and Rust compatibility, job results, verification and integrity, registry publications and primary files</td>
+</tr>
+<tr>
+<td>Merge</td>
+<td>Selection and candidate IDs, input streams, ordering, preparation blockers, Engine and registration outcomes</td>
+</tr>
+<tr>
+<td>Conversion</td>
+<td>Source merge publication, target quote, reference selection and route policy, counters when retained or available from matching pinned manifests, indexed output evidence</td>
+</tr>
+<tr>
+<td>Pipeline</td>
+<td>Stage states, retained phase, child identifiers and reports where recorded</td>
+</tr>
+</tbody>
+</table>
+<p>Report reads are bounded to 4 MiB for report documents and 512 KiB for the indexed attempt outcome fallback. Unknown schemas can expose recognized scalars and field names, with original evidence available through JSON. A missing or invalid report describes evidence availability. It does not change the indexed run state.</p>
 <h2 id="attempts-and-recovery">Attempts and recovery</h2>
-<p>Forge verifies the selected database UUID and purpose before starting expensive
-work. A single invocation that prepares and executes retains one logical run
-with references to both preparation and execution evidence. A pipeline resume
-keeps the original run ID and starts a new attempt. The pipeline report retains
-stage order and outcomes. Independently retained acquisition executions link to
-their owning pipeline. HTTP retries and individual Engine tasks do not create
-logical attempts.</p>
-<p>The searchable state distinguishes <code>prepared</code>, <code>completed</code>, <code>partial</code>,
-<code>failed</code>, <code>blocked</code>, <code>interrupted</code>, <code>cancelled</code>, <code>stopped</code>, and
-<code>unknown</code>. An in-flight attempt is <code>running</code>. The registry retains the
-operation's domain status and available execution, verification and
-registration outcomes separately. A committed publication can still have a
-pending or failed registration.</p>
-<p>PostgreSQL and the filesystem commit separately. Forge writes a bounded
-outcome beneath the attempt directory before finalizing the index. If index
-finalization fails, the outcome remains available for reconciliation. This
-replays only index updates and leaves processing and registration evidence
-intact.</p>
+<p>Forge retains an attempt outcome before finalizing the registry. If finalization was interrupted, reconciliation can apply the verified metadata. Processing-specific recovery handles committed outputs whose registration is incomplete. <a href="../../history-maintenance/#recover-run-index-metadata">Run and dataset maintenance</a></p>
 <h2 id="historical-evidence-and-index-maintenance">Historical evidence and index maintenance</h2>
-<p>Anonymous UUIDs and recognized historical Engine execution directory IDs work
-for explicit inspection. Historical IDs and original report bytes are
-preserved. Legacy indexing requires evidence of the operation, timestamps and
-the exact selected registry UUID and environment. Missing, ambiguous or
-conflicting evidence stays available for local review.</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>runs<span class="w"> </span>index-legacy<span class="w"> </span>--dry-run<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
-mf<span class="w"> </span>runs<span class="w"> </span>index-legacy<span class="w"> </span>--apply<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
-mf<span class="w"> </span>runs<span class="w"> </span>reconcile<span class="w"> </span>--dry-run<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
-mf<span class="w"> </span>runs<span class="w"> </span>reconcile<span class="w"> </span>--apply<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>runs<span class="w"> </span>index-legacy<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span>
+mf<span class="w"> </span>runs<span class="w"> </span>reconcile<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span>
 </code></pre></div>
-<p>Review the preview and use <code>--offset</code> for subsequent pages. Reconciliation
-checks the workspace and registry identity, attempt and retained outcome
-before applying metadata. A running row without a retained outcome needs
-review. Unindexed local evidence is reported and needs explicit review before
-assignment. Neither command launches processing or rewrites historical
-reports. Production indexing is an explicit administrative action.</p>
-<p>See the <a href="../pipeline/">pipeline reference</a> for resume and the
-<a href="../../publications/">publication reference</a> for retained Engine evidence.</p>
+<p>Both commands default to preview. The shared paging range matches <code>list</code>. Use the <a href="../../history-maintenance/">maintenance reference</a> for eligibility, decision codes and explicit apply syntax. A preview with blocked or unresolved candidates can still return successfully. Inspect the candidate decisions separately from the process exit code.</p>
+<h2 id="json-results">JSON results</h2>
+<p>Place <a href="../#global-options">global <code>--json</code></a> before <code>runs</code>.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">10</span>
+mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </span>show<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </span>report<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
+</code></pre></div>
+<p>List returns schema version 2 with <code>runs</code>, <code>offset</code>, and <code>more</code>. Indexed show returns a schema version 2 record with attempts, resources, children, and truncation flags. Historical show can return a retained report instead. Events return <code>run_id</code>, <code>events</code>, and a truncation flag or missing status. Engine logs return named streams or a status. Report returns the underlying operation document or an availability record regardless of <code>--section</code>. Maintenance returns <code>dry_run</code>, <code>offset</code>, and per-item <code>outcomes</code>. Terminal-only supplementary log streams and projected report summaries do not change those contracts.</p>
 
 
 
@@ -4976,8 +5213,7 @@ reports. Production indexing is an explicit administrative action.</p>
       <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../../assets/javascripts/keyboard.js"></script>
       
