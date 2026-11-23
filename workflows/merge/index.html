@@ -1,4 +1,6 @@
 
+
+
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -14,6 +16,7 @@
       
       
       
+      
         <link rel="prev" href="../catalogue/profile-troubleshooting/">
       
       
@@ -24,7 +27,7 @@
       
       
       <link rel="icon" href="../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.1">
+      <meta name="generator" content="zensical-0.1.3">
     
     
       
@@ -35,12 +38,13 @@
       
         
       
-      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.ebb7f775.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
       
       
 
@@ -1573,6 +1577,23 @@
       </span>
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="4. Preview preparation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-multiple-verified-submissions-match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When multiple verified submissions match
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -4777,6 +4798,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="4. Preview preparation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-multiple-verified-submissions-match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When multiple verified submissions match
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4991,11 +5029,14 @@
 
 <p><a id="merge-registered-normalized-files"></a></p>
 <h1 id="merge-normalized-data">Merge normalized data</h1>
-<p>Merge builds one ordered timeline from registered normalized trade and order-book files. Forge resolves the selection and prepares the job. The Rust Engine writes a committed Parquet publication, then Forge verifies it and registers its primary files.</p>
+<p>Merge builds one ordered timeline from registered normalized trade and order-book files. Forge resolves the selection and prepares the job. The Rust Engine writes a committed Parquet publication, then Forge verifies it and registers its primary files. One publication can contain trades and L2 depth from several exchanges and instruments in the same instrument namespace. Rows retain their stream and normalized event provenance. Merge combines compatible inputs in timeline order. It rejects unsupported overlaps and does not provide general event deduplication.</p>
 <h2 id="1-find-normalized-inputs">1. Find normalized inputs</h2>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--operation<span class="w"> </span>normalize<span class="w"> </span>--status<span class="w"> </span><span class="nb">complete</span><span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
-<p>Start with the Bybit trades normalization recipe named <code>my_dataset</code> from the <a href="../normalize/">normalization guide</a>. Complete that workflow and use the same testing registry here. Install the <a href="../../reference/cli/engine/">managed merge Engine</a> if needed.</p>
+<p>Start with the Bybit trades normalization recipe named <code>my_dataset</code> from the <a href="../normalize/">normalization guide</a>. Complete that workflow and use the same testing registry here. Production is the default for registry-backed commands. This example explicitly uses testing throughout. Install the <a href="../../reference/cli/engine/">managed merge Engine</a> if needed, then validate its base runtime.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>merge<span class="w"> </span>config<span class="w"> </span>validate<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p>This checks the runtime TOML against Rust. Workload admission and input compatibility are checked separately.</p>
 <p>Look for registered primary-file IDs in the dataset list or normalization result. A Parquet file on disk needs a complete normalized registry record, a committed manifest, and matching provenance to be selected. Use the registry file ID with <code>datasets show</code> to inspect its publication and stream membership. Registry publication IDs group files. They serve a different purpose from the file IDs used for inspection.</p>
 <p><a id="start-from-a-normalization-recipe"></a><a id="select-file-dataset-ids-explicitly"></a></p>
 <h2 id="2-create-and-edit-the-recipe">2. Create and edit the recipe</h2>
@@ -5004,7 +5045,7 @@
 <p>This copies the source recipe's interval into a new managed merge recipe and saves a live reference to <code>my_dataset</code>. It searches the selected registry and reports candidate files and blockers. In a human terminal it also opens an editor. To revise the saved selection later, use:</p>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>merge<span class="w"> </span>edit<span class="w"> </span>first_merge
 </code></pre></div>
-<p>Later source edits can change which inputs match, while the merge interval remains as saved. If discovery reports competing or unlinked publications, compare the candidates before approving their registry publication IDs in the recipe. Use the <a href="../../configuration/merge/">recipe reference</a> to narrow the selection or select explicit registered file IDs.</p>
+<p>Later source edits can change which inputs match, while the merge interval remains as saved. The creation report reflects discovery before the editor opened. Run the preparation preview again after saving to review the current selection.</p>
 <h2 id="3-validate-the-recipe">3. Validate the recipe</h2>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>merge<span class="w"> </span>validate<span class="w"> </span>first_merge<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
@@ -5015,6 +5056,12 @@
 </code></pre></div>
 <p>Check the selected files, their publications and stream ranks, the requested interval, ordering, and any missing requests or blockers. If the same normalization recipe has been run more than once, compare the candidate publications against the run you intended to merge. For segmented depth, make sure the selection includes every primary part needed to reconstruct the chosen stream. A <code>planned</code> result resolves the Forge selection and provenance. Paths shown in the plan are prospective. Rust job validation happens during persisted preparation. Fix selection blockers before running.</p>
 <p><a id="reading-the-merge-dashboard"></a></p>
+<h3 id="when-multiple-verified-submissions-match">When multiple verified submissions match</h3>
+<p>The preview can report matched files while selecting none. Inspect each candidate <strong>registry publication ID</strong>, then compare stream membership, source submission, integrity and interval with the normalization run you intend to use.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>--publication-id<span class="w"> </span>PUBLICATION_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>runs<span class="w"> </span>report<span class="w"> </span>NORMALIZATION_RUN_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p>In <code>mf merge edit first_merge</code>, add or replace <code>publication_ids = [101, 102]</code> <strong>inside the existing</strong> <code>[selection]</code> table. Replace the illustrative IDs with the publications for the intended generation and requested streams. Keep only one <code>[selection]</code> table. Preview preparation again and check both the selected publication IDs and the selected file count. See <a href="../../configuration/merge/#selection-and-ambiguity">selection rules</a>.</p>
 <h2 id="5-run-the-merge">5. Run the merge</h2>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>merge<span class="w"> </span>run<span class="w"> </span>first_merge<span class="w"> </span>--testing
 </code></pre></div>
@@ -5023,13 +5070,20 @@
 </code></pre></div>
 <h3 id="submit-a-prepared-job-separately">Submit a prepared job separately</h3>
 <p>Use <code>mf merge prepare first_merge --testing</code> when you need to inspect the exact job before execution. Check that the result is <code>prepared</code> with compatibility <code>validated</code>. Pass the reported JSON path to <code>mf merge run ./PATH_TO_MERGE_JOB.json --testing</code>. Keep the job, preparation report, and pinned runtime together. See <a href="../../reference/prepared-merge/">prepared merge jobs</a>.</p>
+<p>For scripting, use global JSON and check the exit status together with the execution, verification and registration fields.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>merge<span class="w"> </span>run<span class="w"> </span>first_merge<span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>merge-result.json
+</code></pre></div>
+<p>When Forge can verify an equivalent completed merge, it returns the existing publication and skips processing. See <a href="../../reference/cli/merge/#completed-work-reuse">completed-work reuse</a>.</p>
 <h2 id="6-read-the-result-and-inspect-the-output">6. Read the result and inspect the output</h2>
 <p>Check <strong>Execution</strong>, <strong>Verification</strong>, and <strong>Registration</strong> separately. A committed Engine publication can precede a registration failure. Use a registered output <strong>file ID</strong> from the result with <code>datasets show</code> or <code>datasets verify</code> in the same registry. The Engine job and publication identities are useful for retained evidence.</p>
 <div class="highlight"><pre><span></span><code><span class="nb">set</span><span class="w"> </span>-o<span class="w"> </span>pipefail
-mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--operation<span class="w"> </span>merge<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>runs<span class="w"> </span>show<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>runs<span class="w"> </span>report<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>--publication-id<span class="w"> </span>PUBLICATION_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>FILE_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 mf<span class="w"> </span>datasets<span class="w"> </span>verify<span class="w"> </span>FILE_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
-<p>One publication can contain multiple streams, instruments, and exchanges. Its partitions can contain several physical files. For causal output, read in timeline order and keep reconstruction context when replaying book state. See <a href="../../reference/publication-merge/">merged publications</a>.</p>
+<p>Replace the uppercase placeholders with identities from your result or run history. The publication view shows the manifest and primary-file inventory. See the <a href="../../reference/cli/merge/#identifiers">identity table</a>. Its partitions can contain several physical files. For causal output, read in timeline order and keep reconstruction context when replaying book state. See <a href="../../reference/publication-merge/">merged publications</a>.</p>
 <p><a id="supported-layouts"></a>
 <a id="merge-tests"></a><a id="optional-recording-compatibility"></a>
 <a id="timeline-ordering"></a></p>
@@ -5055,7 +5109,7 @@ mf<span class="w"> </span>datasets<span class="w"> </span>verify<span class="w">
 </tr>
 <tr>
 <td>Rust validation unavailable</td>
-<td>Check <code>mf engine status</code> and the installed merge binary.</td>
+<td>Check <a href="../../configuration/merge-runtime/#managed-engine-troubleshooting">managed Engine compatibility</a> and the retained runtime.</td>
 </tr>
 <tr>
 <td>Engine fails</td>
@@ -5170,7 +5224,8 @@ mf<span class="w"> </span>datasets<span class="w"> </span>verify<span class="w">
       <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
       
         <script src="../../assets/javascripts/keyboard.js"></script>
       

@@ -1,4 +1,6 @@
 
+
+
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -14,6 +16,7 @@
       
       
       
+      
         <link rel="prev" href="../merge/">
       
       
@@ -24,7 +27,7 @@
       
       
       <link rel="icon" href="../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.1">
+      <meta name="generator" content="zensical-0.1.3">
     
     
       
@@ -35,12 +38,13 @@
       
         
       
-      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.ebb7f775.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
       
       
 
@@ -2940,6 +2944,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#managed-engine-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Managed Engine troubleshooting
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#complete-runtime-example" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4774,6 +4789,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#managed-engine-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Managed Engine troubleshooting
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#complete-runtime-example" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4961,7 +4987,7 @@ mf<span class="w"> </span>merge<span class="w"> </span>config<span class="w"> </
 mf<span class="w"> </span>merge<span class="w"> </span>config<span class="w"> </span>validate<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
 <p>Use <code>show --all</code> for every field and <code>schema</code> for the whole installed Rust schema. Detailed views distinguish configured values, loader defaults and effective values for the <strong>base runtime</strong>. These commands use local files and the managed Engine. See the <a href="../../reference/cli/merge/#engine-runtime-configuration">CLI reference</a> for all flags and global JSON.</p>
-<p>The Engine validates syntax, the runtime version, known fields, types, ranges and cross-field constraints. This check does not open merge inputs or admit a workload. A missing or incompatible Engine is a failed check. Use <a href="../../reference/cli/engine/"><code>mf engine build merge</code></a> to install the current managed binary. <code>mf engine runtime merge</code> can inspect effective settings on builds that accept the current runtime document but predate schema metadata. Earlier binaries can reject the current <code>[parquet]</code> table. Rebuild the Engine for the current schema in that case.</p>
+<p>The Engine validates syntax, the runtime version, known fields, types, ranges and cross-field constraints. This check does not open merge inputs or admit a workload. A missing or incompatible Engine is a failed check. See <a href="#managed-engine-troubleshooting">managed Engine troubleshooting</a>.</p>
 <h2 id="file-and-resolution">File and resolution</h2>
 <p>Forge resolves the base file from the workspace root, independent of the data root. The direct Rust merger accepts <code>--config PATH</code> with relative paths resolved from its <code>--project-root</code>. For read-only validation of a candidate from the workspace, the direct Engine accepts exactly one path:</p>
 <div class="highlight"><pre><span></span><code>.bin/marketforge-merge<span class="w"> </span>--runtime-settings<span class="w"> </span>./candidate.toml
@@ -5072,6 +5098,19 @@ mf<span class="w"> </span>merge<span class="w"> </span>config<span class="w"> </
 <p>Each invocation reads and validates its own candidate. Apply revalidates with the managed Engine and atomically replaces the file after checking the original entry and contents had not changed during this invocation. A previous preview is advisory and does not pin a later apply command. Structured edits preserve unrelated TOML and comments. Current merge fields are ordinary or resource-sensitive, so they require no integrity-risk acknowledgement.</p>
 <p>Interactive <code>edit</code> uses a private draft and the configured editor, with Neovim as fallback. After validation, review the diff summary and type <code>apply</code> to save. A declined or invalid edit retains the draft path. Read the current file and reconcile any conflicting changes before applying again.</p>
 <p>An example of candidate rejection is a file target below the row-group target. Rust reports <code>parquet.row_group_target_mb must be positive and no greater than file_target_mb</code>.</p>
+<h2 id="managed-engine-troubleshooting">Managed Engine troubleshooting</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>status<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>merge<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>merge<span class="w"> </span>config<span class="w"> </span>schema<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>merge<span class="w"> </span>config<span class="w"> </span>validate<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p>Use the <a href="../../reference/cli/engine/">managed build</a> from the Forge workspace. It installs the executable and updates the managed binary inventory under <code>.bin/</code>. A Cargo build in another output directory leaves that inventory unchanged.</p>
+<ul>
+<li><strong>Schema inspection fails.</strong> Check which executable Forge resolves and whether the managed inventory and capabilities match the checkout. <code>mf engine runtime merge</code> may still inspect effective settings on a binary that supports runtime inspection but predates schema export.</li>
+<li><strong>The Engine rejects the whole <code>[parquet]</code> table.</strong> The current dedicated schema requires it. Check for an older generic loader and rebuild the managed binary before changing the TOML.</li>
+<li><strong>The installed schema is current and validation names a field or relationship.</strong> Correct the type, range, or cross-field relationship in the base runtime. For example, the file target must be at least the row-group target.</li>
+<li><strong>Only a retained job fails.</strong> Inspect its preparation report, runtime snapshot and executable checksum. Base validation checks the current base TOML. Prepare a new job to use the current binary and runtime together when the old pins cannot be satisfied.</li>
+</ul>
 <h2 id="complete-runtime-example">Complete runtime example</h2>
 <p>This document provides the required values and inherits the three loader defaults. The resource values are illustrative, and workload admission remains separate.</p>
 <div class="highlight"><pre><span></span><code><span class="n">schema_version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
@@ -5183,7 +5222,8 @@ mf<span class="w"> </span>merge<span class="w"> </span>config<span class="w"> </
       <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
       
         <script src="../../assets/javascripts/keyboard.js"></script>
       

@@ -1,4 +1,6 @@
 
+
+
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -14,6 +16,7 @@
       
       
       
+      
         <link rel="prev" href="../prepared-normalization/">
       
       
@@ -24,7 +27,7 @@
       
       
       <link rel="icon" href="../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.1">
+      <meta name="generator" content="zensical-0.1.3">
     
     
       
@@ -35,12 +38,13 @@
       
         
       
-      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.ebb7f775.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
       
       
 
@@ -6827,6 +6831,7 @@
 <p>Forge writes one pinned job consumed by <code>marketforge-merge</code>. Its identity, input file references and half-open event-time interval are independent of editable recipe selectors. <a href="../../workflows/merge/">Workflow</a></p>
 <h2 id="preparation-evidence">Preparation evidence</h2>
 <p>Forge dry-run preparation resolves selection, local provenance and ordering. It reports <code>planned</code> with prospective paths and <code>compatibility = "not_validated"</code>. Persisted preparation writes <code>merge-job.json</code> and <code>prepare-report.json</code>, retains the selected file and publication evidence, source recipe fingerprint where applicable, registry identity, and checksums for the submission and retained <a href="../../configuration/merge-runtime/">runtime</a>. Rust validation checks the generated job, input pins and compatibility, and the output destination. A <code>prepared</code> result with <code>compatibility = "validated"</code> records that check. A <code>generated</code> result retains the job and validation diagnostic. It can result from a missing Engine as well as a validation rejection.</p>
+<p>The preparation report is Forge evidence. It binds the registry, selection and runtime to the job. The Rust input is the job JSON itself, which has no top-level schema version field. An available equivalent result can instead produce a reuse receipt with the existing physical path and registry identities. See <a href="../cli/merge/#completed-work-reuse">completed-work reuse</a>.</p>
 <p>A retained job and its report must agree at submission. Execution verifies registered inputs again and checks the job, binary and runtime fingerprints when pinned. Review the <a href="../cli/merge/#mf-merge-run">CLI reference</a> for recipe and prepared-job submission.</p>
 <h2 id="prepared-merge-jobs">Prepared Merge Jobs</h2>
 <h2 id="why-does-merging-use-a-different-contract">Why Does Merging Use a Different Contract?</h2>
@@ -6920,8 +6925,7 @@ Normalized Depth ───┘
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>This is a structural illustration, not an executable job.</p>
-<p>A valid merge job requires eligible registered inputs.</p>
+<p>The empty input array illustrates the wire shape. The loader requires at least one eligible pinned input, a positive job ID and an absolute output destination. Unknown fields are rejected.</p>
 <h3 id="why-is-the-merge-interval-numeric">Why is the merge interval numeric?</h3>
 <p>The merge contract uses integer Unix nanoseconds.</p>
 <p>This allows precise event-time boundaries.</p>
@@ -7501,7 +7505,8 @@ Source B
       <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
       
         <script src="../../assets/javascripts/keyboard.js"></script>
       

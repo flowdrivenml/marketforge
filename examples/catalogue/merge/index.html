@@ -1,4 +1,6 @@
 
+
+
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -14,6 +16,7 @@
       
       
       
+      
         <link rel="prev" href="../">
       
       
@@ -24,7 +27,7 @@
       
       
       <link rel="icon" href="../../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.1">
+      <meta name="generator" content="zensical-0.1.3">
     
     
       
@@ -35,12 +38,13 @@
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
       
       
 
@@ -4711,7 +4715,7 @@
 <span class="s">    )</span>
 <span class="s">PY</span>
 mf<span class="w"> </span>merge<span class="w"> </span>validate<span class="w"> </span>./synthetic-merge.toml
-mf<span class="w"> </span>merge<span class="w"> </span>prepare<span class="w"> </span>./synthetic-merge.toml<span class="w"> </span>--testing
+mf<span class="w"> </span>merge<span class="w"> </span>prepare<span class="w"> </span>./synthetic-merge.toml<span class="w"> </span>--testing<span class="w"> </span>--dry-run<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 mf<span class="w"> </span>--json<span class="w"> </span>merge<span class="w"> </span>run<span class="w"> </span>./synthetic-merge.toml<span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>synthetic-merge-result.json
 python<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;'PY'</span>
 <span class="s">import json</span>
@@ -4721,8 +4725,8 @@ python<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;'
 <span class="s">print(*result["catalogue_dataset_ids"].values(), sep="\n")</span>
 <span class="s">PY</span>
 </code></pre></div>
-<p>The checked run registered one output file. Use the printed ID with <code>mf datasets head ID --testing</code> and compare the trade with the original CSV. Run <code>mf datasets lineage ID --testing --publication</code> to see the selected input. The example creates the recipe exclusively. To use it again, review the existing recipe and reuse it if its file ID is still correct.</p>
-<p>If prepare reports a job parse error after a code update, rebuild the managed merger and retry preparation. If the engine reports no active stream, check the selected interval and stream coverage. The example's bounds contain exactly the supplied trade timestamp.</p>
+<p>This fixture expects one registered output file. Use a fresh isolated fixture workspace and registry when exercising the example. Use the printed ID with <code>mf datasets head ID --testing</code> and compare the trade with the original CSV. Run <code>mf datasets lineage ID --testing --publication</code> to see the selected input. The example creates the recipe exclusively. To use it again, review the existing recipe and reuse it if its file ID is still correct.</p>
+<p>If prepare reports a job parse error after a code update, check <a href="../../../configuration/merge-runtime/#managed-engine-troubleshooting">managed Engine compatibility</a> and retry persisted preparation. If the engine reports no active stream, check the selected interval and stream coverage. The example's bounds contain exactly the supplied trade timestamp.</p>
 
 
 
@@ -4821,7 +4825,8 @@ python<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;'
       <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
       
         <script src="../../../assets/javascripts/keyboard.js"></script>
       

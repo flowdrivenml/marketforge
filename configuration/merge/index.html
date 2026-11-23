@@ -1,4 +1,6 @@
 
+
+
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -14,6 +16,7 @@
       
       
       
+      
         <link rel="prev" href="../normalization-runtime/">
       
       
@@ -24,7 +27,7 @@
       
       
       <link rel="icon" href="../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.1">
+      <meta name="generator" content="zensical-0.1.3">
     
     
       
@@ -35,12 +38,13 @@
       
         
       
-      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.ebb7f775.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
       
       
 
@@ -2869,6 +2873,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#selection-and-ambiguity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Selection and ambiguity
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#input-precedence-and-ranks" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4708,6 +4723,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#selection-and-ambiguity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Selection and ambiguity
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#input-precedence-and-ranks" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4962,7 +4988,7 @@
 </tr>
 </tbody>
 </table>
-<p>Use the shared ordering fields below with either form. A top-level <code>version</code>, <code>interval</code>, or <code>selection</code> selects the derived schema. Unknown keys are rejected in each form.</p>
+<p>An explicit-file recipe has no <code>version</code> field. Use the shared ordering fields below with either form. A top-level <code>version</code>, <code>interval</code>, or <code>selection</code> selects the derived schema. Unknown keys are rejected in each form.</p>
 <h2 id="selection-derived-from-normalization">Selection derived from normalization</h2>
 <p>Use this form to discover registered normalized files from a saved request-based normalization recipe. This example refers to the Bybit trades recipe from the <a href="../../workflows/normalize/">normalization guide</a>.</p>
 <div class="highlight"><pre><span></span><code><span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
@@ -5011,22 +5037,22 @@
 <tr>
 <td><code>selection.exchanges</code></td>
 <td>Optional nonempty string array matching <code>^[a-z][a-z0-9_]*$</code></td>
-<td>Restrict execution venues.</td>
+<td>Restrict execution venues, for example <code>["bybit"]</code>.</td>
 </tr>
 <tr>
 <td><code>selection.instruments</code></td>
 <td>Optional nonempty string array</td>
-<td>Restrict to canonical <code>exchange.instrument_type.market_category.symbol</code> identities.</td>
+<td>Restrict to canonical <code>exchange.instrument_type.market_category.symbol</code> identities, for example <code>["bybit.spot.spot.BTCUSDT"]</code>.</td>
 </tr>
 <tr>
 <td><code>selection.instrument_types</code></td>
 <td>Optional nonempty string array of <code>spot</code>, <code>perpetual</code>, <code>future</code>, <code>option</code>, <code>equity</code></td>
-<td>Restrict instrument types.</td>
+<td>Restrict instrument types, for example <code>["spot"]</code>.</td>
 </tr>
 <tr>
 <td><code>selection.market_categories</code></td>
 <td>Optional nonempty string array of <code>spot</code>, <code>linear</code>, <code>inverse</code>, <code>option</code>, <code>equity</code></td>
-<td>Restrict market categories.</td>
+<td>Restrict market categories, for example <code>["linear"]</code>.</td>
 </tr>
 <tr>
 <td><code>selection.publication_ids</code></td>
@@ -5037,7 +5063,22 @@
 </table>
 <p>Omitted filters impose no additional restriction. Filters intersect on matching stream membership. Forge uses resolved source tasks for family and base-coin membership, including registered source keys and matching Gate.io L2 feed. A file with an overlapping unapproved stream can block the selection.</p>
 <p>A bare source name resolves in the normalization recipe library. Use <code>./filename.toml</code>, a path with a directory, or an absolute path for explicit references. Relative paths resolve from the command's working directory, even when the merge TOML lives elsewhere. <code>new --from-normalize</code> saves an absolute path for an explicit source.</p>
-<p>Forge reads the current source recipe at discovery and records its SHA-256. The recipe keeps a live reference and its own independent interval. Automatic selection requires a single verified normalization submission whose retained source path, request definitions, interval, ranking policy, and submitted-batch fingerprint match the evidence. Multiple verified submissions or a candidate without a verified ownership link may require explicit publication approval. Approval still requires matching files and membership, and missing requests can block preparation.</p>
+<h2 id="selection-and-ambiguity">Selection and ambiguity</h2>
+<p>Forge reads the current source recipe at discovery and records its SHA-256. The recipe keeps a live reference and its own independent interval. Automatic selection uses retained normalization evidence such as the source path, request definitions, interval, ranking policy and submitted-batch fingerprint. Forge can follow retained reuse cohorts and collapse verified canonical aliases for automatic selection. It requires one maximal matching cohort after that resolution. Multiple verified submissions or a candidate without a verified ownership link may require explicit publication approval. Approval still requires matching files and membership, and missing requests can block preparation.</p>
+<p>Matched file counts describe candidate files. Selected file counts describe actual input files approved after the checks. One registry publication can contribute several files and logical streams. Eligible candidates require complete normalized file records and compatible physical and provenance evidence. Superseded files are excluded from discovery. A candidate without a complete registry state cannot become a usable input. Missing files, unverifiable pins, missing requested selections and incompatible membership can block preparation.</p>
+<p>Here is a complete publication-pinned recipe. Replace the illustrative ID with a compatible selection from your registry. A recipe requesting both trades and depth may need separate publication IDs for each stream.</p>
+<div class="highlight"><pre><span></span><code><span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+
+<span class="k">[interval]</span>
+<span class="n">start</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-10-27T00:00:00Z</span>
+<span class="n">end</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-10-28T00:00:00Z</span>
+
+<span class="k">[selection]</span>
+<span class="n">source</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"my_dataset"</span>
+<span class="n">publication_ids</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="mi">101</span><span class="p">]</span>
+<span class="n">data_types</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"trades"</span><span class="p">]</span>
+</code></pre></div>
+<p>Explicit approval narrows discovery to those registry publications. It still checks content filters, interval and stream membership, file pins, and whether the set covers the requested selections. Equal file hashes across builds are evidence about bytes. They do not establish that the two submissions have interchangeable processing or integrity contracts. See <a href="../../workflows/merge/#when-multiple-verified-submissions-match">how to inspect and pin a generation</a>.</p>
 <h2 id="input-precedence-and-ranks">Input precedence and ranks</h2>
 <table>
 <thead>
@@ -5061,6 +5102,17 @@
 </tbody>
 </table>
 <p>Explicit selection orders streams by the first selected file for each stream. Derived selection uses the first matching normalization request, then stream ID. Unspecified ranks use the lowest unused values in that order, starting at zero. Parts of the same stream share one rank. Use exact IDs from the preparation report. A lower rank wins cross-stream ties at equal timestamps.</p>
+<p>A complete explicit-input example with a deliberate ordering override follows. The illustrative file IDs and stream keys must match the intended selected registry files before preparation.</p>
+<div class="highlight"><pre><span></span><code><span class="n">dataset_ids</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">]</span>
+<span class="n">start_ns</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1793059200000000000</span>
+<span class="n">end_ns</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1793145600000000000</span>
+<span class="n">timeline_ordering</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"causal"</span>
+
+<span class="k">[stream_ranks]</span>
+<span class="s2">"bybit.spot.spot.BTCUSDT.trades"</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span>
+<span class="s2">"bybit.spot.spot.ETHUSDT.trades"</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span>
+</code></pre></div>
+<p>This reverses the rank precedence of the two example streams at equal timestamps. Unused rank values are allowed.</p>
 <h2 id="timeline-ordering">Timeline ordering</h2>
 <p><strong>Chronological</strong> writes nondecreasing event timestamps, with stream rank for ties. <strong>Causal</strong> chooses the available stream head by timestamp and rank, then advances only that stream. Native dependencies can cause timestamp regressions in the output. Keep physical timeline sequence for replay.</p>
 <p>Trades, depth, and combined jobs use compatible registered normalized inputs from one instrument namespace. Timestamp-ordered trade streams need supported contiguous source spans. A segmented depth stream requires all its primary parts and causal ordering. A depth stream spanning multiple publications requires a continuity contract the current merger does not support. See <a href="../../reference/prepared-merge/#merge-compatibility">prepared-job compatibility</a>.</p>
@@ -5165,7 +5217,8 @@
       <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
       
         <script src="../../assets/javascripts/keyboard.js"></script>
       
