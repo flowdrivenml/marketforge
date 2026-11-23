@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../market-statistics/">
       
       
@@ -27,7 +24,7 @@
       
       
       <link rel="icon" href="../../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
@@ -38,13 +35,12 @@
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -833,10 +829,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#create-and-publish-a-policy" class="md-nav__link">
+  <a href="#build-an-instrument-scoped-turnover-snapshot" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Create and publish a policy
+        Build an instrument-scoped turnover snapshot
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-grouped-base-volume" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Build grouped base volume
       </span>
     </span>
   </a>
@@ -2626,7 +2633,7 @@
   <span class="md-ellipsis">
     
   
-  Market and ranking commands
+  Markets and ranking commands
 
     
   </span>
@@ -4712,10 +4719,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#create-and-publish-a-policy" class="md-nav__link">
+  <a href="#build-an-instrument-scoped-turnover-snapshot" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Create and publish a policy
+        Build an instrument-scoped turnover snapshot
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-grouped-base-volume" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Build grouped base volume
       </span>
     </span>
   </a>
@@ -4924,37 +4942,51 @@
 <h2 id="choose-the-comparison">Choose the comparison</h2>
 <p><strong>Turnover</strong> (<code>metric = "turnover_24h"</code>) compares monetary activity in one explicit currency. Optional stored spot prices value aggregate native turnover at reference prices; this is not reconstruction of FX at each trade. Derivative last prices are not conversion sources. USD/USDT/USDC equivalence is never automatic.</p>
 <p><strong>Volume</strong> (<code>metric = "volume"</code>) compares base-asset quantities <strong>within each base asset</strong>. ETH quantities can share an ETH group across spot, perpetuals and futures; BTC has a different group and its own rank 1. Unique storage <code>position</code> is not a global cross-asset score; <code>group_rank</code> is the within-asset rank. See the <a href="../../../configuration/markets/">complete policies</a>.</p>
-<h2 id="create-and-publish-a-policy">Create and publish a policy</h2>
-<p><code>new</code> writes a strict version-2 turnover template, without opening an editor:</p>
-<div class="highlight"><pre><span></span><code>marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>new<span class="w"> </span>activity
+<h2 id="build-an-instrument-scoped-turnover-snapshot">Build an instrument-scoped turnover snapshot</h2>
+<p>Create a policy and open it in Neovim.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>new<span class="w"> </span>activity
+nvim<span class="w"> </span>data/.config/markets/rankings/activity.toml
 </code></pre></div>
-<p>Edit <code>data/.config/markets/rankings/activity.toml</code> manually to select your universe, comparison, and intended partial-coverage behavior. Validate it before publication:</p>
-<div class="highlight"><pre><span></span><code>marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>validate<span class="w"> </span>activity
-marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>build<span class="w"> </span>activity<span class="w"> </span>--testing
-marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>list<span class="w"> </span>--testing
-marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>activity<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">30</span>
+<p>Replace the template with the <a href="../../../configuration/markets/#complete-examples">minimal turnover example</a>. It selects the same Bybit BTCUSDT spot instrument as the discovery and refresh guides and compares its native USDT turnover. To compare a broader currency universe, choose the explicit automatic or manual conversion example and make sure its references are available.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>validate<span class="w"> </span>activity<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>build<span class="w"> </span>activity<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>--json<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
-<p><code>build</code> performs no network refresh; it reads retained observations and <strong>writes</strong> a published snapshot. A successful matching sync and fresh statistics are prerequisites. It evaluates the full selected universe, not the display limit. Explicit instrument references must exist in the selected catalogue; eligible spot conversion prices can be outside the ranking subset but must already be stored.</p>
-<p>By default a policy is strict: stale, missing, estimated-disallowed, incompatible-window or unconvertible inputs reject publication. <code>allow_partial_universe = true</code> explicitly permits exclusions and partial-refresh inputs; it does not make missing values valid or disable age/unit checks. At least one included entry is still required. Failed builds roll back their publication; older published snapshots remain available.</p>
+<p>Build reads retained observations and writes a published snapshot. Use fresh observations from the <a href="../market-statistics/#refresh-a-synchronized-selection">matching refresh</a>. Policy validation checks local fields. Build additionally checks catalogue membership, observation evidence and eligibility. A broad policy requires recent full-scope certification unless partial coverage is allowed. An explicit instrument list keeps this example narrow without relaxing data-quality checks.</p>
+<h2 id="build-grouped-base-volume">Build grouped base volume</h2>
+<p>Use the <a href="../../../configuration/markets/#complete-examples">grouped-volume example</a> in a separate policy named <code>base_activity</code>. That example selects BTCUSDT and ETHUSDT. Repeat synchronization and refresh for ETHUSDT before building so both groups have observations.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>sync<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--market<span class="w"> </span>spot<span class="w"> </span>--instrument<span class="w"> </span>ETHUSDT<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>markets<span class="w"> </span>refresh<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--market<span class="w"> </span>spot<span class="w"> </span>--instrument<span class="w"> </span>ETHUSDT<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>new<span class="w"> </span>base_activity
+nvim<span class="w"> </span>data/.config/markets/rankings/base_activity.toml
+mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>validate<span class="w"> </span>base_activity<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>build<span class="w"> </span>base_activity<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>base_activity<span class="w"> </span>--testing<span class="w"> </span>--base-asset<span class="w"> </span>ETH<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
 <h2 id="inspect-a-pinned-result">Inspect a pinned result</h2>
-<div class="highlight"><pre><span></span><code>marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>activity<span class="w"> </span>--testing<span class="w"> </span>--excluded<span class="w"> </span>--all
-marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>activity<span class="w"> </span>--testing<span class="w"> </span>--instrument-type<span class="w"> </span>perpetual<span class="w"> </span>--quote-asset<span class="w"> </span>USDT
-marketforge<span class="w"> </span>--json<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>activity<span class="w"> </span>--testing
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>activity<span class="w"> </span>--testing<span class="w"> </span>--excluded<span class="w"> </span>--all
+mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>activity<span class="w"> </span>--testing<span class="w"> </span>--instrument-type<span class="w"> </span>perpetual<span class="w"> </span>--quote-asset<span class="w"> </span>USDT
+mf<span class="w"> </span>--json<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>activity<span class="w"> </span>--testing
 </code></pre></div>
-<p>A name resolves the latest published snapshot by creation time then UUID. Use a returned <code>SNAPSHOT_UUID</code> to pin one publication; replace that placeholder in commands. Name resolution applies no age/partial-universe cutoff, so inspect creation time and coverage rather than assuming latest means fresh.</p>
-<div class="highlight"><pre><span></span><code>marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>SNAPSHOT_UUID<span class="w"> </span>--testing<span class="w"> </span>--conversion<span class="w"> </span><span class="m">1</span>
-marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>SNAPSHOT_UUID<span class="w"> </span>--testing<span class="w"> </span>--base-asset<span class="w"> </span>ETH<span class="w"> </span>--match<span class="w"> </span><span class="s1">'ETH*'</span>
+<p>A name resolves the latest published snapshot by creation time then UUID, both descending. The JSON inventory includes UUIDs even when the narrow terminal table omits them. Use a returned <code>SNAPSHOT_UUID</code> to pin one publication; replace that placeholder in commands. Name resolution applies no age/partial-universe cutoff, so inspect creation time and coverage rather than assuming latest means fresh.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>SNAPSHOT_UUID<span class="w"> </span>--testing<span class="w"> </span>--conversion<span class="w"> </span><span class="m">1</span>
+mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>show<span class="w"> </span>SNAPSHOT_UUID<span class="w"> </span>--testing<span class="w"> </span>--base-asset<span class="w"> </span>ETH<span class="w"> </span>--match<span class="w"> </span><span class="s1">'ETH*'</span>
 </code></pre></div>
-<p><code>--conversion</code> accepts a stored full instrument reference or unique storage position. It exposes native amount, rate, path, timestamps and source observations; volume snapshots expose derivation evidence. Human <code>show</code> defaults to 50 included rows and grouped exclusion reasons; <code>--excluded</code> adds excluded rows and <code>--all</code> removes row limits. JSON always returns all matching entries and evidence, regardless of human row limit. Filters preserve original positions/group ranks and do not rebuild the snapshot.</p>
+<p><code>--conversion</code> accepts a stored full instrument reference or unique storage position. It exposes native amount, rate, path, timestamps and source observations; volume snapshots expose derivation evidence. Human <code>show</code> defaults to at most 50 included rows and grouped exclusion reasons; <code>--excluded</code> adds excluded rows and <code>--all</code> removes row limits. JSON always returns all matching entries and evidence, regardless of human row limit. Filters preserve original positions/group ranks and do not rebuild the snapshot.</p>
+<p>A filtered volume view can begin at a stored group rank greater than 1. In this illustrative excerpt, removing the first ETH row with a filter leaves ranks 2 and 3.</p>
+<div class="highlight"><pre><span></span><code>Base asset  Group rank  Instrument
+ETH         2           ETH-USDT-SWAP
+ETH         3           ETHUSDC
+</code></pre></div>
 <h2 id="conversion-and-volume-evidence">Conversion and volume evidence</h2>
-<p>Turnover conversion precedence is identity, explicit manual rate, explicit equivalence, then eligible stored spot prices. Automatic paths use one pair or one bridge, without mixed-exchange legs. Same-exchange paths take priority; cross-exchange paths require permission. Freshness, future-time, price-leg skew and turnover-window alignment checks apply separately. A stale manual override fails rather than silently falling back to spot prices.</p>
+<p>Use the <a href="../../../configuration/markets/#rate-selection-and-precision">ranking rate reference</a> to interpret manual overrides, venue preference, and path freshness. Ranking conversion values aggregate statistics. <a href="../../conversion/">Historical conversion</a> values dataset events using a separate Engine contract.</p>
 <p><code>estimates</code> controls volume-derived turnover estimates such as OKX linear quantity × last; converting reported turnover by FX is a separate valuation convention. Manual preferences can move specified turnover instruments ahead of score order; ties otherwise use score then stable reference. Inspect the policy before treating a rank as pure descending activity.</p>
 <p>Volume prefers reliable reported base quantity, including zero. A saved base-denominated contract face value permits exact contract-count conversion; quote-denominated face value divided by a matching positive reference price is estimated. Missing specification/scope evidence causes exclusion. Policies exclude estimates by default. Each result retains its formula, inputs, observation and specification evidence.</p>
-<p>New snapshots freeze identity and asset metadata. Older snapshots may fall back to retained observation evidence or current catalogue fields; JSON <code>metadata_sources</code> and human warnings identify this. Current-catalogue fallback can change for old entries, while published scores/order remain pinned.</p>
+<p>New snapshots freeze the policy document and hash, algorithm, observation and conversion evidence links, scores, order, exclusions, and identity metadata. Later edits and refreshes affect future builds. Inspection reads the published evidence. Older snapshots may fall back to retained observation evidence or current catalogue fields; JSON <code>metadata_sources</code> and human warnings identify this. Current-catalogue fallback can change for old entries, while published scores/order remain pinned.</p>
 <h2 id="update-standard-policies">Update standard policies</h2>
 <p>After a suitable metadata sync and with standard <code>turnover.toml</code>/<code>volume.toml</code> policies already installed:</p>
-<div class="highlight"><pre><span></span><code>marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>update<span class="w"> </span>turnover<span class="w"> </span>--testing
-marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>update<span class="w"> </span>--testing
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>update<span class="w"> </span>turnover<span class="w"> </span>--testing
+mf<span class="w"> </span>markets<span class="w"> </span>rank<span class="w"> </span>update<span class="w"> </span>--testing
 </code></pre></div>
 <p>Unlike <code>build</code>, <code>update</code> performs one global statistics refresh, then publishes the named standard policy or both independently, pinned to that refresh. It accepts only <code>turnover</code> and <code>volume</code>, not custom names, and does not create missing policy files or synchronize metadata. A partial refresh/build can produce nonzero status even if one snapshot was published. Inspect each result; no automatic rollback of the other successful publication is implied.</p>
 <h2 id="troubleshooting-and-maintenance">Troubleshooting and maintenance</h2>
@@ -5058,8 +5090,7 @@ marketforge<span class="w"> </span>markets<span class="w"> </span>rank<span clas
       <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../../assets/javascripts/keyboard.js"></script>
       

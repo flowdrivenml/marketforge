@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../architecture/">
       
       
@@ -27,7 +24,7 @@
       
       
       <link rel="icon" href="../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
@@ -38,13 +35,12 @@
       
         
       
-      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -2492,7 +2488,7 @@
   <span class="md-ellipsis">
     
   
-  Market and ranking commands
+  Markets and ranking commands
 
     
   </span>
@@ -6680,7 +6676,7 @@ continues to own argument parsing, validation and usage errors.</p>
 <h3 id="rankings">Rankings</h3>
 <p>Ranking calculation and statistics refresh have separate entry points.</p>
 <p><code>markets/ranking/service.py</code> builds rankings from retained metadata and observations. It stores the snapshot, entries, exclusions, and conversion evidence within its publication workflow.</p>
-<p><code>markets/ranking/workflow.py</code> coordinates a refresh followed by ranking publication.</p>
+<p><code>markets/ranking/workflow.py</code> pins standard policy builds to one new refresh and records independent publication outcomes. See the <a href="../../reference/cli/markets/">Markets CLI reference</a> for collection, snapshot inspection and maintenance contracts.</p>
 <p>Turnover and grouped volume have different comparison semantics. A grouped volume result is not automatically a valid global ordering across unrelated assets.</p>
 <p>Normalization preparation reads stored ranking positions when available and uses deterministic identity ordering for unranked streams or absent ranking evidence. Current ranking information should retain its interpretation as current prioritization evidence.<sup id="fnref:rankings"><a class="footnote-ref" href="#fn:rankings">9</a></sup></p>
 <h3 id="extending-market-collection">Extending market collection</h3>
@@ -7485,8 +7481,7 @@ continues to own argument parsing, validation and usage errors.</p>
       <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../assets/javascripts/keyboard.js"></script>
       

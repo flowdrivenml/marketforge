@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../">
       
       
@@ -27,7 +24,7 @@
       
       
       <link rel="icon" href="../../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
@@ -38,13 +35,12 @@
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -779,10 +775,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#browse-without-network-access" class="md-nav__link">
+  <a href="#browse-stored-instruments" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Browse without network access
+        Browse stored instruments
       </span>
     </span>
   </a>
@@ -2604,7 +2600,7 @@
   <span class="md-ellipsis">
     
   
-  Market and ranking commands
+  Markets and ranking commands
 
     
   </span>
@@ -4690,10 +4686,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#browse-without-network-access" class="md-nav__link">
+  <a href="#browse-stored-instruments" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Browse without network access
+        Browse stored instruments
       </span>
     </span>
   </a>
@@ -4878,12 +4874,12 @@
 <h1 id="discover-and-inspect-instruments">Discover and inspect instruments</h1>
 <h2 id="synchronize-the-catalogue">Synchronize the catalogue</h2>
 <p>Synchronization is a network and registry-writing operation. For a small selection:</p>
-<div class="highlight"><pre><span></span><code>marketforge<span class="w"> </span>markets<span class="w"> </span>sync<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--market<span class="w"> </span>spot<span class="w"> </span>--instrument<span class="w"> </span>BTCUSDT<span class="w"> </span>--testing
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>sync<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--market<span class="w"> </span>spot<span class="w"> </span>--instrument<span class="w"> </span>BTCUSDT<span class="w"> </span>--testing
 </code></pre></div>
 <p>For a broader scope, omit <code>--instrument</code>; repeat exchange and market options for subsets:</p>
-<div class="highlight"><pre><span></span><code>marketforge<span class="w"> </span>markets<span class="w"> </span>sync<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--exchange<span class="w"> </span>okx<span class="w"> </span>--market<span class="w"> </span>linear<span class="w"> </span>--testing
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>sync<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--exchange<span class="w"> </span>okx<span class="w"> </span>--market<span class="w"> </span>linear<span class="w"> </span>--testing
 </code></pre></div>
-<p>Exchange and market filters select supported combinations, not paired positional tuples. With neither, collection visits all 14 scopes. An unsupported-only selection fails. Independent scope failures do not stop other scopes; inspect the final per-source outcomes.</p>
+<p>Exchange and market filters select supported combinations. The exact symbol is applied within each provider scope, whose endpoints can still return full pages. With neither, collection visits all 14 scopes. An unsupported-only selection fails. Independent scope failures do not stop other scopes; inspect the final per-source outcomes.</p>
 <table>
 <thead>
 <tr>
@@ -4927,16 +4923,17 @@
 </tbody>
 </table>
 <p>Options are excluded from current markets collection. A dated-contract parser does not guarantee a currently listed contract. Expired/historical records remain stored; current endpoints do not establish an exhaustive expired-contract catalogue. Absence from sync does not automatically delete or delist a retained record.</p>
-<h2 id="browse-without-network-access">Browse without network access</h2>
-<div class="highlight"><pre><span></span><code>marketforge<span class="w"> </span>markets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--market<span class="w"> </span>spot<span class="w"> </span>--limit<span class="w"> </span><span class="m">20</span>
-marketforge<span class="w"> </span>markets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--base-asset<span class="w"> </span>ETH<span class="w"> </span>--quote-asset<span class="w"> </span>USDT<span class="w"> </span>--match<span class="w"> </span><span class="s1">'ETH*'</span>
-marketforge<span class="w"> </span>--json<span class="w"> </span>markets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--exchange<span class="w"> </span>okx<span class="w"> </span>--market<span class="w"> </span>inverse
-marketforge<span class="w"> </span>markets<span class="w"> </span>show<span class="w"> </span>bybit.spot.BTCUSDT<span class="w"> </span>--testing
+<h2 id="browse-stored-instruments">Browse stored instruments</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--market<span class="w"> </span>spot<span class="w"> </span>--limit<span class="w"> </span><span class="m">20</span>
+mf<span class="w"> </span>markets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--base-asset<span class="w"> </span>ETH<span class="w"> </span>--quote-asset<span class="w"> </span>USDT<span class="w"> </span>--match<span class="w"> </span><span class="s1">'ETH*'</span>
+mf<span class="w"> </span>--json<span class="w"> </span>markets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--exchange<span class="w"> </span>okx<span class="w"> </span>--market<span class="w"> </span>inverse
+mf<span class="w"> </span>markets<span class="w"> </span>show<span class="w"> </span>bybit.spot.BTCUSDT<span class="w"> </span>--testing
 </code></pre></div>
 <p>Asset filters are exact and case-insensitive. <code>--instrument</code> matches an exact native symbol; <code>--match</code> is a case-insensitive full-symbol glob supporting <code>*</code> and <code>?</code>, not regular expressions. Quote it in the shell. <code>%</code>, <code>_</code> and bracket expressions are literal. Filters combine with AND. The list default is 50 rows, bounded to 1–10000; JSON lists obey the limit and report truncation.</p>
 <h2 id="identity-and-contract-details">Identity and contract details</h2>
-<p>Market category (<code>spot</code>, <code>linear</code>, <code>inverse</code>) and instrument type (<code>spot</code>, <code>perpetual</code>, <code>future</code>) are distinct. Use the reference returned by <code>list</code>, ordinarily <code>exchange.market.symbol</code>. When types collide on the same native symbol, use <code>exchange.market.instrument_type.symbol</code>; an ambiguous short reference fails. Do not derive identity by splitting symbols or guessing a date suffix. A policy's explicit instrument references must match the catalogue's canonical returned references.</p>
+<p>Market category (<code>spot</code>, <code>linear</code>, <code>inverse</code>) and instrument type (<code>spot</code>, <code>perpetual</code>, <code>future</code>) are distinct. Use the reference returned by <code>list</code>, ordinarily <code>exchange.market.symbol</code>. When types collide on the same native symbol, use <code>exchange.market.instrument_type.symbol</code>. An ambiguous short reference fails. The separate <a href="../../../reference/cli/catalog/">manual catalogue</a> uses <code>exchange.instrument_type.market_category.symbol</code>. Preserve punctuation such as the hyphens in an OKX native symbol. Do not derive identity by splitting symbols or guessing a date suffix. A policy's explicit instrument references must match the catalogue's canonical returned references.</p>
 <p><code>show</code> groups identity, native status, launch/expiry when supplied, assets/settlement, tick size, quantity step and constraints, quantity denomination, and contract value/unit. Missing specifications stay missing. Expiry is supplied for dated futures, not fabricated from perpetual placeholder timestamps. Retained inactive/expired entries can still appear in browsing; they are not a promise that refresh will collect them.</p>
+<p>An instrument outside the chosen scope remains stored. Its catalogue status and its latest observation are independent. Current collection support, manual registration, <a href="../../acquisition/">historical archive acquisition</a>, and <a href="../../normalize/">normalization profile coverage</a> each have separate contracts.</p>
 <p>Next, <a href="../market-statistics/">retrieve current statistics</a> for the successfully synchronized selection. A symbol-filtered sync certifies that selection; it is not a full-scope sync for an unfiltered refresh.</p>
 <p>See the <a href="../../acquisition/forge/">unified Forge workflow</a> for managed builds, manually authored profiles, historical registration declarations, namespace mappings and dataset-registration recovery.</p>
 <h2 id="historical-authority-during-initialization">Historical authority during initialization</h2>
@@ -5044,8 +5041,7 @@ reports metadata readiness separately from exchange collection failures.</p>
       <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../../assets/javascripts/keyboard.js"></script>
       

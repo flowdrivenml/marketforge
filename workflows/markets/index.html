@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../">
       
       
@@ -27,7 +24,7 @@
       
       
       <link rel="icon" href="../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
@@ -38,13 +35,12 @@
       
         
       
-      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -2513,7 +2509,7 @@
   <span class="md-ellipsis">
     
   
-  Market and ranking commands
+  Markets and ranking commands
 
     
   </span>
@@ -4564,11 +4560,6 @@
                       
                     
                     
-                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-                      <div class="md-sidebar-button__wrapper">
-                        <label class="md-sidebar-button" for="__toc"></label>
-                      </div>
-                    
                   
                   <div class="md-sidebar__inner">
                     
@@ -4580,25 +4571,6 @@
   
     
   
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#prerequisites-and-effects" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Prerequisites and effects
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
   
 </nav>
                   </div>
@@ -4752,44 +4724,59 @@
 
 
 <h1 id="markets-and-statistics">Markets and statistics</h1>
-<p>Markets provides an instrument catalogue and retained current observations. It is separate from historical archive acquisition: a ticker refresh does not download trade/order-book archives, and a current listing is not proof of historical availability.</p>
+<p>Use Markets to collect current instrument metadata, refresh retained observations, and publish rankings. For historical files and date coverage, use <a href="../acquisition/">Acquisition</a>.</p>
 <table>
 <thead>
 <tr>
-<th>Information</th>
-<th>Purpose</th>
+<th>I want to…</th>
+<th>Command</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Instrument metadata</td>
-<td>Native identity, assets, market/type, contract specification, lifecycle and status.</td>
+<td>Collect current instrument metadata</td>
+<td><code>mf markets sync</code></td>
 </tr>
 <tr>
-<td>Current statistics</td>
-<td>Last price, available rolling volumes/turnover, and optional open interest/funding, with units and timing evidence.</td>
+<td>Refresh current statistics for synchronized scopes</td>
+<td><code>mf markets refresh</code></td>
 </tr>
 <tr>
-<td>Historical archives</td>
-<td>Source files covering nominal historical intervals, managed by <a href="../acquisition/">acquisition</a>.</td>
+<td>Browse stored instruments and observations</td>
+<td><code>mf markets list</code></td>
 </tr>
 <tr>
-<td>Ranking snapshots</td>
-<td>Immutable selections and ordering computed from retained observations under a named policy.</td>
+<td>Inspect one stored instrument</td>
+<td><code>mf markets show REFERENCE</code></td>
+</tr>
+<tr>
+<td>Create or check a local policy</td>
+<td><code>mf markets rank new NAME</code> or <code>mf markets rank validate NAME</code></td>
+</tr>
+<tr>
+<td>Publish a snapshot from retained observations</td>
+<td><code>mf markets rank build NAME</code></td>
+</tr>
+<tr>
+<td>Refresh once and publish standard rankings</td>
+<td><code>mf markets rank update [turnover or volume]</code></td>
+</tr>
+<tr>
+<td>List published snapshots</td>
+<td><code>mf markets rank list</code></td>
+</tr>
+<tr>
+<td>Inspect a snapshot and its evidence</td>
+<td><code>mf markets rank show NAME_OR_UUID</code></td>
+</tr>
+<tr>
+<td>Preview snapshot maintenance</td>
+<td><code>mf markets rank delete NAME_OR_UUID</code></td>
 </tr>
 </tbody>
 </table>
-<p>Begin with <a href="instrument-discovery/">instrument discovery</a>, then <a href="market-statistics/">statistics interpretation</a> and <a href="rankings/">rankings</a>. Use the <a href="../../configuration/markets/">markets configuration</a> and <a href="../../reference/cli/markets/">CLI reference</a> for exact settings and options.</p>
-<h2 id="prerequisites-and-effects">Prerequisites and effects</h2>
-<p>Install Forge and configure the <a href="../acquisition/#prerequisites">guarded testing database</a>. The <code>markets sync</code>, <code>refresh</code>, <code>list</code>, and <code>show</code> commands default to production. Pass <code>--testing</code> for the testing registry. Ranking file creation and validation work without a database.</p>
-<ul>
-<li><code>sync</code> retrieves public instrument metadata and writes catalogue/sync records.</li>
-<li><code>refresh</code> retrieves current statistics and appends observations; run a matching successful sync first.</li>
-<li><code>list</code> and <code>show</code> browse stored data without network access or registry mutation.</li>
-<li><code>rank build</code> writes a published snapshot using stored observations; it does not refresh.</li>
-<li><code>rank update</code> retrieves statistics and publishes standard policy snapshots.</li>
-</ul>
-<p>Use filtered collections initially: omitting exchange/market filters selects all 14 supported current-market scopes. See each command's effects before running it. Examples here are parser/source-verified; no network or database workflow was executed for this documentation assignment.</p>
+<p>Database commands default to production. Pass <code>--testing</code> for the testing registry. Sync, refresh and standard update make public exchange requests. Build reads retained inputs and writes a snapshot. List and show read stored records.</p>
+<p>Start with <a href="instrument-discovery/">instrument discovery</a>, <a href="market-statistics/">statistics refresh</a>, or <a href="rankings/">ranking workflows</a>. See the <a href="../../reference/cli/markets/">CLI reference</a> and <a href="../../configuration/markets/">TOML reference</a> for exact syntax and defaults.</p>
 
 
 
@@ -4888,8 +4875,7 @@
       <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../assets/javascripts/keyboard.js"></script>
       

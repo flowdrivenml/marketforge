@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../instrument-discovery/">
       
       
@@ -27,7 +24,7 @@
       
       
       <link rel="icon" href="../../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
@@ -38,13 +35,12 @@
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -810,6 +806,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         What values mean
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#read-scope-outcomes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Read scope outcomes
       </span>
     </span>
   </a>
@@ -2615,7 +2622,7 @@
   <span class="md-ellipsis">
     
   
-  Market and ranking commands
+  Markets and ranking commands
 
     
   </span>
@@ -4712,6 +4719,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#read-scope-outcomes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Read scope outcomes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#provider-specific-volume-and-turnover" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4900,11 +4918,11 @@
 <h1 id="retrieve-and-interpret-market-statistics">Retrieve and interpret market statistics</h1>
 <h2 id="refresh-a-synchronized-selection">Refresh a synchronized selection</h2>
 <p>After a successful matching <a href="../instrument-discovery/">metadata sync</a>, refresh statistics:</p>
-<div class="highlight"><pre><span></span><code>marketforge<span class="w"> </span>markets<span class="w"> </span>refresh<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--market<span class="w"> </span>spot<span class="w"> </span>--instrument<span class="w"> </span>BTCUSDT<span class="w"> </span>--testing
-marketforge<span class="w"> </span>markets<span class="w"> </span>show<span class="w"> </span>bybit.spot.BTCUSDT<span class="w"> </span>--testing
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>refresh<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--market<span class="w"> </span>spot<span class="w"> </span>--instrument<span class="w"> </span>BTCUSDT<span class="w"> </span>--testing
+mf<span class="w"> </span>markets<span class="w"> </span>show<span class="w"> </span>bybit.spot.BTCUSDT<span class="w"> </span>--testing
 </code></pre></div>
 <p>Refresh contacts public endpoints and writes retained observations. Browsing reads stored values only. A current successful metadata membership is required for each selected scope; older or incomplete syncs do not certify the universe. A broad successful sync can support a symbol-filtered refresh; a narrow sync does not certify an unfiltered refresh. Refresh does not automatically synchronize metadata.</p>
-<p>A scope's browsing cache is published only when its required endpoint sequence succeeds. Individual observations can be retained before a later failure, so a failed scope may leave diagnostic observations without updating the displayed latest values. Successful independent scopes remain usable when others fail. Read collection status and per-scope outcomes rather than assuming every value was refreshed.</p>
+<p>A scope's browsing cache is published only when its required endpoint sequence succeeds. Individual observations can be retained before a later failure, so a failed scope may leave diagnostic observations without updating the displayed latest values. Successful independent scopes remain usable when others fail. An older source window does not replace a newer cached window. Fetch time breaks ties between equal window ends. Read collection status and per-scope outcomes rather than assuming every value was refreshed.</p>
 <h2 id="what-values-mean">What values mean</h2>
 <table>
 <thead>
@@ -4920,7 +4938,7 @@ marketforge<span class="w"> </span>markets<span class="w"> </span>show<span clas
 </tr>
 <tr>
 <td>Base/quote volume</td>
-<td>Rolling quantities in their stated asset; fields differ by provider and derivative type. Missing is not zero.</td>
+<td>Rolling quantities in their stated asset; fields differ by provider and derivative type. A missing quantity stays null. Zero can represent observed inactivity.</td>
 </tr>
 <tr>
 <td>Contract volume</td>
@@ -4936,11 +4954,26 @@ marketforge<span class="w"> </span>markets<span class="w"> </span>show<span clas
 </tr>
 <tr>
 <td>Funding rate</td>
-<td>Optional signed raw rate when returned; not annualized or converted to a universal funding interval. Dated futures have no funding value.</td>
+<td>Optional signed raw rate for the venue’s funding interval. Dated futures have no funding value.</td>
+</tr>
+<tr>
+<td>Source window and timestamps</td>
+<td>UTC window bounds and basis, upstream observation time when supplied, and fetch time.</td>
+</tr>
+<tr>
+<td>Freshness</td>
+<td>Browse indication using fetch time. Ranking separately checks source timing and configured tolerances.</td>
+</tr>
+<tr>
+<td>Provenance and estimate</td>
+<td>Mapping version, source field or formula, activity scope, and estimate flag. Use these to interpret native money and derived quantities.</td>
 </tr>
 </tbody>
 </table>
 <p>Spot does not universally expose funding/open interest. The mapper retains Bybit open interest in base units for linear and quote units for inverse, Gate derivative open interest in contracts, and available Bitget open interest in base units. Binance/OKX ticker mapping does not retrieve additional funding or open-interest endpoints. A field supported by the model need not be populated for every source.</p>
+<h2 id="read-scope-outcomes">Read scope outcomes</h2>
+<p><code>complete</code> means every requested scope finished. <code>partial</code> means one or more scopes did not finish successfully, including when all individual scopes fail. A command-level failure can terminate collection and leave a failed record with source diagnostics. Cancellation reports <code>cancelled</code> and exits 130. Successful scopes may still have published latest values. Read the per-scope results before using the data for ranking.</p>
+<p>The example refreshes one symbol. Omitting exchange and market filters selects all supported scopes. A filtered refresh does not certify the whole unfiltered scope.</p>
 <h2 id="provider-specific-volume-and-turnover">Provider-specific volume and turnover</h2>
 <table>
 <thead>
@@ -4993,12 +5026,12 @@ marketforge<span class="w"> </span>markets<span class="w"> </span>show<span clas
 <h2 id="timestamps-and-freshness">Timestamps and freshness</h2>
 <p><code>fetched_at</code> is retrieval time. <code>source_observed_at</code> is the upstream ticker time when supplied. <code>window_start</code>, <code>window_end</code> and <code>window_basis</code> describe the statistic's interval, not the timestamp of every underlying trade.</p>
 <p>Binance's supplied <code>openTime</code>/<code>closeTime</code> are retained. OKX/Bitget ticker generation timestamps support inferred preceding 24-hour windows. Without source time, the window is inferred from fetch time and labeled accordingly. A separate last-trade price timestamp is not invented: conversion evidence identifies the ticker/fetch-time proxy.</p>
-<p>Stored browsing marks missing collection separately from freshness; <code>stale</code> is based on <code>fetched_at</code> older than one hour (or absent). This display rule is weaker than ranking freshness: ranking checks fetch time <strong>and</strong> source-window time, future timestamps, and inter-window alignment. Re-fetching an old source interval does not make it suitable for ranking.</p>
+<p>Browse results retain activity scope, mapping version and estimation evidence. On Bitget a platform-local aggregate may cover only platform activity. A reported value from a broader product scope cannot stand in for it. Stored browsing marks missing collection separately from freshness; <code>stale</code> is based on <code>fetched_at</code> older than one hour (or absent). This display rule is weaker than ranking freshness: ranking checks fetch time <strong>and</strong> source-window time, future timestamps, and inter-window alignment. Re-fetching an old source interval does not make it suitable for ranking.</p>
 <p>These are retained current/rolling observations, not historical tick data or a backtest-ready point-in-time dataset.</p>
 <h2 id="filter-sort-and-inspect">Filter, sort and inspect</h2>
-<div class="highlight"><pre><span></span><code>marketforge<span class="w"> </span>markets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--exchange<span class="w"> </span>okx<span class="w"> </span>--market<span class="w"> </span>linear<span class="w"> </span>--sort<span class="w"> </span>turnover<span class="w"> </span>--limit<span class="w"> </span><span class="m">30</span>
-marketforge<span class="w"> </span>markets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--base-asset<span class="w"> </span>ETH<span class="w"> </span>--sort<span class="w"> </span>freshness<span class="w"> </span>--limit<span class="w"> </span><span class="m">20</span>
-marketforge<span class="w"> </span>--json<span class="w"> </span>markets<span class="w"> </span>show<span class="w"> </span>bybit.spot.BTCUSDT<span class="w"> </span>--testing
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>markets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--exchange<span class="w"> </span>okx<span class="w"> </span>--market<span class="w"> </span>linear<span class="w"> </span>--sort<span class="w"> </span>turnover<span class="w"> </span>--limit<span class="w"> </span><span class="m">30</span>
+mf<span class="w"> </span>markets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--base-asset<span class="w"> </span>ETH<span class="w"> </span>--sort<span class="w"> </span>freshness<span class="w"> </span>--limit<span class="w"> </span><span class="m">20</span>
+mf<span class="w"> </span>--json<span class="w"> </span>markets<span class="w"> </span>show<span class="w"> </span>bybit.spot.BTCUSDT<span class="w"> </span>--testing
 </code></pre></div>
 <p><code>identity</code> is the default sort. <code>turnover</code> sorts descending <strong>within native denomination groups</strong>, never by a hidden cross-currency conversion. <code>freshness</code> orders by stored measured/window-end time, not the one-hour fetch-time indicator. There is no <code>--instrument-type</code> option on <code>markets list</code>; use returned type metadata, exact symbols or qualified <code>show</code> references.</p>
 <p>For stale/missing results, inspect the last collection's per-scope errors, synchronize changed metadata if necessary, and deliberately refresh the required scope. Do not convert missing values into zeros or loosen policy constraints without understanding the resulting comparison.</p>
@@ -5100,8 +5133,7 @@ marketforge<span class="w"> </span>--json<span class="w"> </span>markets<span cl
       <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../../assets/javascripts/keyboard.js"></script>
       

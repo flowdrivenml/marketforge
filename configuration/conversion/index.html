@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../merge-runtime/">
       
       
@@ -27,7 +24,7 @@
       
       
       <link rel="icon" href="../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
@@ -38,13 +35,12 @@
       
         
       
-      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -2511,7 +2507,7 @@
   <span class="md-ellipsis">
     
   
-  Market and ranking commands
+  Markets and ranking commands
 
     
   </span>
@@ -2855,6 +2851,23 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion recipes
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="././" class="md-nav__link md-nav__link--active">
         
   
@@ -2870,6 +2883,37 @@
   
 
       </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#direct-publication-binding" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Direct publication binding
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -4574,6 +4618,11 @@
                       
                     
                     
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
                   
                   <div class="md-sidebar__inner">
                     
@@ -4585,6 +4634,25 @@
   
     
   
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#direct-publication-binding" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Direct publication binding
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -4769,17 +4837,17 @@
 </tr>
 <tr>
 <td><code>source.kind</code></td>
-<td>Required <code>merge</code>, <code>normalize</code>, or <code>acquisition</code></td>
-<td>Upstream recipe family</td>
+<td>Required <code>merge</code>, <code>normalize</code>, <code>acquisition</code>, or <code>publication</code></td>
+<td>Type of source binding</td>
 </tr>
 <tr>
 <td><code>source.reference</code>, <code>source.path</code></td>
-<td>Required nonblank strings</td>
+<td>Required nonblank strings for recipe sources</td>
 <td>Named or explicit upstream reference and resolved path, verified on load</td>
 </tr>
 <tr>
 <td><code>source.sha256</code></td>
-<td>Required 64 lowercase hex characters</td>
+<td>Required 64 lowercase hex characters for recipe sources</td>
 <td>Upstream TOML fingerprint</td>
 </tr>
 <tr>
@@ -4849,6 +4917,44 @@
 </tr>
 </tbody>
 </table>
+<h2 id="direct-publication-binding">Direct publication binding</h2>
+<p>Use <code>mf convert new NAME --from-publication MERGED_PUBLICATION_ID --target-quote USDT --testing</code> to generate the declaration. The selected merge can be used independently of the editable TOML that produced it.</p>
+<table>
+<thead>
+<tr>
+<th>Publication source field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>source.kind</code></td>
+<td><code>publication</code></td>
+</tr>
+<tr>
+<td><code>source.registry_publication_id</code></td>
+<td>Positive signed 64-bit ID of the exact registered merge</td>
+</tr>
+<tr>
+<td><code>source.registry_id</code>, <code>source.environment</code></td>
+<td>Registry UUID and <code>testing</code> or <code>production</code> binding</td>
+</tr>
+<tr>
+<td><code>source.engine_publication_id</code></td>
+<td>Canonical positive uint64 decimal string</td>
+</tr>
+<tr>
+<td><code>source.manifest_sha256</code>, <code>source.processing_job_sha256</code>, <code>source.publication_checksums_sha256</code></td>
+<td>Lowercase SHA-256 fingerprints of the committed manifest, merge job and publication checksum index</td>
+</tr>
+<tr>
+<td><code>source.interval.start_ns</code>, <code>source.interval.end_ns</code></td>
+<td>Exact signed 64-bit nanosecond bounds from the committed half-open range</td>
+</tr>
+</tbody>
+</table>
+<p>A direct recipe requires <code>selection.whole_publication = true</code> and its top-level <code>interval</code> must equal the committed range. Omit <code>selection.file_dataset_ids</code>, <code>selection.publication_ids</code>, and <code>selection.expected_engine_publication_ids</code> for this source. Reference selection remains independent. Configure explicit trade streams when the conversion needs them. A target quote equal to the historical quote can use the existing identity route.</p>
+<p>List, show, and local recipe validation can inspect this declaration offline. Prepare in the bound environment to recheck eligibility and metadata fingerprints, then verify the full publication, normalized parents, namespace, stream membership, and historical currencies. Prepared submissions retain the publication declaration alongside the existing job and input evidence. Preparation keeps the whole publication, including any state reconstruction; the interval does not crop rows.</p>
 <p>Absence of an optional field means omission in TOML. The Engine gets the resolved bindings, resources and writer configuration in a generated job. The Forge collection and execution intent are <a href="../../reference/prepared-forge/">separate artifacts</a>. <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/conversion/recipes.py">Recipe model</a></p>
 
 
@@ -4948,8 +5054,7 @@
       <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../assets/javascripts/keyboard.js"></script>
       

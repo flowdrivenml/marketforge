@@ -1,6 +1,4 @@
 
-
-
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -16,7 +14,6 @@
       
       
       
-      
         <link rel="prev" href="../merge/">
       
       
@@ -27,7 +24,7 @@
       
       
       <link rel="icon" href="../../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.3">
+      <meta name="generator" content="zensical-0.1.1">
     
     
       
@@ -38,13 +35,12 @@
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
-      
       
       
 
@@ -2665,7 +2661,7 @@
   <span class="md-ellipsis">
     
   
-  Market and ranking commands
+  Markets and ranking commands
 
     
   </span>
@@ -5078,45 +5074,54 @@
 <p>Execution reports verified publications and their reusable output references. Use <code>mf datasets show --output-ref REF --testing</code> for a testing result. Converted outputs use the durable output index. Catalogue registration is unavailable.</p>
 <h2 id="synopsis-and-arguments">Synopsis and arguments</h2>
 <h3 id="mf-convert-new"><code>mf convert new</code></h3>
-<div class="highlight"><pre><span></span><code>mf convert new [-h]
-                               (--from-merge SOURCE | --from-normalize SOURCE | --from-acquisition SOURCE)
-                               --target-quote TARGET_QUOTE [--testing | --production]
-                               reference
+<div class="highlight"><pre><span></span><code>mf convert new NAME (--from-merge SOURCE | --from-normalize SOURCE |
+                     --from-acquisition SOURCE | --from-publication MERGED_PUBLICATION_ID)
+                    --target-quote CURRENCY [--testing | --production]
 </code></pre></div>
 <table>
 <thead>
 <tr>
 <th>Argument or option</th>
-<th>Parser contract</th>
+<th>Meaning</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>reference</code></td>
-<td>Required.</td>
+<td><code>NAME</code></td>
+<td>Name of the new managed conversion recipe. The destination must be unused.</td>
 </tr>
 <tr>
-<td><code>--from-merge</code></td>
-<td>Optional.</td>
+<td><code>--from-merge SOURCE</code></td>
+<td>Existing merge recipe name or TOML path. Numeric names still select recipes.</td>
 </tr>
 <tr>
-<td><code>--from-normalize</code></td>
-<td>Optional.</td>
+<td><code>--from-normalize SOURCE</code></td>
+<td>Existing normalization recipe name or TOML path.</td>
 </tr>
 <tr>
-<td><code>--from-acquisition</code></td>
-<td>Optional.</td>
+<td><code>--from-acquisition SOURCE</code></td>
+<td>Existing acquisition recipe name or TOML path.</td>
 </tr>
 <tr>
-<td><code>--target-quote</code></td>
-<td>Required.</td>
+<td><code>--from-publication MERGED_PUBLICATION_ID</code></td>
+<td>Registry publication ID of one eligible committed merge in the selected environment. Get it from the <a href="../datasets/">publication view</a>.</td>
+</tr>
+<tr>
+<td><code>--target-quote CURRENCY</code></td>
+<td>Required uppercase ASCII alphanumeric currency code, such as <code>USDT</code>.</td>
 </tr>
 <tr>
 <td><code>--testing</code>, <code>--production</code></td>
-<td>Mutually exclusive. Defaults to production.</td>
+<td>Mutually exclusive. Defaults to production. Publication lookup uses this registry.</td>
 </tr>
 </tbody>
 </table>
+<p>Supply exactly one source option. The first two commands below are alternatives for the same destination name. Replace <code>MERGED_PUBLICATION_ID</code> with the registry publication ID shown by <code>mf datasets list --testing --view publications --operation merge</code>. Engine IDs, primary-file IDs, job or run IDs, recipe names, and paths identify other artifacts.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>convert<span class="w"> </span>new<span class="w"> </span>getting_started_usdt<span class="w"> </span>--from-merge<span class="w"> </span>getting_started<span class="w"> </span>--target-quote<span class="w"> </span>USDT<span class="w"> </span>--testing
+mf<span class="w"> </span>convert<span class="w"> </span>new<span class="w"> </span>getting_started_usdt<span class="w"> </span>--from-normalize<span class="w"> </span>getting_started<span class="w"> </span>--target-quote<span class="w"> </span>USDT<span class="w"> </span>--testing
+mf<span class="w"> </span>convert<span class="w"> </span>new<span class="w"> </span>merged_usdt<span class="w"> </span>--from-publication<span class="w"> </span>MERGED_PUBLICATION_ID<span class="w"> </span>--target-quote<span class="w"> </span>USDT<span class="w"> </span>--testing
+</code></pre></div>
+<p>Recipe-based creation fingerprints the source TOML locally. Publication-based creation reads the selected registry and checks the merge’s committed metadata before writing the recipe. Missing, incompatible, superseded, retired, or invalidated publications stop creation. To choose a replacement, supply its ID explicitly. Physical verification and reference resolution happen during preparation. Creation leaves processing and execution readiness for later.</p>
 <h3 id="mf-convert-validate"><code>mf convert validate</code></h3>
 <div class="highlight"><pre><span></span><code>mf convert validate [-h] reference
 </code></pre></div>
@@ -5196,12 +5201,12 @@
 <tbody>
 <tr>
 <td><code>new</code></td>
-<td>A new managed name, exactly one upstream selector and an explicit target currency. Reads and fingerprints the upstream TOML. Writes a recipe and refuses an existing destination. Source selectors accept managed names or explicit paths. The parsed <code>--testing</code> flag is optional because creation performs no registry selection</td>
-<td><code>status: "template_created"</code>, <code>path</code>, and <code>source</code> with the retained declaration</td>
+<td>A new managed name, exactly one upstream selector and an explicit target currency. Binds an upstream recipe fingerprint or an exact registered merge and writes a new recipe. Interactive human mode opens the editor</td>
+<td><code>status: "template_created"</code>, <code>path</code>, and <code>source</code> with the retained declaration. Direct selection also reports binding, execution scope, reference review and execution readiness</td>
 </tr>
 <tr>
 <td><code>validate</code></td>
-<td>Managed recipe name, TOML path, or individual job JSON. A recipe check validates its structure, local constraints and source fingerprint. A job check runs the managed converter’s <code>--validate</code>; install it first. The Forge collection is not a standalone Rust job</td>
+<td>Managed recipe name, TOML path, or individual job JSON. A recipe check validates its structure and local constraints, plus the source fingerprint for recipe-based bindings. A publication declaration is checked locally; current registry eligibility is checked during preparation. A job check runs the managed converter’s <code>--validate</code>; install it first. The Forge collection is not a standalone Rust job</td>
 <td><code>status: "valid"</code>, <code>path</code>, <code>validation</code>, and <code>recipe</code> for TOML</td>
 </tr>
 <tr>
@@ -5219,7 +5224,7 @@
 <p><code>--tui</code> is an execution option and is mutually exclusive with global <code>--json</code>. An action report with <code>status</code> of <code>blocked</code>, <code>failed</code>, or <code>interrupted</code> returns exit 1. A retained <code>generated</code> preparation with unvalidated compatibility returns exit 1. A successful dry run can return exit 0 without Rust job validation. Parse and handled configuration errors use the <a href="../">shared CLI rules</a>.</p>
 <h2 id="preparation-result">Preparation result</h2>
 <p>Read <code>status</code> and <code>compatibility</code> together. <code>blocked</code> identifies failed selection, evidence or metadata and lists <code>blockers</code>. <code>generated</code> identifies a successfully constructed job specification. The CLI uses <code>status: "generated"</code> even when the production parser passes. In that case, <code>compatibility: "validated"</code> records an installed binary that validated every saved job with no remaining compatibility blockers. Otherwise <code>compatibility: "not_validated"</code> retains the exact reasons in <code>compatibility_blockers</code>.</p>
-<p>The report identifies requested and effective publication scope, the upstream TOML and digest, source and external reference publications, resolved streams and effective settings. <code>job_path</code> points to the Forge collection or is null on dry run. <code>report_path</code> identifies the saved report when written. In a persisted report <code>jobs[]</code> contains <code>path</code> and <code>sha256</code>, an integer <code>job_id</code>, destination <code>output</code>, selected <code>references</code>, source registry publication ID and string Engine publication ID, and <code>engine_validation</code> of <code>not_run</code>, <code>passed</code>, or <code>failed</code>. Successful validation can include <code>validation_output</code>. The dry-run job records <code>intended_job_path</code> in place of the saved path and digest. <code>artifacts</code> records file pins when persisted.</p>
+<p>The report identifies requested and effective publication scope, the upstream recipe fingerprint or exact publication binding, source and external reference publications, resolved streams and effective settings. <code>job_path</code> points to the Forge collection or is null on dry run. <code>report_path</code> identifies the saved report when written. In a persisted report <code>jobs[]</code> contains <code>path</code> and <code>sha256</code>, an integer <code>job_id</code>, destination <code>output</code>, selected <code>references</code>, source registry publication ID and string Engine publication ID, and <code>engine_validation</code> of <code>not_run</code>, <code>passed</code>, or <code>failed</code>. Successful validation can include <code>validation_output</code>. The dry-run job records <code>intended_job_path</code> in place of the saved path and digest. <code>artifacts</code> records file pins when persisted.</p>
 <h2 id="compatibility-and-publication">Compatibility and publication</h2>
 <p>Current standalone conversion consumes chronological and causal physical merge publications under its validation rules. Matching depth membership does not prevent a configured trade stream from being a reference. Trade-only execution uses internal references. Depth-only requires an external trade-only merge. Combined can bind selected internal trades and supported external references. The policy can consider multiple currency paths within the configured hop limit. It still needs eligible prior observations at event execution.</p>
 <p>Instrument metadata is embedded in the prepared job. Forge checks the workspace preparation catalogue against verified historical evidence if the file exists. The Engine does not read a fixed instrument catalogue to run a standalone job. Atomic conversion publication currently requires Linux. Committed converted files can be inspected through Arrow. Conversion registration is unavailable.</p>
@@ -5326,8 +5331,7 @@ mf<span class="w"> </span>convert<span class="w"> </span>run<span class="w"> </s
       <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
-      
+      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../../assets/javascripts/keyboard.js"></script>
       
