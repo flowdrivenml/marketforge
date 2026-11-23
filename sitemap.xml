@@ -250,13 +250,28 @@
         <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/publications/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/python-datasets/</loc>
-      </url>
-      <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/registration/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/runtime/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/research/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/research/discovery/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/research/notebooks/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/research/partitions/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/research/python-api/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/research/querying/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/workflows/</loc>
@@ -293,9 +308,6 @@
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/workflows/inspection/datasets/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/workflows/inspection/notebooks/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/workflows/inspection/runs/</loc>
