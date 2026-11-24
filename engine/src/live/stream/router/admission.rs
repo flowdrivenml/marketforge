@@ -125,7 +125,7 @@ struct OriginalEvent {
     admission: Arc<AdmissionIdentity>,
     ordinal: u64,
     native: NativeIdentity,
-    integrity: Option<Arc<crate::stream_protocol::DataIntegrityEvidence>>,
+    integrity: Option<Arc<crate::live::streaming::protocol::DataIntegrityEvidence>>,
 }
 
 /// Opaque evidence issued for one actual Router delivery record. Applications
@@ -137,7 +137,9 @@ pub struct EventEvidence {
     original: Arc<OriginalEvent>,
 }
 impl EventEvidence {
-    pub fn integrity(&self) -> Option<&Arc<crate::stream_protocol::DataIntegrityEvidence>> {
+    pub fn integrity(
+        &self,
+    ) -> Option<&Arc<crate::live::streaming::protocol::DataIntegrityEvidence>> {
         self.original.integrity.as_ref()
     }
     pub(crate) fn original_identity(&self) -> &AdmissionIdentity {
@@ -178,7 +180,7 @@ impl RouterAdmission {
     pub fn integrity(
         &self,
         index: usize,
-    ) -> Option<&Arc<crate::stream_protocol::DataIntegrityEvidence>> {
+    ) -> Option<&Arc<crate::live::streaming::protocol::DataIntegrityEvidence>> {
         self.originals.get(index)?.as_ref()?.integrity.as_ref()
     }
     pub fn semantics(&self) -> PublicationSemantics {
@@ -208,7 +210,7 @@ impl RouterAdmission {
         sequence: u64,
         semantics: PublicationSemantics,
         publication: &RouterPublication,
-        integrity: Option<Arc<crate::stream_protocol::DataIntegrityEvidence>>,
+        integrity: Option<Arc<crate::live::streaming::protocol::DataIntegrityEvidence>>,
     ) -> Self {
         let records = match publication {
             RouterPublication::Trades { records, .. } => records.len(),

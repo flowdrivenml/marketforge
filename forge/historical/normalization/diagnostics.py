@@ -6,7 +6,13 @@ from forge.markets.models import array, obj
 
 
 def blocker_category(reason: str) -> str:
-    if reason.startswith("No immutable historical specification"):
+    if reason.startswith(
+        (
+            "No immutable historical specification",
+            "No applicable immutable specification",
+            "No applicable explicit historical specification",
+        )
+    ):
         return "missing_historical_specifications"
     if reason.startswith("Historical family catalogue prerequisite missing"):
         return "missing_historical_family_authority"

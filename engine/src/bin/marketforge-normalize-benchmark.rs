@@ -21,14 +21,15 @@ fn execute() -> Result<(), String> {
                 output_root,
                 project_root,
             } => {
-                let root = marketforge_engine::shared::historical::project_root(project_root)
-                    .map_err(|e| e.to_string())?;
-                let output = output_root.as_ref().map(|p| {
-                    plan::absolute_from(
-                        p,
-                        &std::env::current_dir().unwrap_or_else(|_| root.clone()),
-                    )
-                });
+                let invocation = std::env::current_dir().map_err(|e| e.to_string())?;
+                let root = marketforge_engine::shared::workspace::resolve(
+                    project_root.as_deref(),
+                    &invocation,
+                )
+                .map_err(|e| e.to_string())?;
+                let output = output_root
+                    .as_ref()
+                    .map(|p| plan::absolute_from(p, &invocation));
                 let directory = reports::compare_paths(
                     baseline,
                     candidate,

@@ -266,7 +266,7 @@ def test_metadata_and_installed_definitions_are_covered() -> None:
 
 def test_reference_is_current() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "engine/scripts/generate_profile_schema.py"), "--check"],
+        [sys.executable, str(ROOT / "scripts/engine/generation/generate_profile_schema.py"), "--check"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -327,8 +327,8 @@ def test_generator_detects_rust_drift(
     sources = [f"engine/{name}" for name in load_schema().rust_sources]
     sources.extend(
         (
-            "engine/specs/normalization-profile.toml",
-            "engine/scripts/generate_profile_schema.py",
+            "scripts/engine/generation/normalization-profile.toml",
+            "scripts/engine/generation/generate_profile_schema.py",
             "forge/historical/profiles/schema.json",
             "docs/content/reference/configuration/profile-fields.md",
         )
@@ -342,7 +342,7 @@ def test_generator_detects_rust_drift(
     assert existing in content
     changed.write_text(content.replace(existing, replacement, 1))
     result = subprocess.run(
-        [sys.executable, str(tmp_path / "engine/scripts/generate_profile_schema.py"), "--check"],
+        [sys.executable, str(tmp_path / "scripts/engine/generation/generate_profile_schema.py"), "--check"],
         capture_output=True,
         text=True,
         check=False,

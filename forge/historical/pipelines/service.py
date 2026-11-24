@@ -1,7 +1,6 @@
 """Durable, fixed acquire → normalize → merge pipeline."""
 
 import asyncio
-import hashlib
 import json
 import os
 import shutil
@@ -49,7 +48,7 @@ from forge.historical.pipelines.terminal import (
     WindowLost,
     WindowUnavailable,
 )
-from forge.orchestration.artifacts import RunArtifacts
+from forge.orchestration.artifacts import RunArtifacts, retain_bytes
 from forge.orchestration.registry import begin, complete_call, show_index, status_of
 from forge.shared.config.models import AppSettings
 from forge.shared.database.connection import (
@@ -1093,7 +1092,7 @@ def new(
     run_id = new_run_id(RunOperation.PIPELINE)
     artifacts = RunArtifacts.for_run(context.paths, run_id)
     artifacts.steps_dir.mkdir(parents=True, exist_ok=False)
-    artifacts.submitted_config.write_bytes(submitted)
+    submitted_sha256 = retain_bytes(artifacts.submitted_config, submitted)
     resolved: dict[str, Any] = {
         "schema_version": 1,
         "recipe": recipe.model_dump(mode="json"),
@@ -1115,7 +1114,8 @@ def new(
         "report_path": str(artifacts.report),
         "resolved_plan": str(artifacts.resolved_plan),
         "event_log": str(artifacts.events),
-        "submitted_sha256": hashlib.sha256(submitted).hexdigest(),
+        "submitted_sha256": submitted_sha256,
+        "submitted_config": str(artifacts.submitted_config),
         "resolved_sha256": checksum(artifacts.resolved_plan),
         "stages": {stage: {"state": "pending", "phases": {}} for stage in recipe.stage_order()},
         "recent": [],

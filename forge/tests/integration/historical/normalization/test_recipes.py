@@ -28,10 +28,8 @@ from forge.historical.engine.managed import checksum
 from forge.historical.metadata.policy import NAMESPACE, POLICY_VERSION
 from forge.historical.metadata.resolution import profile_fingerprints
 from forge.historical.normalization.batch import plan_batch, publish_batch
-from forge.historical.normalization.service import write_job
 from forge.markets.models import Instrument, array, obj
 from forge.markets.repository import save_instrument
-from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -176,11 +174,11 @@ async def test_two_forge_jobs_three_tasks_deduplicated_and_no_engine(
     runtime.write_bytes(
         (ROOT / "engine/src/shared/historical/config/fixtures/runtime.toml").read_bytes()
     )
-    with pytest.raises(MarketForgeError, match="Managed engine normalize: missing"):
-        publish_batch(paths, plan, report)
-    assert not plan.run.exists()
-    # Simulate retained prepared artifacts for the allocation collision check.
-    write_job(plan.run / "normalize-batch.json", plan.batch)
+    publish_batch(paths, plan, report)
+    assert report["status"] == "blocked" and not report["engine_ready"]
+    assert report["failed_stage"] == "Engine binary resolution"
+    assert "Managed engine normalize: missing" in str(report["error"])
+    assert obj(json.loads((plan.run / "prepare-report.json").read_bytes())) == report
     wrapper = obj(json.loads((plan.run / "normalize-batch.json").read_text()))
     assert wrapper["kind"] == "normalization_batch" and wrapper["schema_version"] == 4
     assert array(wrapper["jobs"]) == list(plan.jobs.values())

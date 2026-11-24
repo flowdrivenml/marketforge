@@ -419,7 +419,10 @@ impl StreamRouter {
     pub(crate) fn retained_integrity_view(
         &self,
         id: &str,
-    ) -> (Vec<crate::stream_protocol::DataIntegrityEvidence>, bool) {
+    ) -> (
+        Vec<crate::live::streaming::protocol::DataIntegrityEvidence>,
+        bool,
+    ) {
         let state = self.shared.state.lock();
         let sources = self.shared.integrity_sources(id).unwrap_or_default();
         (
@@ -432,7 +435,10 @@ impl StreamRouter {
             state.integrity_history_truncated,
         )
     }
-    pub fn integrity_view(&self, id: &str) -> crate::stream_protocol::DataIntegritySnapshot {
+    pub fn integrity_view(
+        &self,
+        id: &str,
+    ) -> crate::live::streaming::protocol::DataIntegritySnapshot {
         self.shared
             .integrity_snapshot(&self.shared.state.lock(), id)
     }

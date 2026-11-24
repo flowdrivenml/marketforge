@@ -343,54 +343,61 @@ async def test_catalogue_pilot_profile_authoring(
 async def exercise_profile_editor(
     app: ForgeApp, pilot: Pilot[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from collections.abc import Generator
-    from contextlib import contextmanager
-
-    from forge.tui import app as workspace
+    from forge.historical.archives.storage.files import disk
     from forge.tui.catalogue import draft_path
 
     original = profiles.installed(app.context.paths, "profile_fixture.spot.spot.trades")
     original_bytes = original.read_bytes()
     clone = "profile_clone.spot.spot.trades"
     draft = draft_path(app.context.paths, clone)
-    calls: list[str] = []
+    launches: list[Path] = []
 
-    @contextmanager
-    def suspend() -> Generator[None]:
-        calls.append("suspend")
-        try:
-            yield
-        finally:
-            calls.append("restore")
+    async def editor(path: Path, **_: object) -> None:
+        assert path != draft and path != original
+        launches.append(path)
+        data = await disk(path.read_bytes)
+        await disk(path.write_bytes, data.replace(b"PROFILE-FIXTURE-T1", b"PROFILE-CLONE-T1"))
 
-    def editor(path: Path, *, editor: str, fallback: str) -> None:
-        assert path != draft and path != original and fallback == "nvim"
-        path.write_bytes(path.read_bytes().replace(b"PROFILE-FIXTURE-T1", b"PROFILE-CLONE-T1"))
+    async def editor_review() -> Inspection:
+        await pause_until(pilot, lambda: draft in app.editor_sessions and not app.editor_open)
+        await pilot.press("f9")
+        await pause_until(pilot, lambda: isinstance(app.screen, ActionMenu))
+        assert isinstance(app.screen, ActionMenu)
+        await pilot.click(f"#menu-{app.screen.actions.index(str(draft))}")
+        await pause_until(pilot, lambda: isinstance(app.screen, Inspection))
+        assert isinstance(app.screen, Inspection)
+        return app.screen
 
-    monkeypatch.setattr(app, "suspend", suspend)
-    monkeypatch.setattr(workspace, "edit_file", editor)
+    monkeypatch.setattr("forge.tui.app.edit_in_window", editor)
     assert isinstance(app.screen, Inspection)
     app.screen.links["Edit in Neovim"]()
-    await pause_until(pilot, lambda: isinstance(app.screen, Confirm))
-    await pilot.pause()
+    screen = await editor_review()
     changed = draft.read_bytes() + b"\n# External update\n"
     draft.write_bytes(changed)
+    screen.links["Apply reviewed changes"]()
+    await pause_until(pilot, lambda: isinstance(app.screen, Confirm))
     await pilot.click("#confirm")
-    await pause_until(
-        pilot,
-        lambda: isinstance(app.screen, Inspection) and app.screen.heading == "Profile edit blocked",
-    )
-    assert draft.read_bytes() == changed
+    await pause_until(pilot, lambda: app.editor_sessions[draft].state == "Apply blocked")
+    assert draft.read_bytes() == changed and launches[0].exists()
+    await pilot.press("escape")
+    screen = await editor_review()
+    screen.links["Discard draft"]()
+    await pause_until(pilot, lambda: isinstance(app.screen, Confirm))
+    await pilot.click("#confirm")
+    await pause_until(pilot, lambda: draft not in app.editor_sessions)
     await pilot.press("escape")
     assert isinstance(app.screen, Inspection)
     app.screen.links["Edit in Neovim"]()
+    screen = await editor_review()
+    screen.links["Apply reviewed changes"]()
     await pause_until(pilot, lambda: isinstance(app.screen, Confirm))
-    await pilot.pause()
     await pilot.click("#confirm")
     await pause_until(
         pilot,
         lambda: (
-            isinstance(app.screen, Inspection) and app.screen.heading.startswith("Profile draft")
+            isinstance(app.screen, Inspection)
+            and app.screen.heading.startswith("Profile draft")
+            and draft not in app.editor_sessions
         ),
     )
     assert isinstance(app.screen, Inspection)
@@ -400,6 +407,6 @@ async def exercise_profile_editor(
         pilot,
         lambda: isinstance(app.screen, Inspection) and app.screen.heading == "Profile save result",
     )
-    assert calls == ["suspend", "restore", "suspend", "restore"]
+    assert len(launches) == 2 and not any(path.exists() for path in launches)
     assert original.read_bytes() == original_bytes
     assert profiles.installed(app.context.paths, clone).read_bytes() == draft.read_bytes()

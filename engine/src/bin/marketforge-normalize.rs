@@ -12,7 +12,7 @@ use {
     marketforge_engine::historical::job::ProcessingJob,
     marketforge_engine::historical::normalize::ProcessingConfig,
     marketforge_engine::historical::normalize::config::{
-        DEFAULT_NORMALIZE_CONFIG, DEFAULT_PROFILES_ROOT, project_root, resolve_path,
+        DEFAULT_NORMALIZE_CONFIG, DEFAULT_PROFILES_ROOT, resolve_path,
     },
     marketforge_engine::historical::normalize::execute_processing_job,
     marketforge_engine::historical::normalize::load_processing_config,
@@ -80,8 +80,8 @@ struct Args {
     config: PathBuf,
 
     /// Project root used to resolve processing configuration.
-    #[arg(long, default_value = ".")]
-    project_root: PathBuf,
+    #[arg(long)]
+    project_root: Option<PathBuf>,
 
     /// Write the authoritative execution response to a fresh file.
     #[arg(long, requires = "batch")]
@@ -175,13 +175,20 @@ fn bind_submission(jobs: &mut [ProcessingJob], fingerprint: &str) {
     }
 }
 
+fn workspace(args: &Args) -> std::io::Result<PathBuf> {
+    marketforge_engine::shared::workspace::resolve(
+        args.project_root.as_deref(),
+        &std::env::current_dir()?,
+    )
+}
+
 fn execute(
     args: &Args,
     run_id: &mut Option<String>,
     total: &mut usize,
     results: &mut Vec<ProcessingResult>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let root = project_root(&args.project_root)?;
+    let root = workspace(args)?;
     // Identify batch/run before configuration failure, without opening sources.
     let submission_sha256 = args
         .batch
@@ -358,7 +365,7 @@ fn main() -> std::process::ExitCode {
                 return Ok(marketforge_engine::shared::historical::config::runtime_schema());
             }
             if let Some(path) = &args.runtime_settings {
-                let config = load_processing_config(path, project_root(&args.project_root)?)?;
+                let config = load_processing_config(path, workspace(&args)?)?;
                 return Ok(serde_json::to_value(config)?);
             }
             if let Some(path) = &args.validate_profiles {
@@ -367,7 +374,7 @@ fn main() -> std::process::ExitCode {
                     serde_json::json!({"schema_version":1,"kind":"profile_validation","profiles":catalog.profiles().map(|p| serde_json::json!({"id":p.definition.id,"fingerprint":p.fingerprint,"unsupported_reason":p.definition.unsupported_reason,"format_code":p.definition.format_code})).collect::<Vec<_>>()}),
                 );
             }
-            let root = project_root(&args.project_root)?;
+            let root = workspace(&args)?;
             let batch = read_prepared_batch(
                 args.validate_batch
                     .as_ref()

@@ -160,10 +160,10 @@ impl LiveApplicationHandle {
     }
     pub async fn stream_action(
         &self,
-        request: crate::live::control::StreamActionRequest,
+        request: crate::live::application::StreamActionRequest,
     ) -> Result<(), ApplicationError> {
         match request.action {
-            crate::live::control::StreamAction::Restart => {
+            crate::live::application::StreamAction::Restart => {
                 self.retry_stream(&request.stream_id).await
             }
             _ => Err(ApplicationError(
@@ -385,7 +385,7 @@ impl LiveApplication {
         })
         .await
         .map_err(|_| ApplicationError("processing initialization task failed".into()))??;
-        let server = match crate::live::transport::unix::UnixStreamingServer::bind(
+        let server = match crate::live::streaming::transport::unix::UnixStreamingServer::bind(
             router.clone(),
             config.publication.clone(),
         )
@@ -566,7 +566,7 @@ async fn run(
     builder: Arc<SourceRuntimeBuilder>,
     supervisor: Arc<tokio::sync::Mutex<SourceRuntimeSupervisor>>,
     mut processing: ProcessingService,
-    server: crate::live::transport::unix::UnixStreamingServer,
+    server: crate::live::streaming::transport::unix::UnixStreamingServer,
     recovery: RecoveryHandle,
     recovery_task: JoinHandle<()>,
     collector: Arc<MetricsSnapshotCollector>,

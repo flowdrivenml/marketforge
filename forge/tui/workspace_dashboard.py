@@ -17,9 +17,10 @@ from textual.widgets import Button, Static
 from forge.datasets.query import utc
 from forge.datasets.workspace_inventory import WorkspaceInventory
 from forge.orchestration.run_summary import when
-from forge.shared.terminal.palette import CYAN, GREEN, MUTED, RED, YELLOW
+from forge.shared.terminal.palette import BLUE, CYAN, GREEN, MUTED, YELLOW
+from forge.tui.design import SECONDARY
 from forge.tui.inventory import size_label
-from forge.tui.presentation import Cell, Results, cell_text
+from forge.tui.presentation import Cell, Results, cell_text, status
 
 STAGES = ("Raw", "Normalized", "Merged", "Converted")
 OPERATIONS = {
@@ -29,7 +30,6 @@ OPERATIONS = {
     "convert": "Conversion",
     "pipeline": "Pipeline",
 }
-COLORS = {"Completed": GREEN, "Failed": RED, "Pending": YELLOW, "—": MUTED}
 
 
 def operation(item: Mapping[str, object]) -> str:
@@ -54,7 +54,7 @@ def outcome(item: Mapping[str, object], *, active: bool = False) -> str:
 
 
 def result(value: str) -> Text:
-    return Text(value, style=COLORS[value])
+    return status(value)
 
 
 def stamp(value: object) -> str:
@@ -282,12 +282,25 @@ class WorkspaceDashboard(Vertical):
                 widget.update("Unavailable" if stale else "Loading…")
             return
         marker = " · Stale" if stale else ""
-        table = Table("Exchange", "Spot", "Perpetual", "Futures", "Equity", box=None, expand=True)
+        table = Table(
+            "Exchange",
+            "Spot",
+            "Perpetual",
+            "Futures",
+            "Equity",
+            box=None,
+            expand=True,
+            header_style=f"bold {BLUE}",
+        )
         for exchange, spot, perp, future, equity, _ in data.universe:
             table.add_row(str(exchange), str(spot), str(perp), str(future), str(equity))
         other = sum(row[-1] - sum(row[1:5]) for row in data.universe)
-        headline = Text(
-            f"{data.registered:,} registered · {data.exchanges:,} exchanges{marker}", CYAN
+        headline = Text.assemble(
+            (f"{data.registered:,}", f"bold {CYAN}"),
+            " registered · ",
+            (f"{data.exchanges:,}", CYAN),
+            " exchanges",
+            (marker, YELLOW),
         )
         from rich.console import Group
 
@@ -308,18 +321,22 @@ class WorkspaceDashboard(Vertical):
             expand=True,
             collapse_padding=True,
             pad_edge=False,
+            header_style=f"bold {BLUE}",
         )
         for exchange, kind, category, trades, depth in data.availability:
             available.add_row(
                 str(exchange),
                 market(kind, category),
-                Text("✓", GREEN) if trades else Text("—"),
-                Text("✓", GREEN) if depth else Text("—"),
+                Text("✓", GREEN) if trades else Text("—", MUTED),
+                Text("✓", GREEN) if depth else Text("—", MUTED),
             )
         availability.update(
-            Group(Text("Recorded presence · gaps may exist" + marker), available)
+            Group(
+                Text.assemble(("Recorded presence · gaps may exist", SECONDARY), (marker, YELLOW)),
+                available,
+            )
             if data.availability
-            else Text("No eligible records" + marker)
+            else Text.assemble(("No eligible records", MUTED), (marker, YELLOW))
         )
         sizes = Table.grid(expand=True)
         sizes.add_column()
@@ -333,8 +350,8 @@ class WorkspaceDashboard(Vertical):
             partial |= value is None or bool(missing)
             sizes.add_row(key, size_label(value, missing))
         sizes.add_row(
-            "Known recorded subtotal" + (" · partial" if partial else ""),
-            size_label(sum(known) if known else None),
+            Text.assemble("Known recorded subtotal", (" · partial" if partial else "", YELLOW)),
+            Text(size_label(sum(known) if known else None), f"bold {CYAN}" if known else MUTED),
         )
         storage.update(sizes)
 
@@ -348,6 +365,7 @@ class WorkspaceDashboard(Vertical):
             expand=True,
             collapse_padding=True,
             pad_edge=False,
+            header_style=f"bold {BLUE}",
         )
         for key, label in OPERATIONS.items():
             date, state = summary.get(key, ("Unavailable" if unavailable else "Never", "—"))

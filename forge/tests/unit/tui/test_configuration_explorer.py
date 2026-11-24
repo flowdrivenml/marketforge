@@ -19,6 +19,7 @@ from forge.startup.context import ApplicationContext
 from forge.tui.configuration import PAGES, ConfigurationDraft, documentation, editable
 from forge.tui.configuration_screen import ConfigurationEditor, ConfigurationExplorer
 from forge.tui.design import THEME
+from forge.tui.editor_sessions import ApplyDraft, ValidateDraft
 from forge.tui.screens import Confirm, Detail
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -51,7 +52,9 @@ class ExplorerApp(App[None]):
             )
         )
 
-    async def edit(self, path: Path) -> None:
+    def edit(
+        self, path: Path, validate: ValidateDraft, apply: ApplyDraft, original: bytes | None
+    ) -> None:
         raise AssertionError(path)
 
     def applied_settings(self, settings: AppSettings, path: Path) -> None:

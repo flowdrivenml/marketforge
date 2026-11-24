@@ -88,9 +88,11 @@ class MockLauncher:
                 self.started.set()
                 if self.mode == "lost":
                     return 0
-                if self.mode == "cancel":
+                if self.mode in {"cancel", "emergency"}:
                     with suppress(ConnectionResetError):
-                        assert await loop.sock_recv(channel, 1) == b""
+                        assert await loop.sock_recv(channel, 1) == (
+                            b"E" if self.mode == "emergency" else b""
+                        )
                     self.cancelled.set()
                     return 130
                 engine = request["engine"]
@@ -207,16 +209,25 @@ async def test_invalid_window_outcome(
 
 
 @pytest.mark.asyncio
-async def test_cancel_notifies_and_joins_window(execution: Execution) -> None:
-    launcher = MockLauncher("cancel")
+@pytest.mark.parametrize("emergency", [False, True])
+async def test_cancel_notifies_and_joins_window(execution: Execution, emergency: bool) -> None:
+    from forge.historical.engine.process import Shutdown, shutdown
+
+    launcher = MockLauncher("emergency" if emergency else "cancel")
     report: dict[str, object] = {"name": "fixture"}
     path = execution.root / "report.json"
     with WorkspaceOwnership(execution.paths) as ownership, active(execution):
         windows = StageWindows(launcher, ownership.descriptors(), False, lambda _: None)
-        task = asyncio.create_task(
-            windows.dispatch(report, path, "acquire", save=lambda: write_job(path, report))
-        )
+        state = Shutdown()
+        token = shutdown.set(state)
+        try:
+            task = asyncio.create_task(
+                windows.dispatch(report, path, "acquire", save=lambda: write_job(path, report))
+            )
+        finally:
+            shutdown.reset(token)
         await asyncio.wait_for(launcher.started.wait(), 2)
+        state.emergency = emergency
         ownership.release()
         with pytest.raises(OwnershipConflictError):
             WorkspaceOwnership(execution.paths).acquire()

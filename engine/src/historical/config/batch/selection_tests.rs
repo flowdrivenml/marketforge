@@ -14,6 +14,12 @@ pub(crate) fn runtime() -> ProcessingConfig {
     wire.as_table_mut().unwrap().remove("schema_version");
     wire.try_into().unwrap()
 }
+pub(crate) fn runtime_in(directory: &Path) -> ProcessingConfig {
+    let mut config = runtime();
+    config.resources.scratch_path = directory.join("scratch");
+    config
+}
+
 pub(crate) fn batch() -> PreparedBatch {
     let mut instruments = Vec::new();
     for (id, symbol) in [(11, "BTC-USD_UM-261030"), (12, "BTC-USD_UM-261225")] {

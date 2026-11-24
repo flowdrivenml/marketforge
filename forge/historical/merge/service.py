@@ -45,7 +45,7 @@ from forge.historical.normalization.datasets import (
 )
 from forge.historical.normalization.execution import run_process, sync_submission
 from forge.historical.normalization.service import write_job
-from forge.orchestration.registry import retain_recipe
+from forge.orchestration.registry import inherit_recipe, recipe_evidence, retain_recipe
 from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
 from forge.shared.database.connection import (
@@ -76,6 +76,7 @@ class Recipe(SettingsModel, frozen=True):
     registry_id: Annotated[UUID, Field(strict=False)] | None = None
     publication_ids: list[DatabaseID] | None = Field(default=None, min_length=1)
     selection_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    file_subset: bool = False
     start_ns: Timestamp
     end_ns: Timestamp
     stream_ranks: dict[str, StreamRank] = Field(default_factory=dict)
@@ -91,6 +92,8 @@ class Recipe(SettingsModel, frozen=True):
             or len(set(self.publication_ids)) != len(self.publication_ids)
         ):
             raise ValueError("Select unique publications from a verified registry.")
+        if self.file_subset and self.publication_ids is None:
+            raise ValueError("An exact file subset requires its registry publications.")
         if self.start_ns >= self.end_ns:
             raise ValueError("Merge range must satisfy start_ns < end_ns.")
         return self
@@ -134,6 +137,7 @@ async def select_inputs(
     ids: list[int] | None = None,
     publication_ids: list[int] | None = None,
     expected_publications: list[int] | None = None,
+    include_publication_ids: bool = False,
     job: dict[str, Any] | None = None,
     recovery: bool = False,
 ) -> list[dict[str, Any]]:
@@ -308,7 +312,7 @@ async def select_inputs(
                 "engine_id": int(engine),
                 **(
                     {"registry_publication_id": publication_id}
-                    if publication_ids is not None
+                    if publication_ids is not None or include_publication_ids
                     else {}
                 ),
                 "namespace": namespace,
@@ -361,21 +365,32 @@ async def publication_recipe(
     paths: ProjectPaths,
     publication_ids: list[int],
     *,
+    dataset_ids: list[int] | None = None,
     start_ns: int | None = None,
     end_ns: int | None = None,
     stream_ranks: dict[str, int] | None = None,
     timeline_ordering: str | None = None,
 ) -> tuple[Recipe, dict[str, Any]]:
-    """Resolve explicit registry publications to verified primary-file membership."""
+    """Pin verified primary files from whole publications or an explicit file subset."""
     registry = await selected_registry_id(paths.root)
     with pinned_registry(registry):
-        selected = await select_inputs(paths, publication_ids=publication_ids)
+        selected = (
+            await select_inputs(paths, publication_ids=publication_ids)
+            if dataset_ids is None
+            else await select_inputs(
+                paths,
+                ids=dataset_ids,
+                expected_publications=publication_ids,
+                include_publication_ids=True,
+            )
+        )
     recipe = Recipe.model_validate(
         {
             "dataset_ids": [item["database_id"] for item in selected],
             "registry_id": registry,
             "publication_ids": publication_ids,
             "selection_sha256": publication_selection_sha256(selected),
+            **({"file_subset": True} if dataset_ids is not None else {}),
             "start_ns": start_ns
             if start_ns is not None
             else min(item["start_ns"] for item in selected),
@@ -603,7 +618,13 @@ def load_recipe(source: Path, *, retain: bool = True) -> Recipe | DerivedRecipe:
             else Recipe.model_validate(document)
         )
     if retain:
-        retain_recipe(RunOperation.MERGE, source, data)
+        retain_recipe(
+            RunOperation.MERGE,
+            source,
+            data,
+            effective=recipe.model_dump(mode="json"),
+            family="merge",
+        )
     return recipe
 
 
@@ -618,12 +639,26 @@ def verify_recipe_registry(recipe: Recipe | DerivedRecipe, registry: str) -> Non
 
 
 async def reviewed_inputs(
-    paths: ProjectPaths, recipe: Recipe | DerivedRecipe, ids: list[int], registry: str
+    paths: ProjectPaths,
+    recipe: Recipe | DerivedRecipe,
+    ids: list[int],
+    registry: str,
+    *,
+    include_publication_ids: bool = False,
 ) -> list[dict[str, Any]]:
     verify_recipe_registry(recipe, registry)
     with pinned_registry(registry):
         if isinstance(recipe, Recipe) and recipe.publication_ids is not None:
-            selected = await select_inputs(paths, publication_ids=recipe.publication_ids)
+            selected = (
+                await select_inputs(
+                    paths,
+                    ids=ids,
+                    expected_publications=recipe.publication_ids,
+                    include_publication_ids=True,
+                )
+                if recipe.file_subset
+                else await select_inputs(paths, publication_ids=recipe.publication_ids)
+            )
             if [item["database_id"] for item in selected] != ids or publication_selection_sha256(
                 selected
             ) != recipe.selection_sha256:
@@ -631,6 +666,8 @@ async def reviewed_inputs(
                     "The selected publication membership or evidence has changed."
                 )
             describe_publication_selection(recipe, selected)
+            if include_publication_ids:
+                return selected
             return [
                 {key: value for key, value in item.items() if key != "registry_publication_id"}
                 for item in selected
@@ -946,6 +983,8 @@ def assemble_job(
         "report_path": str(directory / "prepare-report.json"),
         "coverage": selected_coverage,
     }
+    if not dry_run and (recipe_snapshot := recipe_evidence()):
+        report["recipe_evidence"] = recipe_snapshot
     if validate or preview_work:
         try:
             binary = resolve(paths, "merge")
@@ -1156,6 +1195,7 @@ async def execute_async(
     submitted_sha = checksum(submission)
     report = source.parent / "prepare-report.json"
     prepared = read_json(report) if report.is_file() else {}
+    await joined_io(inherit_recipe, RunOperation.MERGE, prepared.get("recipe_evidence", {}))
     runtime = (
         source.parent / str(prepared.get("configuration_filename", "general.toml"))
         if prepared.get("configuration_sha256") is not None

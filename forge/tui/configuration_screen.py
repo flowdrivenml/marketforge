@@ -3,11 +3,11 @@
 import difflib
 import os
 import webbrowser
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
+from copy import copy as copy_draft
 from dataclasses import asdict, dataclass
 from functools import partial
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any, cast
 from urllib.parse import urlsplit
 
@@ -28,7 +28,7 @@ from forge.historical.engine.runtime_config import UNITS, Change
 from forge.shared.config.models import AppSettings
 from forge.shared.database.status import DatabaseInspectionError, inspect_database
 from forge.shared.documentation import SITE_URL
-from forge.shared.terminal.palette import CYAN, GREEN, MUTED, RED, YELLOW
+from forge.shared.terminal.palette import BLUE, CYAN, GREEN, MUTED, RED, YELLOW
 from forge.startup.context import ApplicationContext
 from forge.tui.actions import Action, Field
 from forge.tui.clipboard import plain
@@ -42,7 +42,9 @@ from forge.tui.configuration import (
     editable,
     retained_pipeline_settings,
 )
-from forge.tui.design import success_message
+from forge.tui.design import SECONDARY, success_message
+from forge.tui.editor_inspection import OpenInspection, StructuredValue
+from forge.tui.editor_sessions import QueueEditor
 from forge.tui.inspection import ActionMenu
 from forge.tui.screens import Confirm, Detail, Form
 
@@ -85,29 +87,32 @@ class FieldEditor(ModalScreen[str | None]):
         value = field.get("configured", field.get("effective"))
         if value is None:
             value = field.get("effective") if field.get("effective_known") else field.get("default")
-        with Vertical(classes="dialog"):
+        with Vertical(classes="dialog dialog-compact field-editor"):
             yield Static(str(field["path"]), markup=False, classes="dialog-title")
-            yield Static(plain(field.get("constraint")), markup=False)
-            kind = field["kind"]
-            if kind == "enum":
-                yield Select(
-                    [(choice, choice) for choice in field["choices"]],
-                    value=value if value in field["choices"] else Select.BLANK,
-                    id="setting-enum",
-                )
-            elif kind == "boolean":
-                yield Switch(value is True, id="setting-switch")
-            else:
-                yield Input("" if value is None else str(value), id="setting-input")
-                if kind in {"bytes", "mib"}:
+            with VerticalScroll(classes="dialog-body"):
+                yield Static(plain(field.get("constraint")), markup=False)
+                kind = field["kind"]
+                if kind == "enum":
                     yield Select(
-                        [(name or "Bytes", name) for name in UNITS],
-                        value="MiB" if kind == "mib" else "",
-                        allow_blank=False,
-                        id="setting-unit",
+                        [(choice, choice) for choice in field["choices"]],
+                        value=value if value in field["choices"] else Select.BLANK,
+                        id="setting-enum",
+                        compact=True,
                     )
-                elif kind == "milliseconds":
-                    yield Static("Milliseconds")
+                elif kind == "boolean":
+                    yield Switch(value is True, id="setting-switch")
+                else:
+                    yield Input("" if value is None else str(value), id="setting-input")
+                    if kind in {"bytes", "mib"}:
+                        yield Select(
+                            [(name or "Bytes", name) for name in UNITS],
+                            value="MiB" if kind == "mib" else "",
+                            allow_blank=False,
+                            id="setting-unit",
+                            compact=True,
+                        )
+                    elif kind == "milliseconds":
+                        yield Static("Milliseconds")
             with Horizontal(classes="dialog-buttons"):
                 yield Button("Cancel", id="setting-cancel")
                 yield Button("Update draft", id="setting-update", variant="primary")
@@ -188,8 +193,6 @@ class ConfigurationEditor(Vertical):
     DEFAULT_CSS = """
     ConfigurationEditor { height: 1fr; width: 1fr; }
     ConfigurationExplorer { align: center middle; }
-    ConfigurationExplorer ConfigurationEditor { width: 96%; height: 96%; background: $surface;
-        border: round $primary; padding: 0 1; }
     #configuration-explorer { height: 1fr; }
     #configuration-title, #configuration-status { height: auto; min-height: 1; }
     #configuration-fields { height: 1fr; min-height: 4; }
@@ -200,7 +203,7 @@ class ConfigurationEditor(Vertical):
     def __init__(
         self,
         context: ApplicationContext,
-        edit_file: Callable[[Path], Awaitable[None]],
+        queue_editor: QueueEditor,
         copy: Callable[[str], None],
         reload_application: Callable[[AppSettings, Path], None],
         environment: Callable[[], dict[str, object]],
@@ -210,7 +213,7 @@ class ConfigurationEditor(Vertical):
     ) -> None:
         super().__init__()
         self.context = context
-        self.edit_file = edit_file
+        self.queue_editor = queue_editor
         self.copy = copy
         self.reload_application = reload_application
         self.environment = environment
@@ -254,6 +257,9 @@ class ConfigurationEditor(Vertical):
                     yield Button("Review & apply", id="apply", variant="primary")
                     yield Button("Documentation", id="category-docs")
                     yield Button("More", id="more")
+                    yield OpenInspection(
+                        StructuredValue({}), "Open effective", id="configuration-open-effective"
+                    )
             if not self.embedded:
                 with Horizontal(classes="configuration-actions"):
                     yield Button("Unset / Inherit", id="inherit")
@@ -444,6 +450,10 @@ class ConfigurationEditor(Vertical):
         table.clear()
         self.visible_fields.clear()
         self.field = None
+        open_effective = self.query_one("#configuration-open-effective", OpenInspection)
+        effective = draft.effective_document if draft else None
+        open_effective.display = effective is not None and not self.loading
+        open_effective.target = StructuredValue(effective)
         groups: dict[str, list[dict[str, Any]]] = {}
         query = self.query_one("#configuration-search", Input).value.casefold().split()
         for field in draft.fields if draft else ():
@@ -523,13 +533,14 @@ class ConfigurationEditor(Vertical):
                 else plain(previous.get("configured"))
             )
             configured = f"{old} → {configured}"
-        configured_color = color or (STATUS_COLORS["group"] if inherited else "")
+        configured_color = color or (CYAN if inherited else MUTED if configured == "—" else BLUE)
+        effective_color = color or ("" if field.get("effective_known") else SECONDARY)
         return (
             Text(marker + path, style=color, overflow="fold"),
             Text(configured, style=configured_color, overflow="fold", justify="right"),
             Text(
                 plain(field.get("effective")) if field.get("effective_known") else "Unvalidated",
-                style=color,
+                style=effective_color,
                 overflow="fold",
                 justify="right",
             ),
@@ -694,7 +705,9 @@ class ConfigurationEditor(Vertical):
         try:
             await self.perform(action)
         except Exception as error:
-            self.host.push_screen(Detail("Configuration draft", plain(str(error)), raw=True))
+            self.host.push_screen(
+                Detail("Configuration draft", plain(str(error)), raw=True, error=True)
+            )
         finally:
             self.editing = False
 
@@ -801,13 +814,39 @@ class ConfigurationEditor(Vertical):
                 self.notify(draft.source_error, severity="error")
                 return
             if action == "toml":
-                with TemporaryDirectory(prefix="marketforge-configuration-") as directory:
-                    path = Path(directory) / draft.path.name
-                    await disk(path.write_bytes, draft.candidate)
-                    await self.edit_file(path)
-                    draft.candidate = await disk(path.read_bytes)
-                await disk(draft.refresh)
-                self.render_fields()
+
+                async def validate(path: Path) -> object:
+                    candidate = copy_draft(draft)
+                    candidate.candidate = await disk(path.read_bytes)
+                    return await disk(candidate.preview)
+
+                async def accept(original: bytes, updated: bytes) -> None:
+                    current = self.drafts.get(key)
+                    if (
+                        self.editing
+                        or current is None
+                        or current.path != draft.path
+                        or current.initial != draft.initial
+                        or current.candidate != original
+                    ):
+                        raise ValueError(
+                            "The configuration form changed. Keep the editor draft and reload the form."
+                        )
+                    self.editing = True
+                    try:
+                        await disk(draft.check_editor_source)
+                        candidate = copy_draft(current)
+                        candidate.candidate = updated
+                        await disk(candidate.refresh)
+                        self.drafts[key] = candidate
+                        self.render_fields()
+                        self.notify(
+                            "Validated TOML loaded. Use Review & apply in Configs to save it."
+                        )
+                    finally:
+                        self.editing = False
+
+                self.queue_editor(draft.path, validate, accept, draft.candidate)
             elif draft.dirty:
                 change = await disk(draft.preview)
                 if (
@@ -918,7 +957,7 @@ class ConfigurationExplorer(ModalScreen[None]):
     def __init__(
         self,
         context: ApplicationContext,
-        edit_file: Callable[[Path], Awaitable[None]],
+        queue_editor: QueueEditor,
         copy: Callable[[str], None],
         reload_application: Callable[[AppSettings, Path], None],
         environment: Callable[[], dict[str, object]],
@@ -926,7 +965,7 @@ class ConfigurationExplorer(ModalScreen[None]):
     ) -> None:
         super().__init__()
         self.editor = ConfigurationEditor(
-            context, edit_file, copy, reload_application, environment, initial
+            context, queue_editor, copy, reload_application, environment, initial
         )
 
     def compose(self) -> ComposeResult:

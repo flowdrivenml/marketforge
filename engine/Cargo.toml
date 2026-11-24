@@ -480,32 +480,32 @@ required-features = ["live"]
 
 [[test]]
 name = "stream_protocol"
-path = "tests/stream_protocol.rs"
+path = "tests/live/streaming/protocol.rs"
 required-features = ["stream-client"]
 
 [[test]]
 name = "stream_transport"
-path = "tests/stream_transport.rs"
+path = "tests/live/streaming/transport.rs"
 required-features = ["live", "stream-client"]
 
 [[example]]
 name = "stream-consumer"
-path = "examples/stream-consumer.rs"
+path = "../examples/engine/live/stream-consumer.rs"
 required-features = ["stream-client"]
 
 [[test]]
 name = "stream_client"
-path = "tests/stream_client.rs"
+path = "tests/live/streaming/client.rs"
 required-features = ["stream-client"]
 
 [[test]]
 name = "stream_performance"
-path = "tests/stream_performance.rs"
+path = "tests/live/streaming/performance.rs"
 required-features = ["live", "stream-client"]
 
 [[test]]
 name = "live_application"
-path = "tests/live_application.rs"
+path = "tests/live/application/main.rs"
 required-features = ["live", "stream-client"]
 
 [[bin]]
@@ -515,12 +515,12 @@ required-features = ["management-tui"]
 
 [[test]]
 name = "management"
-path = "tests/management.rs"
+path = "tests/live/management/main.rs"
 required-features = ["management-api", "management-client", "stream-client"]
 
 [[test]]
 name = "management_tui"
-path = "tests/management_tui.rs"
+path = "tests/live/management/tui.rs"
 required-features = ["management-tui"]
 
 [[bin]]
@@ -530,7 +530,7 @@ required-features = ["management-tui"]
 
 [[test]]
 name = "management_client"
-path = "tests/management_client.rs"
+path = "tests/live/management/client.rs"
 required-features = ["management-client"]
 
 [[test]]
@@ -555,5 +555,5 @@ required-features = ["historical"]
 
 [[example]]
 name = "normalize-admission"
-path = "examples/normalize-admission.rs"
+path = "../examples/engine/historical/normalize-admission.rs"
 required-features = ["historical"]

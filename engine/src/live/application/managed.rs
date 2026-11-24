@@ -1,8 +1,8 @@
 //! Composition owner for the runtime, management service and HTTP listener.
 use super::*;
 use crate::live::{
-    control::http::ManagementHttpServer,
-    management::{Credentials, DefinitionStore, ManagementHandle, ManagementService},
+    management::http::ManagementHttpServer,
+    management::service::{Credentials, DefinitionStore, ManagementHandle, ManagementService},
 };
 use std::{path::PathBuf, sync::Arc};
 pub struct ManagedLiveApplication {

@@ -43,6 +43,10 @@ def validate_recipe_draft(paths: ProjectPaths, family: str, source: Path) -> Non
             validate_merge(paths, load_merge(source, retain=False))
         case "convert":
             load_conversion(paths, source, retain=False)
+        case "markets rank":
+            from forge.markets.ranking.policy import load_policy
+
+            load_policy(source)
         case "Profile":
             validate_profile(paths, source)
         case "acquisition import":

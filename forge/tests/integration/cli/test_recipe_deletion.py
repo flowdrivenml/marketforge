@@ -140,3 +140,63 @@ def test_rejects_replaced_file_and_symlinked_library(workspace: Path, request_fi
     with pytest.raises(OSError):
         delete_recipe(paths, "acquisition", "request", apply=True, dependencies=replace)
     assert (displaced / "request.toml").read_text() == "replacement"
+
+
+def test_recoverable_archive_and_restore_conflict(workspace: Path, request_file: Path) -> None:
+    from forge.shared.config.deletion import archived_recipes, restore_recipe
+
+    paths = ProjectPaths(workspace, workspace / "data")
+    original = request_file.read_bytes()
+    result = delete_recipe(
+        paths, "acquisition", "request", apply=True, dependencies=lambda _: RecipeDependencies()
+    )
+    assert result.archived_path is not None
+    assert archived_recipes(paths, "acquisition") == (result.archived_path,)
+    assert result.archived_path.read_bytes() == original
+    request_file.write_bytes(b"# newer recipe")
+    with pytest.raises(MarketForgeError, match="already exists"):
+        restore_recipe(paths, "acquisition", result.archived_path)
+    assert request_file.read_bytes() == b"# newer recipe"
+    request_file.unlink()
+    assert restore_recipe(paths, "acquisition", result.archived_path) == request_file
+    assert request_file.read_bytes() == original
+    assert not archived_recipes(paths, "acquisition")
+
+
+def test_pending_recipe_dependency_and_review_fingerprint(
+    workspace: Path, request_file: Path
+) -> None:
+    from forge.historical.recipe_dependencies import inspect_references
+
+    paths = ProjectPaths(workspace, workspace / "data")
+    intent = paths.runs_dir / "acquisition-fixture" / "attempts" / "id" / "intent.json"
+    intent.parent.mkdir(parents=True)
+    intent.write_text(
+        json.dumps(
+            {
+                "operation": "acquisition",
+                "action": "download",
+                "recipe_source": str(request_file),
+            }
+        )
+    )
+
+    def dependencies(path: Path) -> RecipeDependencies:
+        return inspect_references(paths, "acquisition", path)
+
+    blocked = delete_recipe(paths, "acquisition", "request", apply=True, dependencies=dependencies)
+    assert blocked.status == "blocked"
+    assert blocked.dependencies.executions == (intent,)
+    intent.with_name("recipe.toml").write_bytes(request_file.read_bytes())
+    preview = delete_recipe(paths, "acquisition", "request", dependencies=dependencies)
+    assert preview.status == "ready_to_delete"
+    request_file.write_bytes(request_file.read_bytes() + b"\n# External edit\n")
+    with pytest.raises(MarketForgeError, match="changed since review"):
+        delete_recipe(
+            paths,
+            "acquisition",
+            "request",
+            apply=True,
+            expected_sha256=preview.sha256,
+            dependencies=dependencies,
+        )

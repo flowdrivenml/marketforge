@@ -220,9 +220,15 @@ def load_recipe(
     paths: ProjectPaths, path: Path, *, retain: bool = True
 ) -> tuple[Recipe, LoadedSource | PublicationSource, bytes]:
     recipe, data = read_recipe(path)
-    source = validate_binding(paths, path, recipe)
     if retain:
-        retain_recipe(RunOperation.CONVERT, path, data)
+        retain_recipe(
+            RunOperation.CONVERT,
+            path,
+            data,
+            effective=recipe.model_dump(mode="json"),
+            family="conversion",
+        )
+    source = validate_binding(paths, path, recipe)
     return recipe, source, data
 
 

@@ -58,7 +58,7 @@ cargo test --locked --manifest-path engine/Cargo.toml --features historical \
   --test historical_convert portable::validation_cli_checks_inventory_and_planning_without_writing -- --exact
 ```
 
-Cargo's name filter can select zero tests and still exit successfully. Confirm that the intended case ran. For a wider portable check, feature matrix, Clippy target selection, and per-case deadline tooling, start with the [bounded Rust verification guide](https://github.com/flowdrivenml/marketforge/blob/main/engine/scripts/README.md). Run feature configurations in sequence when they share a Cargo target directory. Engine CLI harnesses can launch the binary at Cargo's stable path. The per-case supervisor lists unless passed `--run` and fails an empty runnable selection.
+Cargo's name filter can select zero tests and still exit successfully. Confirm that the intended case ran. For a wider portable check, feature matrix, Clippy target selection, and per-case deadline tooling, start with the [bounded Rust verification guide](https://github.com/flowdrivenml/marketforge/blob/main/scripts/engine/testing/README.md). Run feature configurations in sequence when they share a Cargo target directory. Engine CLI harnesses can launch the binary at Cargo's stable path. The per-case supervisor lists unless passed `--run` and fails an empty runnable selection.
 
 There is no checked-in CI workflow defining an additional required matrix in this checkout. Repository guidance calls for the applicable formatting, lint/type, and focused verification checks. Run opt-in network or recorded workloads deliberately. A marker or feature gate alone does not imply that an ignored case will run.
 
@@ -76,7 +76,7 @@ MARKETFORGE_FORGE_INTEGRATION=1 uv run --project forge --locked --group dev --gr
   forge/tests/integration/forge_workflow/test_workflow.py::test_trade_depth_registration_prepare_edit_execute_retry
 ```
 
-Inspect skips and prerequisite failures separately from assertions. Use [recorded Engine smoke selections](https://github.com/flowdrivenml/marketforge/blob/main/engine/scripts/README.md#recorded-smoke-tests) only when the required archives or committed publications are available. Normalization uses feature gates including `historical-real-tests` and `historical-full-tests`. The recorded conversion target has a bounded prefix test and a separately ignored full publication case. Relocation variables in the verifier guide are for exact copies of the documented inputs.
+Inspect skips and prerequisite failures separately from assertions. Use [recorded Engine smoke selections](https://github.com/flowdrivenml/marketforge/blob/main/scripts/engine/testing/README.md#recorded-smoke-tests) only when the required archives or committed publications are available. Normalization uses feature gates including `historical-real-tests` and `historical-full-tests`. The recorded conversion target has a bounded prefix test and a separately ignored full publication case. Relocation variables in the verifier guide are for exact copies of the documented inputs.
 
 ## Write and maintain meaningful fixtures
 
@@ -90,7 +90,7 @@ A depth snapshot opens a book at a known state. Suppose it contains bid 100 with
 | Recorded historical workloads | The maintained normalization batch is `engine/tests/historical/fixtures/normalize.json`. The merge fixture is alongside it. Conversion also has committed job fixtures under `engine/tests/historical/convert/fixtures/jobs/`. The documents identify dependencies. Large raw and publication bytes are separate local inputs. |
 | Generated output | Keep recordings and generated data outside Git. Use a fresh output root for each run and preserve persistent historical regression evidence. Derive new expectations from source records and the contract before updating snapshots, counts or hashes. |
 
-Missing recorded input is a prerequisite failure or an explicit skip under the suite's configured rules. A fixture change should explain why its previous expectation changed and which consumer or invariant it exercises. [Historical verifier](https://github.com/flowdrivenml/marketforge/blob/main/engine/scripts/README.md) · [Notebook fixture builder](https://github.com/flowdrivenml/marketforge/blob/main/docs/content/examples/notebooks/dataset_fixtures.py)
+Missing recorded input is a prerequisite failure or an explicit skip under the suite's configured rules. A fixture change should explain why its previous expectation changed and which consumer or invariant it exercises. [Historical verifier](https://github.com/flowdrivenml/marketforge/blob/main/scripts/engine/testing/README.md) · [Notebook fixture builder](https://github.com/flowdrivenml/marketforge/blob/main/docs/content/examples/notebooks/dataset_fixtures.py)
 
 ## Conversion verification
 

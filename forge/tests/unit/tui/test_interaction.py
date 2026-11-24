@@ -3,16 +3,19 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import pytest
 from rich.console import Console
-from textual.widgets import Input
+from textual.widgets import Button, Checkbox, Input, Select, Static
 
 from forge.historical.archives.storage.files import disk
+from forge.historical.archives.templates import ACQUISITION_TEMPLATE
+from forge.historical.pipelines.config import load_recipe
 from forge.shared.config.models import AppSettings
 from forge.shared.paths import ProjectPaths
 from forge.startup.context import ApplicationContext
-from forge.tui import clipboard
+from forge.tui import clipboard, market_recipes
 from forge.tui.actions import BY_KEY, Values
 from forge.tui.app import ForgeApp
 from forge.tui.inspection import ActionMenu, Inspection
@@ -67,90 +70,187 @@ def context(path: Path) -> ApplicationContext:
 
 
 @pytest.mark.asyncio
-async def test_market_basket_mouse_and_keyboard(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("family", "result"),
+    [
+        ("acquisition", "save"),
+        ("pipeline", "save"),
+        ("pipeline", "external edit"),
+        ("acquisition", "duplicate"),
+        ("acquisition", "cancel"),
+        ("pipeline", "empty"),
+        ("acquisition", "registry change"),
+    ],
+)
+async def test_market_existing_recipe(
+    tmp_path: Path, family: str, result: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     async def invoke(
         key: str, v: Values, ctx: ApplicationContext, progress: Progress, edit: Edit
     ) -> object:
-        if key != "markets list":
-            return {}
-        offset = int(v.get("offset", 0))
+        assert key == "markets list"
         return {
             "instruments": [
                 {
-                    "id": offset + 1,
-                    "symbol": f"BTCUSDT{offset}",
-                    "reference": f"bybit.perpetual.linear.BTCUSDT{offset}",
-                    "exchange": "bybit",
-                    "instrument_type": "perpetual",
-                    "market_category": "linear",
+                    "id": 103,
+                    "symbol": "BNBUSD_270326",
+                    "reference": "binance.inverse.BNBUSD_270326",
+                    "exchange": "binance",
+                    "instrument_type": "future",
+                    "market_category": "inverse",
                 }
-            ],
-            "has_more": offset == 0,
+            ]
         }
 
-    app = ForgeApp(context(tmp_path), invoke=invoke)
-    async with app.run_test(size=(120, 35)) as pilot:
-        await pilot.click("#area-3")
+    ctx = context(tmp_path)
+    directory = ctx.paths.workflow_dir(family)
+    path = directory / "existing.toml"
+    original = ACQUISITION_TEMPLATE
+    if result == "duplicate":
+        original = original.replace('"bybit"', '"binance"').replace('"perpetual"', '"future"')
+        original = original.replace('market_category = "linear"', 'market_category = "inverse"')
+        original = original.replace('"BTCUSDT"', '"BNBUSD_270326"')
+    if family == "pipeline":
+        original += (
+            '\n[normalize]\nranking_policy = "custom"\n[merge]\ntimeline_ordering = "causal"\n'
+            '[convert]\ntarget_quote = "USD"\nmax_staleness_ns = 200\n'
+            'reference_stream_ids = ["reference.trades"]\n'
+        )
+    if result != "empty":
+        directory.mkdir(parents=True)
+        path.write_text(original)
+        (directory / "bad.toml").write_text("invalid = true")
+    app = ForgeApp(ctx, invoke=invoke)
+    monkeypatch.setattr(app, "check_registry", lambda: None)
+    registry = "00000000-0000-4000-8000-000000000001"
+
+    async def verify_registry(_root: Path) -> str:
+        return registry
+
+    monkeypatch.setattr("forge.tui.app.selected_registry_id", verify_registry)
+    app.database_id = registry
+    app.initial_area, app.initial_view = "Markets", "Instruments"
+    async with app.run_test(size=(72, 27)) as pilot:
         await pilot.pause(0.3)
         table = app.query_one("#results", Results)
-        table.focus()
-        await pilot.press("space", "pagedown")
-        await pilot.pause(0.3)
-        assert len(app.state.basket) == 1
-        await pilot.click(
-            "#results",
-            offset=(table.styles.gutter.left + 1, table.styles.gutter.top + table.header_height),
-        )
-        await pilot.pause()
-        assert len(app.state.basket) == 2
+        y = table.styles.gutter.top + table.header_height
+        x = table.styles.gutter.left + table.render_line(table.header_height).text.index("BNBUSD")
+        await pilot.mouse_down(table, offset=(x, y))
+        await pilot.mouse_up(table, offset=(x + 2, y))
+        await pilot.press("ctrl+y")
+        assert app.clipboard == "BNB"
+        await pilot.click(table, offset=(x, y), button=3)
+        assert isinstance(app.screen, ActionMenu)
+        assert app.screen.menu_anchor is not None
+        assert app.screen.heading == "BNBUSD_270326 · Binance"
+        assert app.screen.actions == ("Add to Acquisition", "Add to Pipeline", "Inspect")
+        await pilot.press("down")
+        assert app.focused is not None and app.focused.id == "menu-1"
+        await pilot.press("escape")
         assert app.screen == app.root_screen
         await pilot.press("f2")
+        if family == "pipeline":
+            await pilot.press("down")
+        await pilot.press("enter")
         await pilot.pause()
-        menu = app.screen
-        assert isinstance(menu, ActionMenu)
-        await pilot.click(f"#menu-{menu.actions.index('Add to acquisition…')}")
+        if result == "empty":
+            assert isinstance(app.screen, ActionMenu)
+            assert app.screen.actions == ("Open Workflows", "Cancel")
+            await pilot.press("escape")
+            assert not path.exists()
+            return
+        assert isinstance(app.screen, market_recipes.MarketRecipeDialog)
+        dialog = app.screen
+        select = cast(Select[str], dialog.query_one("#market-recipe-target", Select))
+        select.value = "bad"
         await pilot.pause()
-        assert isinstance(app.screen, Form)
-        assert "2 instrument(s)" in app.screen.spec.key
-        for field, value in (
-            ("reference", "from-market"),
-            ("start", "2026-10-26T00:00:00Z"),
-            ("end", "2026-10-27T00:00:00Z"),
-        ):
-            app.screen.query_one(f"#field-{field}", Input).value = value
-        await pilot.click("#submit")
+        assert "Incompatible" in str(dialog.query_one("#market-recipe-destination", Static).content)
+        save = dialog.query_one("#market-recipe-save", Button)
+        assert save.disabled
+        dialog.query_one("#market-recipe-search", Input).value = "exist"
         await pilot.pause()
-        assert isinstance(app.screen, Confirm)
-        await pilot.click("#confirm")
+        select.value = "existing"
         await pilot.pause()
+        assert dialog.destination and dialog.destination.path == path
+        assert save.disabled
+        assert dialog.query_one("#order_book_l2", Checkbox).disabled
+        assert not dialog.query_one("#trades", Checkbox).value
+        dialog.query_one("#trades", Checkbox).focus()
+        await pilot.press("space")
+        preview = str(dialog.query_one("#market-recipe-preview", Static).content)
+        if result == "duplicate":
+            assert "No changes required" in preview
+            assert save.disabled
+        else:
+            assert "+ BNBUSD_270326 · Trades · Binance · Future / Inverse" in preview
+            if result == "external edit":
+                original += "\n# external edit\n"
+                path.write_text(original)
+            if result == "registry change":
+                app.database_id = "00000000-0000-4000-8000-000000000002"
+            await pilot.click("#market-recipe-cancel" if result == "cancel" else save)
+            await pilot.pause()
+            if result in {"external edit", "registry change"}:
+                assert app.screen is dialog
+                assert "changed" in str(dialog.query_one("#form-error", Static).content)
+                assert dialog.query_one("#trades", Checkbox).value
+        if result != "save":
+            assert path.read_text() == original
+            return
         assert isinstance(app.screen, Inspection)
+        assert app.screen.heading == "Recipe updated"
+        assert app.controller.current is None
         from forge.historical.archives.config import load_acquisition
 
-        recipe = await disk(
-            load_acquisition, app.context.paths.acquisition_config_dir / "from-market.toml"
-        )
-        assert [entry.scope.identifier for entry in recipe.requests] == ["BTCUSDT0", "BTCUSDT50"]
-        assert all(
-            entry.exchange == "bybit" and entry.market_category == "linear"
-            for entry in recipe.requests
-        )
-        assert {"Validate", "Plan", "Map", "Download"} <= set(app.screen.links)
+        if family == "pipeline":
+            before = load_recipe(original.encode())
+            saved = load_recipe(path.read_bytes())
+            assert saved.model_dump(exclude={"requests"}) == before.model_dump(exclude={"requests"})
+        else:
+            saved = load_acquisition(path)
+        assert len(saved.requests) == 2
+        assert saved.requests[0].scope.identifier == "BTCUSDT"
+        assert saved.requests[1].model_dump(exclude_none=True) == {
+            "exchange": "binance",
+            "instrument_type": "future",
+            "market_category": "inverse",
+            "data_type": "trades",
+            "scope": {"kind": "instrument", "identifier": "BNBUSD_270326"},
+        }
+        assert set(p.name for p in directory.glob("*.toml")) == {"bad.toml", "existing.toml"}
 
 
 @pytest.mark.asyncio
-async def test_conversion_handoff_and_clipboard(tmp_path: Path) -> None:
-    calls: list[tuple[str, Values]] = []
+async def test_conversion_handoff_and_clipboard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from forge.historical.conversion.recipes import PublicationSource
 
-    async def invoke(
-        key: str, v: Values, ctx: ApplicationContext, progress: Progress, edit: Edit
-    ) -> object:
-        calls.append((key, dict(v)))
-        return {"path": str(tmp_path / "identity.toml"), "source": {"registry_publication_id": 826}}
+    async def selected_source(_paths: ProjectPaths, identity: int) -> PublicationSource:
+        assert identity == 826
+        return PublicationSource.model_validate(
+            {
+                "kind": "publication",
+                "registry_publication_id": identity,
+                "engine_publication_id": "2039158607473567512",
+                "registry_id": "dd917334-0000-0000-0000-000000000000",
+                "environment": "testing",
+                "interval": {"start_ns": 1, "end_ns": 2},
+                **dict.fromkeys(
+                    ("manifest_sha256", "processing_job_sha256", "publication_checksums_sha256"),
+                    "f" * 64,
+                ),
+            }
+        )
 
-    app = ForgeApp(context(tmp_path), invoke=invoke)
+    monkeypatch.setattr(
+        "forge.historical.conversion.evidence.inspect_publication_source", selected_source
+    )
+    app = ForgeApp(context(tmp_path))
     row = Row("826", "2039158607473567512", "Publication", "merge", {"operation": "merge"})
     async with app.run_test(size=(120, 35)) as pilot:
-        app.publication_workflows(row, (row,))["Convert publication…"]()
+        await app.switch("Workflows", "Conversion")
+        app.open_action(BY_KEY["convert new"], None, {"route": "publication", "source": row.id})
         await pilot.pause()
         assert isinstance(app.screen, Form)
         assert app.screen.query_one("#field-source", Input).value == "826"
@@ -158,14 +258,15 @@ async def test_conversion_handoff_and_clipboard(tmp_path: Path) -> None:
         app.screen.query_one("#field-quote", Input).value = "USDT"
         await pilot.click("#submit")
         await pilot.pause()
+        assert isinstance(app.screen, Form)
+        assert app.screen.query_one("#field-interval--start_ns--time", Input).disabled
+        await pilot.click("#submit")
+        await pilot.pause()
         assert isinstance(app.screen, Confirm)
         await pilot.click("#confirm")
         await pilot.pause()
         assert isinstance(app.screen, Inspection)
-        assert (
-            "convert new",
-            {"reference": "identity", "route": "publication", "source": "826", "quote": "USDT"},
-        ) in calls
+        assert (app.context.paths.workflow_dir("conversion") / "identity.toml").is_file()
         assert "Prepare" in app.screen.links
         app.copy_value(row.name)
         await pilot.pause()
@@ -204,26 +305,6 @@ async def test_environment_switch_reopens_with_no_selections(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
-async def test_invalid_editor_draft_leaves_original(tmp_path: Path) -> None:
-    from forge.historical.authoring import create_pipeline
-
-    class TestApp(ForgeApp):
-        CSS_PATH = Path(__file__).resolve().parents[3] / "tui/workspace.tcss"
-
-        async def edit_recipe(self, path: Path) -> None:
-            await disk(path.write_text, "broken = [")
-
-    app = TestApp(context(tmp_path))
-    original = create_pipeline(app.context.paths.pipeline_config_dir, "fixture")
-    before = original.read_bytes()
-    async with app.run_test(size=(120, 30)) as pilot:
-        app.edit_selected(Row("fixture", "fixture", "pipeline", "", {}, "fixture", original))
-        await pilot.pause()
-        assert isinstance(app.screen, Detail)
-        assert original.read_bytes() == before
-
-
-@pytest.mark.asyncio
 async def test_normalization_selection_saves_exact_ids_and_offers_prepare(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -253,7 +334,8 @@ async def test_normalization_selection_saves_exact_ids_and_offers_prepare(
 
     monkeypatch.setattr("forge.historical.normalization.batch.inspect_exact_archives", resolve)
     async with app.run_test(size=(120, 35)) as pilot:
-        app.normalize_selection((source,))
+        await app.switch("Workflows", "Normalization")
+        app.run_worker(app.author_exact_normalization((int(source.id),)))
         await pilot.pause()
         app.screen.query_one("#field-reference", Input).value = "selected"
         await pilot.click("#submit")
@@ -387,3 +469,132 @@ def test_retained_log_range_severity_and_complete_export(tmp_path: Path) -> None
     with pytest.raises(FileExistsError):
         export_log(source, destination)
     assert destination.read_bytes() == original.encode()
+
+
+@pytest.mark.asyncio
+async def test_market_menus_follow_entity_and_exact_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = "00000000-0000-4000-8000-000000000023"
+    supported = {
+        "id": 110,
+        "symbol": "ETHUSDT",
+        "reference": "bybit.linear.ETHUSDT",
+        "exchange": "bybit",
+        "instrument_type": "perpetual",
+        "market_category": "linear",
+    }
+    unsupported = {
+        **supported,
+        "id": 111,
+        "symbol": "ETH-USDT-SWAP",
+        "reference": "okx.linear.ETH-USDT-SWAP",
+        "exchange": "okx",
+    }
+
+    async def invoke(
+        key: str, v: Values, ctx: ApplicationContext, progress: Progress, edit: Edit
+    ) -> object:
+        if key == "markets rank list":
+            return {"rankings": [{"id": snapshot, "policy_name": "turnover", "included_count": 2}]}
+        return {"instruments": [supported, unsupported]}
+
+    ctx = context(tmp_path)
+    policies = ctx.paths.config_dir / "markets/rankings"
+    policies.mkdir(parents=True)
+    (policies / "turnover.toml").write_text('name = "fixture"\n')
+    app = ForgeApp(ctx, invoke=invoke)
+    app.initial_area = "Markets"
+    monkeypatch.setattr(app, "check_registry", lambda: None)
+    app.database_id = "00000000-0000-4000-8000-000000000001"
+    async with app.run_test(size=(52, 23)) as pilot:
+        await pilot.pause(0.3)
+        table = app.query_one("#results", Results)
+        table.focus()
+        table.move_cursor(row=1)
+        await pilot.press("space")
+        first = table.styles.gutter.top + table.header_height
+        await pilot.click(table, offset=(12, first), button=3)
+        assert isinstance(app.screen, ActionMenu)
+        assert app.screen.actions == ("Add to Acquisition", "Add to Pipeline", "Inspect")
+        assert app.screen.heading == "ETHUSDT · Bybit"
+        identity = market_recipes.instrument_from_row(app.state.rows["bybit.linear.ETHUSDT"])
+        assert identity is not None
+        assert identity.request("order_book_l2").scope.identifier == "ETHUSDT"
+        await pilot.press("escape")
+        await pilot.click(table, offset=(12, first + 1), button=3)
+        assert isinstance(app.screen, ActionMenu)
+        assert app.screen.actions == ("Add to Acquisition", "Add to Pipeline", "Inspect")
+        await pilot.press("escape")
+        for view, expected in (
+            ("Rankings", {"Inspect", "View Ranking Results", "Copy Full Identifier"}),
+            ("Policies", {"Inspect", "Edit TOML", "Validate"}),
+        ):
+            await app.switch("Markets", view)
+            await pilot.pause(0.3)
+            await pilot.click(table, offset=(12, first), button=3)
+            assert isinstance(app.screen, ActionMenu)
+            assert set(app.screen.actions) == expected
+            await pilot.press("escape")
+
+
+@pytest.mark.asyncio
+async def test_catalogue_and_retained_run_row_actions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    ctx = context(tmp_path)
+    run_id = "11111111-1111-4111-8111-111111111111"
+    run = ctx.paths.runs_dir / run_id
+    run.mkdir(parents=True)
+    (run / "report.json").write_text(
+        json.dumps(
+            {
+                "kind": "historical_pipeline",
+                "state": "complete",
+                "name": "fixture",
+                "started_at": "2026-11-20T00:00:00Z",
+            }
+        )
+    )
+
+    async def invoke(
+        key: str, v: Values, ctx: ApplicationContext, progress: Progress, edit: Edit
+    ) -> object:
+        assert key == "catalog instrument list"
+        return {
+            "instruments": [
+                {
+                    "id": 20,
+                    "identity_key": "bybit/spot/spot/BTCUSDT",
+                    "symbol": "BTCUSDT",
+                    "exchange": "bybit",
+                    "instrument_type": "spot",
+                    "market_category": "spot",
+                }
+            ]
+        }
+
+    app = ForgeApp(ctx, invoke=invoke)
+    monkeypatch.setattr(app, "check_registry", lambda: None)
+    app.initial_area, app.initial_view = "Catalogue", "Instruments"
+    async with app.run_test(size=(95, 30)) as pilot:
+        await pilot.pause(0.3)
+        table = app.query_one("#results", Results)
+        table.focus()
+        await pilot.press("f2")
+        assert isinstance(app.screen, ActionMenu)
+        assert app.screen.actions == ("Inspect", "View Specifications", "Copy Full Identifier")
+        await pilot.press("escape")
+        await app.switch("Runs", "Retained")
+        await pilot.pause(0.3)
+        table.focus()
+        await pilot.press("f2")
+        assert isinstance(app.screen, ActionMenu)
+        actions = app.screen.actions
+        assert {"Inspect", "Open Report", "Open Logs", "Resume Pipeline"} <= set(actions)
+        await pilot.click(f"#menu-{actions.index('Copy Full Identifier')}")
+        assert isinstance(app.screen, Detail)
+        await pilot.click("#copy")
+        assert app.clipboard == run_id

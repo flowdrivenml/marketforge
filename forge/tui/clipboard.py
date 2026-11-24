@@ -10,6 +10,9 @@ from os import environ
 from typing import cast
 
 from rich.text import Text
+from textual.app import App
+
+from forge.historical.archives.storage.files import disk
 
 _CONTROL = re.compile(
     r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|[\x00-\x08\x0b-\x1f\x7f-\x9f]"
@@ -26,8 +29,16 @@ def safe_text(value: str) -> str:
     return _SECRET.sub("[redacted]", _CONTROL.sub("", value))
 
 
+def sensitive_field(name: str) -> bool:
+    return _SENSITIVE_FIELD.search(name) is not None
+
+
+def contains_credentials(value: str) -> bool:
+    return _SECRET.search(value) is not None
+
+
 def field_text(key: str, value: object) -> str:
-    return "[redacted]" if _SENSITIVE_FIELD.search(key) else plain(value)
+    return "[redacted]" if sensitive_field(key) else plain(value)
 
 
 def plain(value: object) -> str:
@@ -39,7 +50,7 @@ def plain(value: object) -> str:
         return "\n".join(
             f"{name.replace('_', ' ').capitalize()}  " + plain(item).replace("\n", "\n  ")
             for key, item in cast(Mapping[object, object], value).items()
-            if not _SENSITIVE_FIELD.search(name := str(key))
+            if not sensitive_field(name := str(key))
         )
     if isinstance(value, (list, tuple)):
         return "\n\n".join(plain(item) for item in cast(list[object] | tuple[object, ...], value))
@@ -77,3 +88,15 @@ def deliver(value: str) -> str | None:
         if result.returncode == 0:
             return command[0]
     return None
+
+
+async def copy_text[ReturnType](app: App[ReturnType], value: str) -> None:
+    if len(value.encode("utf-8")) > 74_000:
+        app.notify("Clipboard limit is 74,000 bytes. Select a smaller passage.", severity="warning")
+        return
+    provider = None if app.is_headless else await disk(deliver, value)
+    if provider:
+        app.notify(f"Copied via {provider}.")
+    else:
+        app.copy_to_clipboard(value)
+        app.notify("Clipboard request sent via OSC 52.")

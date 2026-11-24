@@ -3,6 +3,7 @@
 import hashlib
 from dataclasses import dataclass
 from os import environ
+from os import path as os_path
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,6 +15,7 @@ from forge.historical.engine.runtime_config import (
     Snapshot,
     configured_at,
     create_entry,
+    identity,
     native,
     parse_document,
     read_snapshot,
@@ -163,6 +165,7 @@ class ConfigurationDraft:
         self.initial = self.original.data if self.original else b""
         self.candidate = self.initial
         self.checked: bytes | None = None
+        self.effective_document: dict[str, Any] | None = None
         self.fields: list[dict[str, Any]] = []
         self.status = ""
         self.schema_version: object = None
@@ -194,6 +197,7 @@ class ConfigurationDraft:
 
     def inspect(self) -> None:
         self.checked = None
+        self.effective_document = None
         if self.runtime:
             schema = self.runtime.schema()
             self.schema_version = schema["runtime_schema_version"]
@@ -352,6 +356,8 @@ class ConfigurationDraft:
                 )
             if self.checked is None:
                 return
+            effective = settings.model_dump()
+        self.effective_document = effective
         self.checked = self.candidate
         self.status = "Validated"
 
@@ -376,6 +382,23 @@ class ConfigurationDraft:
                 else:
                     value = raw
             self.candidate = change_toml(self.candidate, path, value)
+
+    def check_editor_source(self) -> None:
+        """Check the captured settings snapshot before importing a reviewed editor draft."""
+        original = self.original
+        if original is None:
+            unchanged = not os_path.lexists(self.path)
+        else:
+            current = read_snapshot(self.path)
+            unchanged = (
+                identity(current.info) == identity(original.info)
+                and current.data == original.data
+                and os_path.samestat(current.directory, original.directory)
+            )
+        if not unchanged:
+            raise MarketForgeError(
+                "The configuration changed during editing. The editor draft was kept."
+            )
 
     def preview(self) -> Change | PipelineChange | ApplicationChange:
         if self.source_error:

@@ -634,13 +634,35 @@ def normalized(
             dry_run=document.get("dry_run") is True,
             recipe=recipe,
         )
+        sources: list[tuple[str, ...]] = []
+        for request in rows(document.get("requests")):
+            groups = (
+                ("Selected", rows(request.get("selected_archives"))),
+                ("Blocked", rows(request.get("blockers"))),
+            )
+            for state, entries in groups:
+                sources.extend(
+                    (
+                        scalar(request.get("request_index")),
+                        scalar(entry.get("local_id")),
+                        state,
+                        scalar(entry.get("profile")) or "—",
+                        scalar(entry.get("reason")) or "—",
+                    )
+                    for entry in entries
+                )
+        source_table = table(
+            "Raw archive resolution",
+            ("Request", "Archive ID", "Status", "Profile", "Reason"),
+            sources,
+        )
         return (
             (("Rust validation", prep.compatibility),) if prep.compatibility else (),
             tuple(item for item in prep.identity if item[0] != "Recipe")
             + prep.resolution
             + prep.ranking,
             (),
-            (),
+            (source_table,),
             tuple(filter(None, (prep.error, *(reason for _, reason in prep.examples[:10])))),
         )
     view = NormalizationOutcome.from_result(document, registering=action == "register")
@@ -984,7 +1006,7 @@ def report(inspection: RunInspection, root: Path, environment: str) -> ReportVie
                     or "prepared_job_count" in document
                     or "engine_compatibility" in document
                 ):
-                    phase = "Preparation"
+                    phase = scalar(document.get("failed_stage")) or "Preparation"
                 diagnostics += notices
             elif operation == "merge" and (
                 {"compatibility", "execution_id", "dataset", "evidence"} & document.keys()

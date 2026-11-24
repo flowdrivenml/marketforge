@@ -18,6 +18,7 @@ from textual.widgets import Button, Static
 
 from forge.historical.archives.progress import ProgressSnapshot
 from forge.historical.pipelines.progress import PipelineSnapshot
+from forge.shared.presentation.normalization import PreparationView
 from forge.shared.terminal.palette import BLUE, CYAN, MUTED, RED, YELLOW
 from forge.tui.controller import Operation, document
 from forge.tui.design import OUTLINE
@@ -116,13 +117,17 @@ def dashboard(op: Operation, width: int, height: int) -> Group:
         headings = ("Stage", "Phase", "Outcome", *(("Duration", "Output") if width >= 78 else ()))
         for heading in headings:
             table.add_column(justify="right" if heading == "Duration" else "left")
-        table.add_row(*(Text(heading, f"bold {CYAN}") for heading in headings))
+        table.add_row(*(Text(heading, f"bold {BLUE}") for heading in headings))
         for stage in snapshot.stages:
             table.add_row(
-                Text(stage.name.capitalize(), style=BLUE),
+                Text(stage.name.capitalize()),
                 Text(
                     stage.phase.replace("_", " "),
-                    style=CYAN if stage.name == snapshot.active_stage else "",
+                    style=CYAN
+                    if stage.name == snapshot.active_stage
+                    else MUTED
+                    if stage.state == "waiting"
+                    else "",
                 ),
                 status(stage.state),
                 *(
@@ -158,8 +163,9 @@ def dashboard(op: Operation, width: int, height: int) -> Group:
                     "Recent activity",
                     Group(
                         *(
-                            Text(
-                                f"{event.stage}  ·  {event.phase.replace('_', ' ')}  ·  {event.state}"
+                            Text.assemble(
+                                f"{event.stage}  ·  {event.phase.replace('_', ' ')}  ·  ",
+                                status(event.state),
                             )
                             for event in snapshot.recent[-(5 if height >= 37 else 3) :]
                         )
@@ -197,6 +203,25 @@ def dashboard(op: Operation, width: int, height: int) -> Group:
     }
     if checks:
         parts.append(panel("Validation and readiness", fields(checks)))
+    if result.get("kind") == "normalization_prepare_report":
+        preparation = PreparationView.from_result(
+            result,
+            environment=op.environment or "",
+            dry_run=result.get("dry_run") is True,
+            recipe=op.reference,
+        )
+        if stage := result.get("failed_stage"):
+            parts.append(panel("Failed stage", Text(display(stage), style=RED)))
+        parts.append(
+            panel("Preparation", fields(dict(preparation.identity + preparation.resolution)))
+        )
+        if preparation.examples:
+            parts.append(
+                panel(
+                    "Preparation diagnostics",
+                    Group(*(Text(reason, style=RED) for _, reason in preparation.examples)),
+                )
+            )
     blockers = [
         Text(display(item), style=RED)
         for key in ("blockers", "compatibility_blockers")
@@ -242,6 +267,7 @@ def dashboard(op: Operation, width: int, height: int) -> Group:
     error = (
         op.error
         or result.get("error")
+        or result.get("validation_error")
         or (snapshot.error if isinstance(snapshot, PipelineSnapshot) else None)
     )
     if error:

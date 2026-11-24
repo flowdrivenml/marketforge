@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 import socket
-import subprocess
 import sys
 import tempfile
 from collections.abc import Awaitable, Callable, Sequence
@@ -17,25 +15,22 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from forge.historical.engine.managed import checksum
-from forge.historical.engine.process import EngineOutcomeUnknown
+from forge.historical.engine.process import (
+    EngineOutcomeUnknown,
+    cancellation_grace,
+    require_dispatch,
+    shutdown,
+    track_until_exit,
+)
 from forge.historical.normalization.service import write_job
 from forge.orchestration.registry import current_execution
 from forge.shared.errors import MarketForgeError
 from forge.shared.identity import PIPELINE_STAGE_LABELS as STAGE_LABELS
-
-
-class WindowUnavailable(MarketForgeError):
-    """The worker was never authorized to execute."""
+from forge.shared.terminal.window import GhosttyWindow, Window, WindowUnavailable
 
 
 class WindowLost(EngineOutcomeUnknown):
     """A dispatched worker's outcome could not be confirmed."""
-
-
-class Window(Protocol):
-    async def wait(self) -> int: ...
-    def terminate(self) -> None: ...
-    def kill(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -79,48 +74,8 @@ class StageRequest:
         }
 
 
-@dataclass(frozen=True)
-class Ghostty:
-    executable: str
-    name = "Ghostty"
-
-    @classmethod
-    def detect(cls) -> Ghostty:
-        if sys.platform == "darwin":
-            raise WindowUnavailable(
-                "Managed stage windows currently require Linux Ghostty. Use --stage-terminal inline on macOS."
-            )
-        if sys.platform != "linux" or not (
-            os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")
-        ):
-            raise WindowUnavailable(
-                "No Linux graphical display is available. In tmux, start a shell with the current desktop environment, or use --stage-terminal inline."
-            )
-        executable = shutil.which("ghostty")
-        if not executable:
-            raise WindowUnavailable("Install Ghostty or use --stage-terminal inline.")
-        try:
-            probe = subprocess.run(
-                [executable, "+show-config", "--default"],
-                capture_output=True,
-                text=True,
-                timeout=3,
-                check=True,
-            )
-        except (OSError, subprocess.SubprocessError):
-            raise WindowUnavailable(
-                "Cannot inspect Ghostty's window options. Check the installation."
-            ) from None
-        options = (
-            "gtk-single-instance",
-            "initial-window",
-            "wait-after-command",
-            "quit-after-last-window-closed",
-            "abnormal-command-exit-runtime",
-        )
-        if not all(f"{option} =" in probe.stdout for option in options):
-            raise WindowUnavailable("This Ghostty build lacks the required GTK window options.")
-        return cls(executable)
+class Ghostty(GhosttyWindow):
+    """Ghostty with the processing dispatch authorization gate."""
 
     async def launch(self, request: Path, *, cwd: Path, title: str) -> Window:
         return await self.launch_module(
@@ -128,33 +83,9 @@ class Ghostty:
         )
 
     async def launch_module(self, module: str, request: Path, *, cwd: Path, title: str) -> Window:
-        # Isolate this window from any existing Ghostty instance or tmux session.
-        env = {
-            key: value
-            for key, value in os.environ.items()
-            if key not in {"TMUX", "TMUX_PANE", "MARKETFORGE_TUI_HOLD"}
-        }
-        return await asyncio.create_subprocess_exec(
-            self.executable,
-            "--config-default-files=false",
-            "--gtk-single-instance=false",
-            "--initial-window=true",
-            "--wait-after-command=false",
-            "--quit-after-last-window-closed=true",
-            "--abnormal-command-exit-runtime=0",
-            f"--working-directory={cwd}",
-            f"--title={title}",
-            "-e",
-            sys.executable,
-            "-m",
-            module,
-            str(request),
-            cwd=cwd,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
+        require_dispatch()
+        return await self.launch_command(
+            (sys.executable, "-m", module, str(request)), cwd=cwd, title=title
         )
 
 
@@ -171,11 +102,18 @@ async def close_window(window: Window, waiting: asyncio.Task[int], *, grace: flo
         with suppress(ProcessLookupError):
             window.terminate()
         try:
-            await asyncio.wait_for(asyncio.shield(waiting), 2)
+            await asyncio.wait_for(asyncio.shield(waiting), cancellation_grace(2))
         except TimeoutError:
             with suppress(ProcessLookupError):
                 window.kill()
-            await waiting
+            if cancellation_grace(0, 1):
+                done, _ = await asyncio.wait({waiting}, timeout=0.5)
+                if not done:
+                    if (state := shutdown.get()) is not None:
+                        state.unverified = True
+                    raise WindowLost("Could not verify execution-window shutdown.") from None
+            else:
+                await waiting
 
 
 @dataclass
@@ -318,6 +256,8 @@ class StageWindows:
                     raise
                 window = started_window
                 waiting = asyncio.create_task(started_window.wait())
+                if isinstance(started_window, asyncio.subprocess.Process):
+                    track_until_exit(started_window, waiting)
                 accept = asyncio.create_task(loop.sock_accept(server))
                 try:
                     async with asyncio.timeout(self.startup_timeout):
@@ -347,6 +287,7 @@ class StageWindows:
                             raise WindowUnavailable(message)
                         # After authorization is attempted the stage is never retried inline.
                         authorized = True
+                        require_dispatch()
                         await loop.sock_sendall(connection, b"G")
                         if await loop.sock_recv(connection, 1) != b"S":
                             raise WindowLost(
@@ -412,8 +353,13 @@ class StageWindows:
         finally:
             self.started_stage = None
             if connection is not None:
+                if authorized and cancellation_grace(0, 1):
+                    with suppress(OSError):
+                        connection.send(b"E")
                 connection.close()
             if window is not None and waiting is not None:
                 await close_window(
-                    window, waiting, grace=self.shutdown_timeout if authorized else 0.25
+                    window,
+                    waiting,
+                    grace=cancellation_grace(self.shutdown_timeout, 2) if authorized else 0.25,
                 )

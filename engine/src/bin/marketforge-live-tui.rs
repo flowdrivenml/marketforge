@@ -1,2 +1,3 @@
-//! Compatibility name for the standalone HTTP-backed administration UI.
-include!("marketforge-tui.rs");
+fn main() -> std::process::ExitCode {
+    marketforge_engine::live::management::tui::run_cli()
+}

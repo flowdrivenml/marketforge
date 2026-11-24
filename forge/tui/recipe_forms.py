@@ -26,6 +26,7 @@ from forge.historical.registration.models import Recipe as RegistrationRecipe
 from forge.shared.config.toml import value
 from forge.tui.actions import Field, Value, Values
 from forge.tui.controller import document
+from forge.tui.interval import combine_timestamp, split_timestamp
 
 Payload = dict[str, object]
 Path = tuple[str | int, ...]
@@ -232,16 +233,46 @@ class RecipeForm:
                     entries[index] if index < len(entries) else None,
                     (*path, index),
                     f"{'Request' if name == 'requests' else 'Input'} {index + 1}",
-                    index == 0,
+                    False,
                     gates,
                 )
-                if index and index >= len(entries):
+                if index >= len(entries):
                     gate = next(
                         control for control in self.controls if control.path == (*path, index)
                     )
                     self.controls[self.controls.index(gate)] = Control(
                         gate.field, True, "gate", gate.path
                     )
+            return
+        if name in {"start", "end", "start_ns", "end_ns"} and (
+            len(path) == 1 or path[-2] in {"interval", "coverage"}
+        ):
+            date, time = split_timestamp(data, nanoseconds=name.endswith("_ns"))
+            endpoint = (
+                "Start UTC (inclusive)" if name.startswith("start") else "End UTC (exclusive)"
+            )
+            for part, initial, placeholder in (
+                ("date", date, "YYYY-MM-DD"),
+                ("time", time, "HH:MM:SS"),
+            ):
+                self.controls.append(
+                    Control(
+                        Field(
+                            f"{key}--{part}",
+                            f"{endpoint} · {part.title()}",
+                            required=required,
+                            group=group,
+                            placeholder=placeholder,
+                            help="Enter a UTC calendar date as YYYY-MM-DD."
+                            if part == "date"
+                            else "Enter UTC time as HH:MM:SS. Fractional seconds are supported.",
+                            visible_when=self.visible(gates),
+                        ),
+                        initial,
+                        f"interval-{part}",
+                        path,
+                    )
+                )
             return
         choices: tuple[str, ...] = ()
         enums = schema.get("enum")
@@ -263,7 +294,9 @@ class RecipeForm:
         read = "toml" if kind not in {"string", "integer", "number"} and not choices else "scalar"
         if schema.get("format") == "date-time":
             read = "datetime"
-        if self.model is MergeRecipe and path == ("dataset_ids",):
+        if (self.model is MergeRecipe and path == ("dataset_ids",)) or (
+            self.model is DerivedRecipe and path == ("selection", "publication_ids")
+        ):
             read = "id-list"
         if name in {"tick_size", "qty_step", "min_qty", "max_qty", "min_notional", "max_notional"}:
             read = "scalar"
@@ -271,6 +304,9 @@ class RecipeForm:
             "start_ns": "Start (Unix nanoseconds, inclusive)",
             "end_ns": "End (Unix nanoseconds, exclusive)",
             "dataset_ids": "Registered primary-file IDs",
+            "publication_ids": "Registry publication IDs",
+            "kind": "Scope kind" if "scope" in path else "Kind",
+            "identifier": "Scope identifier",
         }.get(name, name.replace("_", " ").capitalize())
         if schema.get("format") == "date-time":
             label = {"start": "Start UTC (inclusive)", "end": "End UTC (exclusive)"}.get(
@@ -303,7 +339,7 @@ class RecipeForm:
                 ", ".join(map(str, cast(list[object], data))) if isinstance(data, list) else ""
             )
             help_parts.append(
-                "Use Find to add registered files. Separate manually entered IDs with commas."
+                "Use Find to add registered IDs. Separate manually entered IDs with commas."
             )
         conditional = None
         if self.model is NormalizationRecipe and len(path) == 3 and name == "source_key":
@@ -368,11 +404,38 @@ class RecipeForm:
     def payload(self, values: Values) -> tuple[Payload, dict[str, str]]:
         result: Payload = {}
         issues: dict[str, str] = {}
+        dates: dict[Path, Control] = {}
         for control in self.controls:
             key, path = control.field.key, control.path
-            if key not in values:
+            if key not in values or (
+                control.field.visible_when and not control.field.visible_when(values)
+            ):
                 continue
             raw = values[key]
+            if control.read == "interval-date":
+                dates[path] = control
+                continue
+            if control.read == "interval-time":
+                date = dates.get(path)
+                if date is None:
+                    continue
+                entered = str(values[date.field.key])
+                if not entered and not date.field.required:
+                    continue
+                try:
+                    parsed_interval: object = combine_timestamp(
+                        entered, str(raw), nanoseconds=str(path[-1]).endswith("_ns")
+                    )
+                except ValueError as error:
+                    issues[date.field.key if not entered else key] = str(error)
+                else:
+                    original: object = self.original
+                    for component in path:
+                        original = document(original).get(str(component))
+                    if entered == date.initial and raw == control.initial and original is not None:
+                        parsed_interval = original
+                    self.put(result, path, parsed_interval)
+                continue
             if raw == "" or (control.read == "gate" and raw is not True):
                 continue
             parsed: object = raw
@@ -443,7 +506,7 @@ class RecipeForm:
 
 def summarize(data: Payload, state: str, path: str) -> dict[str, object]:
     interval = document(data.get("interval") or data.get("coverage"))
-    summary: dict[str, object] = {"Status": state or "Saved"}
+    summary: dict[str, object] = {"Recipe state": state or "Saved"}
     if "start" in interval and "end" in interval:
         summary["Requested period"] = f"{interval['start']} → {interval['end']} (end exclusive)"
     else:
@@ -523,9 +586,17 @@ def summarize(data: Payload, state: str, path: str) -> dict[str, object]:
 
 def update_recipe(original: bytes, before: Payload, after: Payload) -> str:
     """Patch only changed values in the existing TOML document."""
-    from collections.abc import MutableMapping
+    from collections.abc import MutableMapping, MutableSequence
 
     import tomlkit
+    from tomlkit.items import AoT, Table
+
+    def retained_indices(old: list[object], new: list[object]) -> list[int] | None:
+        indices: list[int] = []
+        for index, item in enumerate(old):
+            if len(indices) < len(new) and item == new[len(indices)]:
+                indices.append(index)
+        return indices if len(indices) == len(new) else None
 
     def patch(
         table: MutableMapping[str, object], old: Mapping[str, object], new: Mapping[str, object]
@@ -547,6 +618,32 @@ def update_recipe(original: bytes, before: Payload, after: Payload) -> str:
                     cast(Payload, previous),
                     cast(Payload, item),
                 )
+            elif (
+                isinstance(current, AoT)
+                and isinstance(previous, list)
+                and isinstance(item, list)
+                and item[: len(cast(list[object], previous))] == previous
+            ):
+                for entry in cast(
+                    list[dict[str, object]], item[len(cast(list[object], previous)) :]
+                ):
+                    addition = tomlkit.item(entry)
+                    assert isinstance(addition, Table)
+                    cast(MutableSequence[Table], current).append(addition)
+            elif (
+                isinstance(current, AoT)
+                and isinstance(previous, list)
+                and isinstance(item, list)
+                and (
+                    indices := retained_indices(
+                        cast(list[object], previous), cast(list[object], item)
+                    )
+                )
+                is not None
+            ):
+                for index in reversed(range(len(current))):
+                    if index not in indices:
+                        del cast(MutableSequence[Table], current)[index]
             else:
                 table[key] = item
 

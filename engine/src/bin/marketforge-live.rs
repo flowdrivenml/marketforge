@@ -3,16 +3,21 @@ mod unix_application {
     use clap::Parser;
     use marketforge_engine::{
         live::{application::*, config::*, stream::persistence::*},
-        shared::persistence::postgres,
+        shared::{persistence::postgres, workspace},
     };
     #[cfg(not(feature = "management-api"))]
     use std::collections::BTreeSet;
-    use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+    use std::{
+        collections::BTreeMap,
+        path::{Path, PathBuf},
+        sync::Arc,
+    };
     #[derive(Parser)]
     #[command(about = "Headless MarketForge Live; management API with management-api feature")]
     struct Arguments {
-        #[arg(long, default_value = "data/.config/live")]
-        config_dir: PathBuf,
+        /// Exchange and format directory (defaults to data/.config/live in the workspace).
+        #[arg(long)]
+        config_dir: Option<PathBuf>,
         /// Validate static configuration without database access, sockets or exchange I/O.
         #[arg(long)]
         validate_only: bool,
@@ -54,11 +59,23 @@ mod unix_application {
         code
     }
     async fn execute(args: Arguments) -> Result<(), String> {
+        let invocation = std::env::current_dir().map_err(|e| e.to_string())?;
+        let root = workspace::resolve(None, &invocation).map_err(|e| e.to_string())?;
+        let config_dir = args
+            .config_dir
+            .unwrap_or_else(|| root.join("data/.config/live"));
         let general_path = args
             .general
-            .clone()
-            .unwrap_or_else(|| args.config_dir.join("general.toml"));
-        let config = general::GeneralConfig::load(&general_path).map_err(|e| e.to_string())?;
+            .unwrap_or_else(|| config_dir.join("general.toml"));
+        let mut config = general::GeneralConfig::load(&general_path).map_err(|e| e.to_string())?;
+        let socket_path = Path::new(&config.publication.socket_path);
+        if socket_path.starts_with("data") {
+            config.publication.socket_path = root
+                .join(socket_path)
+                .into_os_string()
+                .into_string()
+                .map_err(|_| "managed publication socket path is not UTF-8")?;
+        }
         let level = match config.logging.level {
             general::LogLevel::Trace => tracing::Level::TRACE,
             general::LogLevel::Debug => tracing::Level::DEBUG,
@@ -72,11 +89,10 @@ mod unix_application {
             .with_writer(std::io::stderr)
             .try_init()
             .map_err(|_| "logging initialization failed")?;
-        let exchanges = ExchangeConfigStore::load_dir(args.config_dir.join("exchanges"))
+        let exchanges = ExchangeConfigStore::load_dir(config_dir.join("exchanges"))
             .map_err(|e| e.to_string())?;
         let formats = Arc::new(
-            FormatConfigStore::load_dir(args.config_dir.join("formats"))
-                .map_err(|e| e.to_string())?,
+            FormatConfigStore::load_dir(config_dir.join("formats")).map_err(|e| e.to_string())?,
         );
         formats.validate_all()?;
         if config.recording.enabled {
@@ -184,9 +200,10 @@ mod unix_application {
             &BTreeMap::new(),
         )?;
         #[cfg(feature = "management-api")]
-        let credentials =
-            marketforge_engine::live::management::Credentials::load(&config.control.management)
-                .map_err(|e| e.to_string())?;
+        let credentials = marketforge_engine::live::management::service::Credentials::load(
+            &config.control.management,
+        )
+        .map_err(|e| e.to_string())?;
         // Install both handlers before advertising readiness. A controller may
         // send a signal immediately after observing the serving notification.
         let mut terminate =
@@ -206,7 +223,7 @@ mod unix_application {
         };
         #[cfg(feature = "management-api")]
         let mut application = {
-            use marketforge_engine::live::management::*;
+            use marketforge_engine::live::management::service::*;
             let store: Arc<dyn DefinitionStore> = if let Some(pool) = &pool {
                 Arc::new(PostgresDefinitionStore(StreamDefinitionRepository::new(
                     pool.clone(),

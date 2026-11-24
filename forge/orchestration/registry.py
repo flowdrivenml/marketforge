@@ -359,8 +359,11 @@ class Execution:
                 summary["preparation"] = preparation
         recipe_metadata = self.outcome.with_name("recipe-source.json")
         if recipe_metadata.is_file():
-            summary["recipe_source"] = json.loads(recipe_metadata.read_bytes())
-            summary["recipe_snapshot"] = str(self.outcome.with_name("recipe.toml"))
+            metadata = json.loads(recipe_metadata.read_bytes())
+            summary["recipe_source"] = metadata
+            summary["recipe_snapshot"] = metadata.get(
+                "snapshot", str(self.outcome.with_name("recipe.toml"))
+            )
         # Reserve room for PostgreSQL's JSONB representation and retain
         # essential status and provenance before optional result details.
         priority = ("domain_status", "recipe_source", "recipe_snapshot", "stages", "stage_order")
@@ -956,33 +959,96 @@ async def complete_call(
         return await execution.finish(result)
 
 
-def retain_recipe(operation: RunOperation, source: Path, submitted: bytes) -> None:
-    """Retain the exact bytes used by a registered workflow's recipe loader."""
+def retain_recipe(
+    operation: RunOperation,
+    source: Path,
+    submitted: bytes,
+    *,
+    effective: Mapping[str, object] | None = None,
+    destination: Path | None = None,
+    family: str | None = None,
+) -> None:
+    """Commit the bytes and metadata used by this attempt before dispatch."""
+    import tomllib
+
+    from forge.orchestration.artifacts import retain_bytes
+
     execution = current_execution()
     if execution is None or execution.operation != operation:
         return
-    import os
-    from tempfile import NamedTemporaryFile
-
-    from forge.historical.archives.storage.files import publish
-
-    destination = execution.outcome.with_name("recipe.toml")
-    if destination.is_file():
-        return
+    destination = destination or execution.outcome.with_name("recipe.toml")
     if not destination.resolve().is_relative_to(execution.root.resolve()):
         raise MarketForgeError("Unsafe retained recipe location.")
-    temporary: Path | None = None
-    try:
-        with NamedTemporaryFile(dir=destination.parent, prefix=".recipe-", delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(submitted)
-            stream.flush()
-            os.fsync(stream.fileno())
-        publish(temporary, destination)
-        write_job(
-            destination.with_name("recipe-source.json"),
-            {"path": str(source.resolve()), "sha256": hashlib.sha256(submitted).hexdigest()},
-        )
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    digest = retain_bytes(destination, submitted)
+    metadata: dict[str, object] = {
+        "path": str(source.resolve()),
+        "name": source.stem,
+        "family": family or str(operation),
+        "version": tomllib.loads(submitted.decode()).get("version"),
+        "snapshot": str(destination),
+        "sha256": digest,
+        "submitted_at": execution.started_at.isoformat(),
+        "environment": execution.purpose,
+        "registry_id": execution.registry,
+    }
+    if effective is not None:
+        metadata.update(retain_effective(effective))
+    retain_bytes(
+        execution.outcome.with_name("recipe-source.json"),
+        json.dumps(metadata, sort_keys=True).encode(),
+    )
+
+
+def retain_effective(effective: Mapping[str, object]) -> dict[str, str]:
+    """Retain resolved settings from the same model used by execution."""
+    from forge.orchestration.artifacts import retain_bytes
+
+    execution = current_execution()
+    if execution is None:
+        return {}
+    path = execution.outcome.with_name("effective-configuration.json")
+    digest = retain_bytes(path, json.dumps(effective, sort_keys=True, indent=2).encode())
+    return {"effective_configuration": str(path), "effective_sha256": digest}
+
+
+def recipe_evidence() -> dict[str, Any]:
+    """Return the recipe declaration from the active attempt, when present."""
+    execution = current_execution()
+    if execution is None:
+        return {}
+    metadata = execution.outcome.with_name("recipe-source.json")
+    return json.loads(metadata.read_bytes()) if metadata.is_file() else {}
+
+
+def inherit_recipe(operation: RunOperation, evidence: Mapping[str, Any]) -> None:
+    """Pin the original recipe from a verified prepared submission."""
+    from forge.orchestration.runs import safe_report
+
+    execution = current_execution()
+    if not evidence or execution is None or execution.operation != operation:
+        return
+    require_registry(evidence, execution.registry)
+    previous = recipe_evidence()
+    if previous:
+        if previous["sha256"] != evidence["sha256"]:
+            raise MarketForgeError("Prepared job belongs to a different recipe snapshot.")
+        return
+
+    root = execution.paths.runs_dir.resolve()
+    snapshot = Path(evidence["snapshot"])
+    if snapshot.is_symlink() or not snapshot.resolve().is_relative_to(root):
+        raise MarketForgeError("Prepared recipe snapshot is outside run storage.")
+    data = snapshot.read_bytes()
+    if hashlib.sha256(data).hexdigest() != evidence["sha256"]:
+        raise MarketForgeError("Prepared recipe snapshot fingerprint differs.")
+    effective = None
+    if effective_path := evidence.get("effective_configuration"):
+        source = Path(effective_path)
+        effective = safe_report(source, root)
+        if hashlib.sha256(
+            json.dumps(effective, sort_keys=True, indent=2).encode()
+        ).hexdigest() != evidence.get("effective_sha256"):
+            raise MarketForgeError("Prepared effective configuration fingerprint differs.")
+    retain_recipe(
+        operation, Path(evidence["path"]), data, effective=effective, family=evidence["family"]
+    )

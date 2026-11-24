@@ -2,11 +2,13 @@
 
 import json
 from dataclasses import dataclass, field
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 
 from forge.orchestration.inspection import (
     MANAGED_RUN,
+    read_engine_logs,
     read_events,
     read_logs,
     read_managed_logs,
@@ -35,7 +37,7 @@ def safe_reference(reference: str) -> tuple[str, bool]:
     return str(parsed), parsed.operation is None
 
 
-def safe_report(path: Path, root: Path) -> dict[str, Any]:
+def safe_report(path: Path, root: Path, *, exact: bool = False) -> dict[str, Any]:
     # The indexed path is a pointer. Read the original bytes, with the same inspection bounds.
     if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
         raise MarketForgeError("Unsafe indexed report path.")
@@ -44,9 +46,11 @@ def safe_report(path: Path, root: Path) -> dict[str, Any]:
     with path.open("rb") as stream:
         data = stream.read(4 * 1024 * 1024 + 1)
     if len(data) > 4 * 1024 * 1024:
+        if exact:
+            return {"status": "report_exceeds_preview_limit"}
         raise MarketForgeError("Run report exceeds 4 MiB inspection limit.")
     try:
-        payload: object = json.loads(data)
+        payload: object = json.loads(data, parse_float=Decimal if exact else float)
     except (ValueError, UnicodeError):
         return {"status": "report_incomplete_or_invalid"}
     return (
@@ -69,6 +73,7 @@ class RunInspection:
     inspection_notes: tuple[str, ...] = ()
     removal: dict[str, Any] | None = None
     log_files: dict[str, Path] = field(default_factory=dict[str, Path])
+    report_files: dict[str, Path] = field(default_factory=dict[str, Path])
 
 
 async def inspect_run(
@@ -84,6 +89,7 @@ async def inspect_run_evidence(
     action: str,
     limit: int,
     human: bool = False,
+    editor_targets: bool = False,
 ) -> RunInspection:
     name, legacy = safe_reference(reference)
     root = paths.runs_dir
@@ -112,6 +118,8 @@ async def inspect_run_evidence(
     extra = supplemental if human else None
     log_files: dict[str, Path] = {}
     sources = log_files if human and action == "logs" else None
+    report_files: dict[str, Path] = {}
+    report_sources = report_files if editor_targets and action != "logs" else None
     if record is None:
         if not legacy:
             raise MarketForgeError("Run is absent from the selected registry.")
@@ -124,7 +132,7 @@ async def inspect_run_evidence(
                 else read_logs(root, name, limit, sources=sources)
             )
         else:
-            evidence = read_managed_report(root, name)
+            evidence = read_managed_report(root, name, sources=report_sources)
     elif action == "show":
         evidence = record
     else:
@@ -137,6 +145,7 @@ async def inspect_run_evidence(
             truncated=truncated,
             supplemental=extra,
             sources=sources,
+            report_sources=report_sources,
         )
     jobs, notes = (
         conversion_receipts(root, record)
@@ -154,7 +163,16 @@ async def inspect_run_evidence(
     if removal:
         evidence = {**evidence, "history_removal": removal}
     return RunInspection(
-        name, evidence, record, truncated, supplemental, jobs, notes, removal, log_files
+        name,
+        evidence,
+        record,
+        truncated,
+        supplemental,
+        jobs,
+        notes,
+        removal,
+        log_files,
+        report_files,
     )
 
 
@@ -241,18 +259,24 @@ def retained_evidence(
     truncated: set[str] | None = None,
     supplemental: dict[str, str] | None = None,
     sources: dict[str, Path] | None = None,
+    report_sources: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
     if Path(record["artifact_root"]).resolve() != (root / name).resolve():
         raise MarketForgeError("Run evidence belongs to a different workspace.")
     report = record["report_path"]
     if action == "report":
         if report:
-            return safe_report(Path(report), root)
+            if report_sources is not None:
+                report_sources["Execution report"] = Path(report)
+            return safe_report(Path(report), root, exact=report_sources is not None)
         if record["attempts"]:
             outcome = Path(record["attempts"][-1]["outcome_path"])
             if outcome.is_file():
+                if report_sources is not None:
+                    report_sources["Attempt outcome"] = outcome
+                    return safe_report(outcome, root / name, exact=True)
                 return bounded_json(outcome, root / name)
-        return read_report(root, name)
+        return read_report(root, name, sources=report_sources)
     if record["operation"] == "acquisition" and report:
         path = Path(report).with_name("events.jsonl")
         if path.resolve().is_relative_to((root / name).resolve()) and path.is_file():
@@ -267,6 +291,19 @@ def retained_evidence(
             root, name, truncated=truncated, supplemental=supplemental, sources=sources
         )
     directory = Path(report).parent if report else None
+    if directory is not None and record["operation"] == "normalize":
+        retained = safe_report(Path(report), root, exact=True)
+        if retained.get("kind") == "normalization_prepare_report" and isinstance(
+            reference := retained.get("validation_logs"), str
+        ):
+            logs = Path(reference)
+            if (
+                logs.name.startswith("validation-")
+                and directory in (logs, logs.parent)
+                and logs.resolve().is_relative_to(root.resolve())
+                and not logs.is_symlink()
+            ):
+                return read_engine_logs(logs, truncated=truncated, sources=sources)
     if (
         directory is not None
         and directory.resolve().parent == root.resolve()

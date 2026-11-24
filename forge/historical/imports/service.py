@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import tomllib
 from collections.abc import AsyncIterator
 from dataclasses import asdict
 from pathlib import Path
@@ -16,7 +17,7 @@ from forge.historical.archives.storage.files import CHUNK_SIZE, disk, publish
 from forge.historical.imports.models import FrozenInput, ImportConfig, ImportError, freeze_inputs
 from forge.markets.repository import json_value
 from forge.orchestration.artifacts import RunArtifacts
-from forge.orchestration.registry import begin, complete_call, current_execution
+from forge.orchestration.registry import begin, complete_call, current_execution, retain_recipe
 from forge.shared.async_work import bounded_map
 from forge.shared.database.connection import database_connection
 from forge.shared.identity import RunOperation, parse_run_id
@@ -287,23 +288,35 @@ async def _run_import(
         raise ImportError(
             "Legacy import is raw-only. Use acquisition register for a verified binding."
         )
-    frozen = await disk(freeze_inputs, config)
+    submitted = await disk(source_file.read_bytes)
+    if ImportConfig.model_validate(tomllib.loads(submitted.decode())) != config:
+        raise ImportError("The import recipe changed before execution.")
     execution = current_execution()
     assert execution is not None
     run_id = parse_run_id(execution.id)
     artifacts = RunArtifacts.for_run(paths, run_id)
     await disk(artifacts.root.mkdir, parents=True, exist_ok=True)
-    await disk(artifacts.submitted_config.write_bytes, await disk(source_file.read_bytes))
     await disk(
-        artifacts.resolved_plan.write_text,
+        retain_recipe,
+        RunOperation.ACQUISITION,
+        source_file,
+        submitted,
+        destination=artifacts.submitted_config,
+        family="import",
+    )
+    frozen = await disk(freeze_inputs, config)
+    from forge.orchestration.artifacts import retain_bytes
+
+    resolved_sha256 = await disk(
+        retain_bytes,
+        artifacts.resolved_plan,
         json.dumps(
             {
                 "configuration": config.model_dump(mode="json"),
                 "inputs": [asdict(i) for i in frozen],
             },
             indent=2,
-        ),
-        encoding="utf-8",
+        ).encode(),
     )
     counts = {"completed": 0, "reused": 0, "failed": 0, "cancelled": 0}
 
@@ -354,6 +367,8 @@ async def _run_import(
         "report": str(artifacts.report),
         "events": str(artifacts.events),
         "plan": str(artifacts.resolved_plan),
+        "resolved_plan": str(artifacts.resolved_plan),
+        "resolved_sha256": resolved_sha256,
     }
     await disk(artifacts.report.write_text, json.dumps(report, indent=2), encoding="utf-8")
     return report

@@ -40,3 +40,31 @@ class RunArtifacts:
     @property
     def steps_dir(self) -> Path:
         return self.root / "steps"
+
+
+def retain_bytes(path: Path, data: bytes) -> str:
+    """Publish exact evidence without replacing a committed artifact."""
+    import hashlib
+    import os
+    from tempfile import NamedTemporaryFile
+
+    from forge.historical.archives.storage.files import publish
+    from forge.shared.errors import MarketForgeError
+
+    digest = hashlib.sha256(data).hexdigest()
+    temporary: Path | None = None
+    try:
+        with NamedTemporaryFile(dir=path.parent, prefix=".retaining-", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            publish(temporary, path)
+        except FileExistsError:
+            if path.is_symlink() or path.read_bytes() != data:
+                raise MarketForgeError(f"Retained evidence differs: {path}") from None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return digest

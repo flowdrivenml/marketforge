@@ -47,6 +47,7 @@ KNOWN_FILES = {
     "outcome.json",
     "preparation.json",
     "recipe-source.json",
+    "effective-configuration.json",
     "recipe.toml",
     "submitted.toml",
     "resolved-plan.json",

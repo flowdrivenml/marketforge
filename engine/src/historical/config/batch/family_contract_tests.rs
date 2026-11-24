@@ -5,9 +5,7 @@ fn root() -> PathBuf {
     support::root()
 }
 fn directory() -> tempfile::TempDir {
-    let path = root().join("data/tests/historical/normalize/completion/family-contract-unit");
-    std::fs::create_dir_all(&path).unwrap();
-    tempfile::tempdir_in(path).unwrap()
+    tempfile::tempdir().unwrap()
 }
 fn wire() -> Value {
     use super::super::normalization_fixture::{
@@ -187,7 +185,7 @@ fn four_okx_members_discover_route_and_keep_stable_concrete_identities() {
     );
     let groups = crate::historical::normalize::streams::plan(&job).unwrap();
     assert_eq!(groups.len(), 1);
-    let config = support::runtime();
+    let config = support::runtime_in(temp.path());
     let quota = crate::historical::normalize::reconcile::Quota::new(
         config.resources.normalization_limits.reconciliation_bytes,
     );
@@ -351,7 +349,7 @@ fn bybit_native_and_binance_filename_discovery_preserve_null_contract_values() {
             Some("BTCUSDT")
         );
         let groups = crate::historical::normalize::streams::plan(&job).unwrap();
-        let config = support::runtime();
+        let config = support::runtime_in(temp.path());
         let quota = crate::historical::normalize::reconcile::Quota::new(
             config.resources.normalization_limits.reconciliation_bytes,
         );
@@ -429,7 +427,7 @@ fn mixed_trade_member_and_depth_members_share_ids_and_absence_is_permitted_per_s
         json!({"mode":"include","symbols":["BTC-USD_UM-270326"]});
     let absent = resolve(&batch(value)).unwrap();
     assert_eq!(absent.tasks.len(), 1);
-    let config = support::runtime();
+    let config = support::runtime_in(temp.path());
     let groups = crate::historical::normalize::streams::plan(&absent).unwrap();
     let quota = crate::historical::normalize::reconcile::Quota::new(
         config.resources.normalization_limits.reconciliation_bytes,
@@ -479,7 +477,7 @@ fn filtering_members_preserves_physical_rows_and_archive_inventory_limits() {
         symbols: vec!["BTC-USD_UM-261127".into()],
     });
     let job = resolve(&b).unwrap();
-    let config = support::runtime();
+    let config = support::runtime_in(temp.path());
     let groups = crate::historical::normalize::streams::plan(&job).unwrap();
     let quota = crate::historical::normalize::reconcile::Quota::new(
         config.resources.normalization_limits.reconciliation_bytes,

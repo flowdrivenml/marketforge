@@ -1,3 +1,5 @@
+//! Internal stream execution, processing, lifecycle and routing.
+
 #[cfg(feature = "postgres")]
 pub mod persistence;
 #[cfg(feature = "postgres")]

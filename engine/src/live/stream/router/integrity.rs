@@ -1,4 +1,4 @@
-use crate::stream_protocol::{
+use crate::live::streaming::protocol::{
     DataIntegrityEvidence, DataIntegritySnapshot, DataIntegrityUpdate, MAX_OBSERVATIONS,
     MAX_SOURCES, SequenceObservation,
 };
@@ -105,7 +105,7 @@ impl Shared {
         &self,
         state: &State,
         stream: &str,
-        discontinuity: Option<crate::stream_protocol::StreamDiscontinuity>,
+        discontinuity: Option<crate::live::streaming::protocol::StreamDiscontinuity>,
     ) -> DataIntegritySnapshot {
         let resolved = self.integrity_sources(stream);
         let scope_truncated = resolved.is_err();
@@ -415,12 +415,12 @@ impl SubscriptionHandle {
     }
 }
 impl StreamRouter {
-    fn describe_stream(&self, id: &str) -> Option<crate::stream_protocol::StreamDescription> {
+    fn describe_stream(&self, id: &str) -> Option<crate::live::streaming::protocol::StreamDescription> {
         let d = self.shared.graph.read().get(id).cloned()?;
         if !d.desired.enabled {
             return None;
         }
-        Some(crate::stream_protocol::StreamDescription {
+        Some(crate::live::streaming::protocol::StreamDescription {
             stream_id: id.into(),
             semantics: match &d.definition {
                 StreamDefinition::Source(s) => match s.channel {
@@ -436,7 +436,7 @@ impl StreamRouter {
                 .to_vec(),
             schemas: vec![1],
             source: match &d.definition {
-                StreamDefinition::Source(s) => Some(crate::stream_protocol::SourceDescription {
+                StreamDefinition::Source(s) => Some(crate::live::streaming::protocol::SourceDescription {
                     exchange: s.exchange.as_str().into(),
                     instrument_id: s.instrument_id,
                     symbol: s.symbol.clone(),
@@ -461,7 +461,7 @@ impl StreamRouter {
         &self,
         id: &str,
         budget: usize,
-    ) -> Result<Option<crate::stream_protocol::StreamDescription>, ()> {
+    ) -> Result<Option<crate::live::streaming::protocol::StreamDescription>, ()> {
         self.description_charge(id, budget)?
             .map(|_| self.describe_stream(id).ok_or(()))
             .transpose()
@@ -519,9 +519,9 @@ impl StreamRouter {
     }
     pub(crate) fn list_streams_bounded(
         &self,
-        page: &crate::stream_protocol::PageRequest,
+        page: &crate::live::streaming::protocol::PageRequest,
         frame_limit: usize,
-    ) -> Result<crate::stream_protocol::StreamPage, ()> {
+    ) -> Result<crate::live::streaming::protocol::StreamPage, ()> {
         if page.after.as_ref().is_some_and(|a| a.len() > 4096) {
             return Err(());
         }
@@ -546,7 +546,7 @@ impl StreamRouter {
                 }
                 Ok(None) => (),
                 Err(()) if !streams.is_empty() => {
-                    return Ok(crate::stream_protocol::StreamPage {
+                    return Ok(crate::live::streaming::protocol::StreamPage {
                         streams,
                         next: cursor,
                     });
@@ -562,7 +562,7 @@ impl StreamRouter {
             }
         }
         let next = ids.peek().is_some().then_some(cursor).flatten();
-        Ok(crate::stream_protocol::StreamPage { streams, next })
+        Ok(crate::live::streaming::protocol::StreamPage { streams, next })
     }
 }
 impl ProducerHandle {
@@ -650,7 +650,7 @@ impl ProducerHandle {
         e.depth_coverage =
             status
                 .depth_coverage
-                .map(|c| crate::stream_protocol::integrity::DepthCoverage {
+                .map(|c| crate::live::streaming::protocol::integrity::DepthCoverage {
                     subscribed_depth: c.subscribed_depth,
                     retained_bid_levels: c.retained_bid_levels as u64,
                     retained_ask_levels: c.retained_ask_levels as u64,
@@ -690,7 +690,7 @@ impl ProducerHandle {
 
 #[derive(Clone, Default)]
 pub(crate) struct DataDiscontinuitySink(
-    Arc<Mutex<Option<crate::stream_protocol::StreamDiscontinuity>>>,
+    Arc<Mutex<Option<crate::live::streaming::protocol::StreamDiscontinuity>>>,
 );
 impl DataDiscontinuitySink {
     pub(crate) fn record(&self, detail: &str) {
@@ -716,7 +716,7 @@ impl DataDiscontinuitySink {
         }
         let mut slot = lock(&self.0);
         if slot.is_none() {
-            *slot = Some(crate::stream_protocol::StreamDiscontinuity {
+            *slot = Some(crate::live::streaming::protocol::StreamDiscontinuity {
                 revision: None,
                 detail: detail.chars().take(512).collect(),
                 detail_truncated: detail.chars().count() > 512,

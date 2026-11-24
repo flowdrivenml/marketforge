@@ -1,7 +1,10 @@
 use super::{Result, model::*};
 use crate::{
     historical::config::{FormatCatalog, read_prepared_batch},
-    shared::historical::{load_processing_config, project_root, validate_processing_config},
+    shared::{
+        historical::{load_processing_config, validate_processing_config},
+        workspace,
+    },
 };
 use std::{
     collections::BTreeSet,
@@ -25,7 +28,7 @@ pub fn plan(args: &Args, invocation: &Path) -> Result<Plan> {
         return Err("measured repetitions must be positive".into());
     }
     let root =
-        project_root(absolute_from(&args.project_root, invocation)).map_err(|e| e.to_string())?;
+        workspace::resolve(args.project_root.as_deref(), invocation).map_err(|e| e.to_string())?;
     let input = absolute_from(args.input.as_ref().ok_or("--input required")?, invocation)
         .canonicalize()
         .map_err(|e| format!("benchmark input: {e}"))?;

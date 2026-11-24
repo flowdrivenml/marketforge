@@ -1,4 +1,4 @@
-pub use crate::management_protocol::definitions::identity::*;
+pub use crate::live::management::protocol::definitions::identity::*;
 #[cfg(test)]
 mod tests {
     use crate::live::config::{ExchangeId, ExchangeIdentity, MarketType};

@@ -325,7 +325,7 @@ fn published_profile_schema_matches_its_rust_authority() {
         assert_eq!(
             expected.as_str(),
             Some(actual.as_str()),
-            "Review profile semantics in {path}, then run engine/scripts/generate_profile_schema.py"
+            "Review profile semantics in {path}, then run scripts/engine/generation/generate_profile_schema.py"
         );
     }
 }

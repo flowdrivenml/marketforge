@@ -10,6 +10,7 @@ from typing import cast
 from uuid import uuid4
 
 from forge.historical.archives.storage.files import disk
+from forge.historical.engine.process import Shutdown, shutdown
 from forge.orchestration.registry import current_execution
 from forge.shared.database.connection import DatabaseError, database_environment, pinned_registry
 from forge.shared.ownership import OwnershipConflictError, WorkspaceOwnership
@@ -73,6 +74,7 @@ class Controller:
         self.task: asyncio.Task[Operation] | None = None
         self.current: Operation | None = None
         self.history: list[Operation] = []
+        self.shutdown = Shutdown()
 
     def active(self) -> bool:
         return self.task is not None and not self.task.done()
@@ -85,6 +87,8 @@ class Controller:
         *,
         reviewed: tuple[Path, bytes] | None = None,
     ) -> asyncio.Task[Operation]:
+        if self.shutdown.emergency:
+            raise ValueError("Emergency shutdown has started.")
         if self.active():
             raise ValueError("Work is already active. Inspect it in Runs or wait for cleanup.")
         op = Operation(
@@ -125,6 +129,7 @@ class Controller:
                     return await apply()
                 return await self.invoke(action.key, values, self.context, progress, self.editor)
 
+        token_shutdown = shutdown.set(self.shutdown)
         try:
             if (
                 not read_only(action, values)
@@ -154,6 +159,7 @@ class Controller:
             op.state = "failed"
             op.error = str(error)
         finally:
+            shutdown.reset(token_shutdown)
             op.record(op.state)
             op.finished_tick = monotonic()
             op.finished_at = datetime.now(UTC).isoformat()
@@ -174,3 +180,16 @@ class Controller:
                     raise
                 if self.current is not None:
                     self.current.state = "interrupted"
+
+    async def emergency_stop(self) -> bool:
+        self.shutdown.emergency = True
+        cancellation = asyncio.create_task(self.cancel())
+        deadline = monotonic() + 4
+        done, _ = await asyncio.wait({cancellation}, timeout=4)
+        if cancellation not in done:
+            cancellation.cancel()
+            return False
+        await cancellation
+        while self.shutdown.process_count() and monotonic() < deadline:  # noqa: ASYNC110
+            await asyncio.sleep(0.05)
+        return not self.shutdown.unverified and self.shutdown.process_count() == 0

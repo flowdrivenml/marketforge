@@ -124,6 +124,10 @@ async def execute_async(
     await joined_io(lambda: submission.write_bytes(source.read_bytes()))
     prepared = source.parent / "prepare-report.json"
     evidence: dict[str, Any] = json.loads(prepared.read_text()) if prepared.is_file() else {}
+    from forge.orchestration.registry import inherit_recipe
+    from forge.shared.identity import RunOperation
+
+    await joined_io(inherit_recipe, RunOperation.NORMALIZE, evidence.get("recipe_evidence", {}))
     origin = evidence.get("configuration_origin")
     if origin is not None:
         runtime = source.parent / str(evidence.get("configuration_filename", "general.toml"))
@@ -282,7 +286,9 @@ async def execute_async(
         "submitted_source": str(source_path),
         "submitted_sha256": checksum(submission),
         "configuration_sha256": checksum(config),
+        "configuration_path": str(config),
         "configuration_origin": origin or str(runtime),
+        "effective_runtime": runtime_settings,
         "profiles": profile_evidence,
         "executable_sha256": checksum(binary),
         "started_at": datetime.now(UTC).isoformat(),

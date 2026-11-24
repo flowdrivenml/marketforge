@@ -15,7 +15,7 @@ from uuid import UUID
 from rich.text import Text
 
 from forge.historical.engine.managed import checksum
-from forge.historical.engine.process import joined_io, supervise
+from forge.historical.engine.process import Shutdown, joined_io, shutdown, supervise
 from forge.historical.normalization.service import write_job
 from forge.historical.pipelines import service
 from forge.historical.pipelines.terminal import STAGE_LABELS, StageRequest
@@ -143,6 +143,7 @@ async def run_worker(
     current = asyncio.current_task()
     assert current is not None
     requested = False
+    shutdown_state = Shutdown()
 
     def cancel() -> None:
         nonlocal requested
@@ -170,7 +171,7 @@ async def run_worker(
 
     async def watch_parent() -> None:
         try:
-            await loop.sock_recv(channel, 1)
+            shutdown_state.emergency = await loop.sock_recv(channel, 1) == b"E"
         finally:
             cancel()
 
@@ -190,6 +191,7 @@ async def run_worker(
             if engine is None:
                 await run.acquire_with_display()
             else:
+                shutdown.set(shutdown_state)
                 engine_result = await supervise(
                     engine.argv,
                     paths.root,

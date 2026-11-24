@@ -38,7 +38,13 @@ def load_configuration(source: Path, *, retain: bool = True) -> Recipe:
         else:
             recipe = NormalizationRecipe.model_validate(document)
     if retain:
-        retain_recipe(RunOperation.NORMALIZE, source, data)
+        retain_recipe(
+            RunOperation.NORMALIZE,
+            source,
+            data,
+            effective=recipe.model_dump(mode="json"),
+            family="normalization",
+        )
     return recipe
 
 

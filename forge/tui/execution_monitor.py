@@ -17,8 +17,10 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Button, Static
 
 from forge.historical.archives.storage.files import disk
+from forge.historical.engine.process import track_until_exit
 from forge.historical.pipelines.terminal import Ghostty, WindowUnavailable, close_window
 from forge.tui.controller import Operation, document
+from forge.tui.design import THEME
 from forge.tui.operation_view import dashboard
 from forge.tui.screens import Confirm
 
@@ -56,10 +58,20 @@ async def observe(
         root = Path(temporary)
         frame = root / "frame.json"
         publish(frame, op, environment)
-        window = await launcher.launch_module(
-            "forge.tui.execution_monitor", frame, cwd=cwd, title=f"MarketForge · {op.title}"
+        launch = asyncio.create_task(
+            launcher.launch_module(
+                "forge.tui.execution_monitor", frame, cwd=cwd, title=f"MarketForge · {op.title}"
+            )
         )
+        try:
+            window = await asyncio.shield(launch)
+        except asyncio.CancelledError:
+            window = await launch
+            await close_window(window, asyncio.create_task(window.wait()), grace=0)
+            raise
         waiting = asyncio.create_task(window.wait())
+        if isinstance(window, asyncio.subprocess.Process):
+            track_until_exit(window, waiting)
         try:
             async with asyncio.timeout(8):
                 while not (root / "ready").exists():
@@ -96,6 +108,8 @@ class Monitor(App[None]):
 
     def __init__(self, frame: Path) -> None:
         super().__init__()
+        self.register_theme(THEME)
+        self.theme = THEME.name
         self.frame = frame
 
     def compose(self) -> ComposeResult:
@@ -139,7 +153,11 @@ class Monitor(App[None]):
                     self.frame.with_name("stop").touch()
 
         self.push_screen(
-            Confirm("Request stop", "Forge will interrupt the run and retain its evidence."),
+            Confirm(
+                "Request stop",
+                "Forge will interrupt the run and retain its evidence.",
+                tone="error",
+            ),
             confirm,
         )
 

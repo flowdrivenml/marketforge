@@ -35,7 +35,6 @@ from forge.storage import browsing, cleanup, cleanup_plans
 from forge.storage.models import StorageFilters
 from forge.storage.service import maintain
 from forge.tui.actions import Values
-from forge.tui.run_views import project as run_view
 from forge.tui.workflows import Edit, Progress, file, value, workflow
 
 
@@ -375,8 +374,10 @@ async def system(key: str, v: Values, context: ApplicationContext, progress: Pro
         if action == "list":
             return await list_index(paths, limit=limit)
         evidence = await inspect_run_evidence(
-            paths, reference, action=action, limit=limit, human=True
+            paths, reference, action=action, limit=limit, human=True, editor_targets=True
         )
+        from forge.tui.run_views import project as run_view
+
         return run_view(evidence, context, action)
     if key == "doctor":
         report = await disk(

@@ -32,7 +32,6 @@ pub mod formats {
 pub mod tui;
 #[cfg(feature = "historical")]
 pub use historical::normalize as process;
-#[cfg(feature = "live")]
 pub mod live;
 #[cfg(any(feature = "live", feature = "historical", feature = "parquet"))]
 /// Legacy public persistence paths; implementations live under Shared.
@@ -48,8 +47,13 @@ pub mod storage {
     }
 }
 
+// Original public client and protocol paths.
 #[cfg(any(feature = "stream-client", feature = "management-client"))]
-pub mod client;
-pub mod stream_protocol;
-
-pub mod management_protocol;
+pub mod client {
+    #[cfg(feature = "management-client")]
+    pub use crate::live::management::client as management;
+    #[cfg(all(unix, feature = "stream-client"))]
+    pub use crate::live::streaming::client as streaming;
+}
+pub use live::management::protocol as management_protocol;
+pub use live::streaming::protocol as stream_protocol;

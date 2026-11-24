@@ -3,12 +3,14 @@
 import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
+from rich.cells import cell_len
 from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.content import Content
 from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import (
@@ -25,10 +27,21 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
-from forge.historical.archives.storage.files import disk
 from forge.shared.errors import MarketForgeError
+from forge.shared.terminal.palette import YELLOW
 from forge.tui.actions import Action, Field, Value, Values
-from forge.tui.clipboard import deliver, plain, safe_text
+from forge.tui.clipboard import copy_text, plain, safe_text
+from forge.tui.design import SECONDARY
+from forge.tui.editor_inspection import InspectionTarget, OpenInspection, structured
+from forge.tui.interval import combine_timestamp
+
+
+class FormCheckbox(Checkbox):
+    """Keep Textual toggle behavior with an explicit checked glyph."""
+
+    BUTTON_LEFT = "["
+    BUTTON_INNER = "✓"
+    BUTTON_RIGHT = "]"
 
 
 class Host(Protocol):
@@ -72,9 +85,17 @@ class Form(ModalScreen[Values | None]):
         review: Callable[[Values], str] | None = None,
         commit_label: str = "Save",
         expand: Callable[[Values], tuple[tuple[Field, ...], Values]] | None = None,
+        expand_label: str = "Add another entry",
+        initial_focus: str = "reference",
+        historical_interval: bool | None = None,
     ) -> None:
         super().__init__()
         self.spec = action
+        self.historical_interval = historical_interval
+        if historical_interval is not None:
+            from dataclasses import replace
+
+            self.spec = replace(action, fields=(*action.fields, *historical_interval_fields()))
         self.preset: Values = preset or {}
         self.choices = choices
         self.root = root or Path.cwd()
@@ -86,6 +107,8 @@ class Form(ModalScreen[Values | None]):
         self.open_docs = open_docs
         self.validator = validate
         self.add_fields = expand
+        self.expand_label = expand_label
+        self.initial_focus = initial_focus
         self.review = review
         self.commit_label = commit_label
         self.search_fields = search_fields
@@ -93,12 +116,16 @@ class Form(ModalScreen[Values | None]):
         self.multiple_entities = multiple_entities
         self.issues: dict[str, str] = {}
         self.baseline: Values = {}
+        self.observed_values: Values = {}
         self.validated: Values | None = None
+        self.disclosure_states: dict[str, bool] = {}
+        self.advanced_required: set[str] = set()
 
     def compose(self) -> ComposeResult:
-        with Vertical(classes="dialog workflow-form"):
+        sizing = "dialog-large" if len(self.spec.fields) > 8 else "dialog-compact"
+        with Vertical(classes=f"dialog workflow-form {sizing}"):
             yield Label(self.spec.key, classes="dialog-title", markup=False)
-            with VerticalScroll(classes="fields"):
+            with VerticalScroll(classes="fields dialog-body"):
                 if (
                     self.choices
                     and self.spec.fields
@@ -117,49 +144,203 @@ class Form(ModalScreen[Values | None]):
                         }
                         else "Saved recipes"
                     )
-                    yield Select([(x, x) for x in self.choices], id="saved")
-                groups = grouped_fields(self.spec.fields)
-                for heading, items in groups.items():
-                    if heading == "Advanced Options":
-                        with Collapsible(title=heading, collapsed=True):
-                            for field in items:
-                                yield from self.render_field(field)
-                    else:
-                        if len(groups) > 1 or any(field.group for field in items):
-                            yield Label(heading, classes="form-heading", markup=False)
-                        for field in items:
-                            yield from self.render_field(field)
-                if self.add_fields:
-                    yield Button("Add another entry", id="form-add")
-            yield Static("", id="form-progress", markup=False)
-            yield Static("", id="form-error", markup=False)
-            with Horizontal(classes="buttons"):
-                yield Button("Back", id="back")
-                if self.validator:
-                    yield Button("Validate", id="form-validate")
-                yield Button(
-                    self.submit_label or primary_label(self.spec),
-                    id="submit",
-                    variant="primary",
-                )
-                if not self.local:
-                    yield Button("Copy command", id="copy-command")
-                if self.documentation:
-                    yield Button("Docs", id="form-docs")
-                yield Button("Issues", id="form-issues")
+                    yield Select([(x, x) for x in self.choices], id="saved", compact=True)
+                yield from self.render_sections()
+            with Vertical(classes="form-footer"):
+                yield Static("", id="form-progress", markup=False)
+                yield Static("", id="form-error", markup=False)
+                with Horizontal(classes="buttons"):
+                    yield Button("Back", id="back")
+                    if self.validator:
+                        yield Button("Validate", id="form-validate")
+                    if not self.local:
+                        yield Button("Copy command", id="copy-command")
+                    if self.documentation:
+                        yield Button("Docs", id="form-docs")
+                    yield Button("Issues", id="form-issues")
+                    yield Button(
+                        self.submit_label or primary_label(self.spec),
+                        id="submit",
+                        variant="success"
+                        if self.spec.key.endswith((" run", " resume"))
+                        else "primary",
+                    )
+
+    def render_sections(self) -> ComposeResult:
+        groups = grouped_fields(self.spec.fields)
+        requests = tuple(
+            name
+            for name in groups
+            if name.startswith("Request ") and name.removeprefix("Request ").isdecimal()
+        )
+        stages = tuple(
+            name
+            for name in groups
+            if name
+            in {
+                "Normalization · required stage",
+                "Merge · required stage",
+                "Conversion · optional stage",
+                "Processing options",
+            }
+        )
+        for heading, items in groups.items():
+            if heading in requests:
+                if heading == requests[0]:
+                    with Vertical(classes="form-section"):
+                        yield Label("Acquisition requests", classes="form-heading")
+                        for index, request in enumerate(requests):
+                            key = f"request-{index}"
+                            with self.disclosure(request, key, "request-group", index > 0):
+                                yield from self.render_fields(self.request_fields(groups[request]))
+                        if self.add_fields:
+                            yield Button(f"+ {self.expand_label}", id="form-add")
+            elif heading in stages and requests:
+                if heading == stages[0]:
+                    with Vertical(classes="form-section"):
+                        yield Label("Processing options", classes="form-heading")
+                        for stage in stages:
+                            with Vertical(classes="form-stage"):
+                                if stage != "Processing options":
+                                    yield Label(stage, classes="field-group-title stage-heading")
+                                yield from self.render_fields(groups[stage])
+            elif heading == "Advanced Options":
+                with self.disclosure(heading, "advanced-options", "advanced-group"):
+                    yield from self.render_fields(items)
+            else:
+                with Vertical(classes="form-section"):
+                    if len(groups) > 1 or any(field.group for field in items):
+                        yield Label(heading, classes="form-heading", markup=False)
+                    yield from self.render_fields(items)
+        if self.add_fields and not requests:
+            yield Button(f"+ {self.expand_label}", id="form-add")
+
+    @staticmethod
+    def request_fields(items: list[Field]) -> list[Field]:
+        """Pair feed settings without changing the schema's field order."""
+        fields = items.copy()
+        category = next(
+            (
+                index
+                for index, field in enumerate(fields)
+                if field.key.endswith("--market_category")
+            ),
+            None,
+        )
+        data = next(
+            (index for index, field in enumerate(fields) if field.key.endswith("--data_type")),
+            None,
+        )
+        if category is not None and data is not None and data > category + 1:
+            fields.insert(category + 1, fields.pop(data))
+        return fields
+
+    def disclosure(self, title: str, key: str, classes: str, collapsed: bool = True) -> Collapsible:
+        return Collapsible(
+            title=title,
+            id=key,
+            classes=classes,
+            collapsed=self.disclosure_states.get(key, collapsed),
+            collapsed_symbol="▸",
+            expanded_symbol="▾",
+        )
+
+    def set_layout_width(self, width: int) -> None:
+        self.set_class(width < 96, "stack-fields")
+        self.set_class(width >= 116, "wide-interval")
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_layout_width(event.size.width)
+        if self.focused is not None:
+            self.call_after_refresh(self.focused.scroll_visible, animate=False)
 
     def on_mount(self) -> None:
+        self.set_layout_width(cast(WorkspaceHost, self).app.size.width)
         self.baseline = self.raw_values()
+        self.observed_values = self.baseline.copy()
         self.refresh_fields()
-        for field in self.query("#field-reference").results(Input):
-            field.focus()
+        preferred = next(iter(self.query(f"#field-{self.initial_focus}")), None)
+        if preferred is not None and not preferred.disabled:
+            self.reveal_field(preferred)
+        else:
+            first = next(
+                (
+                    widget
+                    for widget in self.query(".dialog-body Input, .dialog-body Select")
+                    if not widget.disabled
+                    and all(ancestor.display for ancestor in widget.ancestors)
+                    and not any(
+                        isinstance(ancestor, Collapsible) and ancestor.collapsed
+                        for ancestor in widget.ancestors
+                    )
+                ),
+                None,
+            )
+            if first is not None:
+                first.focus(scroll_visible=False)
 
-    def render_field(self, field: Field) -> ComposeResult:
+    def render_interval_endpoint(self, date: Field, time: Field) -> ComposeResult:
+        with Vertical(classes="interval-group"):
+            endpoint = (
+                "Start · Inclusive"
+                if date.key.rsplit("--", 2)[-2].startswith("start")
+                else "End · Exclusive"
+            )
+            yield Label(endpoint, classes="field-group-title")
+            with Horizontal(classes="field-pair"):
+                yield from self.render_field(date, label="Date")
+                yield from self.render_field(time, label="Time UTC")
+
+    def render_fields(self, items: list[Field]) -> ComposeResult:
+        index = 0
+        while index < len(items):
+            field = items[index]
+            following = items[index + 1] if index + 1 < len(items) else None
+            key = field.key.removesuffix("--date")
+            if following and field.key.endswith("--date") and following.key == f"{key}--time":
+                date_end, time_end = (
+                    items[index + 2 : index + 4] if index + 4 <= len(items) else (None, None)
+                )
+                if (
+                    date_end
+                    and time_end
+                    and date_end.key
+                    in {
+                        f"{key.removesuffix('start')}end--date",
+                        f"{key.removesuffix('start_ns')}end_ns--date",
+                    }
+                    and time_end.key == date_end.key.removesuffix("--date") + "--time"
+                ):
+                    with Horizontal(classes="interval-pair"):
+                        yield from self.render_interval_endpoint(field, following)
+                        yield from self.render_interval_endpoint(date_end, time_end)
+                    index += 4
+                else:
+                    yield from self.render_interval_endpoint(field, following)
+                    index += 2
+            elif following and (
+                field.key.rsplit("--", 1)[-1],
+                following.key.rsplit("--", 1)[-1],
+            ) in {
+                ("exchange", "instrument_type"),
+                ("market_category", "data_type"),
+                ("instrument_type", "market_category"),
+                ("base_asset", "quote_asset"),
+            }:
+                with Horizontal(classes="field-pair"):
+                    yield from self.render_field(field)
+                    yield from self.render_field(following)
+                index += 2
+            else:
+                yield from self.render_field(field)
+                index += 1
+
+    def render_field(self, field: Field, *, label: str | None = None) -> ComposeResult:
         field_value = self.preset.get(field.key, field.default)
         with Vertical(classes="form-field", id=f"row-{field.key}"):
             if field.kind != "check":
                 with Horizontal(classes="form-label"):
-                    yield Label("", id=f"label-{field.key}", markup=False)
+                    yield Label(label or field.label, id=f"label-{field.key}", markup=False)
                     if field.help:
                         yield Button("?", id=f"help-{field.key}")
                     if (
@@ -170,7 +351,13 @@ class Form(ModalScreen[Values | None]):
             if field.key in self.locked:
                 yield Input(str(field_value), id=f"field-{field.key}", disabled=True)
             elif field.kind == "check":
-                yield Checkbox(field.label, value=bool(field_value), id=f"field-{field.key}")
+                label = (
+                    "Enable request"
+                    if field.group.startswith("Request ")
+                    and field.key.rsplit("--", 1)[-1].isdecimal()
+                    else field.label
+                )
+                yield FormCheckbox(label, value=bool(field_value), id=f"field-{field.key}")
             elif field.kind == "choice":
                 yield Select(
                     [(choice, choice) for choice in field.choices],
@@ -237,7 +424,8 @@ class Form(ModalScreen[Values | None]):
 
     def refresh_fields(self, changed: str = "") -> None:
         values = self.raw_values()
-        if changed:
+        if changed and values[changed] != self.observed_values.get(changed):
+            self.observed_values[changed] = values[changed]
             self.issues.pop(changed, None)
             self.issues.pop("", None)
         required: list[str] = []
@@ -257,33 +445,46 @@ class Form(ModalScreen[Values | None]):
                 )
                 if key not in self.preset and field.default != "" and key not in self.locked:
                     suffix += f" · default {field.default}"
-                self.query_one(f"#label-{key}", Label).update(field.label + suffix)
+                label = (
+                    "Date"
+                    if key.endswith("--date")
+                    else "Time UTC"
+                    if key.endswith("--time")
+                    else field.label
+                )
+                self.query_one(f"#label-{key}", Label).update(
+                    Content.assemble(
+                        label,
+                        (suffix, YELLOW if mandatory and key not in self.locked else SECONDARY),
+                    )
+                )
             message = self.issues.get(key, "") if active else ""
             if message:
                 active_issues.append(message)
             error = self.query_one(f"#error-{key}", Static)
             error.update(message)
             error.display = bool(message)
-            row.set_class(mandatory, "-required")
-            row.set_class(values[key] != self.baseline.get(key), "-changed")
-            row.set_class(validated and not message, "-validated")
             row.set_class(bool(message), "-invalid")
             row.set_class(active and mandatory and key not in self.locked, "-required")
             row.set_class(
                 active and key in self.baseline and values[key] != self.baseline[key], "-changed"
             )
             row.set_class(active and self.validated == values and mandatory, "-validated")
+        self.refresh_sections(values, required)
         status = self.query_one("#form-progress", Static)
         missing = sum(values[key] == "" for key in required)
-        line = f"* Required · {missing} blank" if required else ""
-        if values != self.baseline:
-            line += (" · " if line else "") + "Pending changes"
+        line = (
+            f"{missing} required {'field' if missing == 1 else 'fields'} remaining"
+            if missing
+            else "Required fields complete"
+            if required
+            else ""
+        )
         if validated:
-            line = "Configuration validated" + (
-                " · Pending changes" if values != self.baseline else ""
-            )
-        status.update(line)
-        status.display = bool(line)
+            line = "Configuration validated"
+        pending = (" · " if line else "") + "Pending changes" if values != self.baseline else ""
+        status.update(Content.assemble(line, (pending, YELLOW)))
+        status.display = bool(line or pending)
         status.set_class(validated, "-validated")
         count = len(active_issues)
         summary = self.issues.get("", "")
@@ -297,6 +498,58 @@ class Form(ModalScreen[Values | None]):
         banner.update(summary)
         banner.display = bool(summary)
         self.query_one("#form-issues", Button).display = bool(summary)
+
+    def refresh_sections(self, values: Values, required: list[str]) -> None:
+        for section in self.query(".form-section, .interval-group"):
+            section.display = any(row.display for row in section.query(".form-field")) or bool(
+                section.query(".request-group")
+            )
+        for stage in self.query(".form-stage"):
+            headings = stage.query(".stage-heading")
+            expanded = sum(row.display for row in stage.query(".form-field")) > 1
+            stage.set_class(bool(headings) and not expanded, "compact-stage")
+            for heading in headings:
+                heading.display = expanded
+        for disclosure in self.query(Collapsible):
+            rows = disclosure.query(".form-field")
+            all_keys = {
+                row.id.removeprefix("row-"): row.display for row in rows if row.id is not None
+            }
+            keys = {key for key, visible in all_keys.items() if visible}
+            disclosure.display = bool(keys)
+            issues = len(keys.intersection(self.issues))
+            modified = any(values[key] != self.baseline.get(key) for key in all_keys)
+            if disclosure.id == "advanced-options":
+                title = "Advanced Options"
+                mandatory = set(keys).intersection(required)
+                conditional = {
+                    field.key
+                    for field in self.spec.fields
+                    if field.required_when and field.key in mandatory
+                }
+                needs_attention = conditional | {key for key in mandatory if values[key] == ""}
+                if needs_attention - self.advanced_required:
+                    disclosure.collapsed = False
+                self.advanced_required = needs_attention
+                if mandatory:
+                    title += " · Required fields"
+            else:
+                index = int((disclosure.id or "").removeprefix("request-"))
+                prefix = f"requests--{index}"
+                enabled = bool(values.get(prefix))
+                title = f"Request {index + 1} · {'Enabled' if enabled else 'Disabled'}"
+                if enabled:
+                    for key in ("exchange", "scope--identifier", "data_type"):
+                        value = values.get(f"{prefix}--{key}")
+                        if value:
+                            title += f" · {safe_text(str(value))}"
+                disclosure.set_class(not enabled, "-inactive")
+            if issues:
+                title += f" · {issues} {'issue' if issues == 1 else 'issues'}"
+            if modified:
+                title += " · Modified"
+            disclosure.title = title
+            disclosure.set_class(bool(issues), "-has-issues")
 
     def on_descendant_blur(self, event: events.DescendantBlur) -> None:
         if (
@@ -339,16 +592,52 @@ class Form(ModalScreen[Values | None]):
                     widget.value = str(event.value)
         self.field_changed(event.select)
 
-    def focus_error(self) -> None:
-        for field in self.spec.fields:
-            if field.key not in self.issues or field.key in self.locked:
+    def assemble_interval(self, values: Values) -> None:
+        nanoseconds = self.historical_interval
+        if nanoseconds is None:
+            return
+        from datetime import datetime
+
+        bounds: list[int | datetime] = []
+        for endpoint in ("start", "end"):
+            date = str(values.pop(f"{endpoint}--date", ""))
+            time = str(values.pop(f"{endpoint}--time", ""))
+            if not date and time == "00:00:00":
                 continue
-            widget = self.query_one(f"#field-{field.key}")
-            for ancestor in widget.ancestors:
-                if isinstance(ancestor, Collapsible):
-                    ancestor.collapsed = False
-            widget.focus()
-            break
+            try:
+                stamp = combine_timestamp(date, time, nanoseconds=nanoseconds)
+            except ValueError as error:
+                self.issues[f"{endpoint}--date"] = str(error)
+                continue
+            bounds.append(stamp)
+            if isinstance(stamp, datetime):
+                values[endpoint] = stamp.isoformat().replace("+00:00", "Z")
+            else:
+                if not -(2**63) <= stamp < 2**63:
+                    self.issues[f"{endpoint}--date"] = "Timestamp is outside the Engine range."
+                values[f"{endpoint}_ns"] = stamp
+        if len(bounds) == 2:
+            start, end = bounds
+            if (isinstance(start, int) and isinstance(end, int) and start >= end) or (
+                isinstance(start, datetime) and isinstance(end, datetime) and start >= end
+            ):
+                self.issues["end--date"] = "End must be later than start."
+
+    def reveal_field(self, widget: Widget) -> None:
+        for ancestor in widget.ancestors:
+            if isinstance(ancestor, Collapsible):
+                ancestor.collapsed = False
+        widget.focus()
+        self.call_after_refresh(widget.scroll_visible, animate=False)
+
+    def focus_error(self) -> None:
+        for row in self.query(".form-field"):
+            if row.id is None or not row.display:
+                continue
+            key = row.id.removeprefix("row-")
+            if key in self.issues and key not in self.locked:
+                self.reveal_field(self.query_one(f"#field-{key}"))
+                break
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         identifier = event.button.id or ""
@@ -427,16 +716,27 @@ class Form(ModalScreen[Values | None]):
             from dataclasses import replace
 
             fields, preset = self.add_fields(raw)
-            self.issues.clear()
+            self.disclosure_states = {
+                disclosure.id: disclosure.collapsed
+                for disclosure in self.query(Collapsible)
+                if disclosure.id is not None
+            }
             self.spec = replace(self.spec, fields=fields)
             self.preset = preset
+            self.observed_values.update(
+                {
+                    field.key: preset.get(field.key, field.default)
+                    for field in fields
+                    if field.key not in raw
+                }
+            )
             await self.recompose()
             self.refresh_fields()
             first_new = next(
                 (field for field in fields if field.key not in raw and field.kind != "check"), None
             )
             if first_new:
-                self.query_one(f"#field-{first_new.key}").focus()
+                self.reveal_field(self.query_one(f"#field-{first_new.key}"))
             else:
                 self.query_one("#form-add", Button).focus()
             return
@@ -452,6 +752,7 @@ class Form(ModalScreen[Values | None]):
                 values[key] = field.parse(raw[key])
             except MarketForgeError as error:
                 self.issues[key] = str(error)
+        self.assemble_interval(values)
         if not self.issues and self.validator and identifier != "copy-command":
             self.issues = await self.validator(values)
             if not self.issues:
@@ -493,19 +794,33 @@ class EntityPicker(ModalScreen[str | None]):
     BINDINGS = [Binding("escape", "back", "Back")]
 
     def __init__(
-        self, title: str, search: Callable[[str], Awaitable[EntityChoices]], initial: str
+        self,
+        title: str,
+        search: Callable[[str], Awaitable[EntityChoices]],
+        initial: str,
+        *,
+        context: str = "",
+        selectable: Callable[[str], bool] | None = None,
     ) -> None:
         super().__init__()
         self.heading = title
         self.search = search
         self.initial = initial
+        self.context_text = context
+        self.selectable = selectable
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog entity-picker"):
             yield Label(f"Find · {self.heading}", classes="dialog-title", markup=False)
+            if self.context_text:
+                yield Static(self.context_text, classes="picker-context", markup=False)
             with Horizontal(classes="path-field"):
                 yield Input(
-                    self.initial, placeholder="Search registered records", id="entity-query"
+                    self.initial,
+                    placeholder="Search recipes"
+                    if self.context_text
+                    else "Search registered records",
+                    id="entity-query",
                 )
                 yield Button("Search", id="entity-search")
             yield Static("", id="entity-status", markup=False)
@@ -531,7 +846,7 @@ class EntityPicker(ModalScreen[str | None]):
         except Exception as error:
             status.update(safe_text(str(error)))
             return
-        result.set_options([(safe_text(label), identity) for label, identity in matches])
+        result.set_options([(Content(safe_text(label)), identity) for label, identity in matches])
         status.update(
             f"{len(matches)} results shown · refine the search if needed"
             if matches
@@ -544,7 +859,10 @@ class EntityPicker(ModalScreen[str | None]):
         self.load_results()
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        self.query_one("#entity-use", Button).disabled = event.value is Select.NULL
+        self.query_one("#entity-use", Button).disabled = not self.can_use(event.value)
+
+    def can_use(self, value: object) -> bool:
+        return isinstance(value, str) and (self.selectable is None or self.selectable(value))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         match event.button.id:
@@ -552,7 +870,7 @@ class EntityPicker(ModalScreen[str | None]):
                 self.load_results()
             case "entity-use":
                 result = cast(Select[str], self.query_one("#entity-result", Select)).value
-                if isinstance(result, str):
+                if isinstance(result, str) and self.can_use(result):
                     self.dismiss(result)
             case "entity-back":
                 self.action_back()
@@ -633,13 +951,13 @@ class PathPicker(ModalScreen[Path | None]):
         self.selected_path = root
 
     def compose(self) -> ComposeResult:
-        with Vertical(classes="dialog detail"):
+        with Vertical(classes="dialog path-picker"):
             yield Label("Choose a workspace path", classes="dialog-title")
             yield DirectoryTree(self.root_path, id="path-tree")
             yield Static(str(self.selected_path), id="path-selection", markup=False)
             with Horizontal(classes="buttons"):
-                yield Button("Use selected path", id="use-path")
                 yield Button("Back", id="back")
+                yield Button("Use selected path", id="use-path", variant="primary")
 
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
         self.dismiss(event.path)
@@ -665,31 +983,64 @@ class Confirm(ModalScreen[bool]):
         *,
         destructive: bool = False,
         confirm_label: str = "Confirm",
+        back_label: str = "Back",
+        tone: Literal["", "error"] = "",
+        preview: str | None = None,
     ) -> None:
         super().__init__()
         self.title_text = title
         self.explanation = explanation
         self.confirm_label = confirm_label
+        self.back_label = back_label
         self.destructive = destructive
+        self.tone = "error" if destructive else tone
+        self.preview = preview
 
     def compose(self) -> ComposeResult:
-        with Vertical(classes="dialog confirmation"):
-            yield Label(self.title_text, classes="dialog-title", markup=False)
+        with Vertical(classes="dialog dialog-compact confirmation"):
+            yield Label(
+                self.title_text,
+                classes="dialog-title status-error" if self.tone else "dialog-title",
+                markup=False,
+            )
             with VerticalScroll(classes="confirm-scope"):
                 yield Static(safe_text(self.explanation), markup=False)
             with Horizontal(classes="buttons"):
-                yield Button("Back", id="back")
+                yield Button(self.back_label, id="back")
+                if self.preview is not None:
+                    yield Button("Review TOML", id="confirm-preview")
                 yield Button(
                     self.confirm_label,
                     id="confirm",
-                    variant="error" if self.destructive else "primary",
+                    variant="error" if self.tone else "primary",
                 )
+
+    def fit_body(self, width: int, height: int) -> None:
+        dialog_width = min(68, width * 96 // 100)
+        body_lines = len(Content(safe_text(self.explanation)).wrap(max(1, dialog_width - 6)))
+        title_lines = len(Content(self.title_text).wrap(max(1, dialog_width - 6)))
+        chrome = min(3, title_lines) + 5
+        self.set_class(body_lines + chrome > height * 92 // 100, "long-confirmation")
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.fit_body(event.size.width, event.size.height)
+
+    def on_mount(self) -> None:
+        viewport = cast(WorkspaceHost, self).app.size
+        self.fit_body(viewport.width, viewport.height)
+        if self.destructive:
+            self.query_one("#back", Button).focus()
 
     def action_back(self) -> None:
         self.dismiss(False)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "confirm")
+        if event.button.id == "confirm-preview":
+            cast(WorkspaceHost, self).app.push_screen(
+                Detail("Candidate TOML", self.preview, raw=True)
+            )
+        else:
+            self.dismiss(event.button.id == "confirm")
 
 
 class Detail(ModalScreen[None]):
@@ -701,24 +1052,61 @@ class Detail(ModalScreen[None]):
         value: object,
         *,
         raw: bool = False,
+        error: bool = False,
         actions: dict[str, Callable[[], object]] | None = None,
+        editor_target: InspectionTarget | None = None,
     ) -> None:
         super().__init__()
         self.title_text = title
         self.value_text = safe_text(str(value)) if raw else plain(value)
         self.actions = actions or {}
+        self.error = error
+        self.editor_target = editor_target or (None if raw or error else structured(value))
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog detail"):
-            yield Label(self.title_text, classes="dialog-title", markup=False)
-            text = TextArea(self.value_text, read_only=True, soft_wrap=False, id="detail-text")
-            text.styles.height = min(40, max(2, self.value_text.count("\n") + 2))
+            yield Label(
+                self.title_text,
+                classes="dialog-title status-error" if self.error else "dialog-title",
+                markup=False,
+            )
+            text = TextArea(self.value_text, read_only=True, soft_wrap=True, id="detail-text")
+            text.styles.height = self.detail_height(self.value_text)
             yield text
-            with Horizontal(classes="buttons"):
+            yield from self.render_actions()
+
+    def render_actions(self, *, include_editor: bool = True) -> ComposeResult:
+        with Horizontal(classes="buttons detail-actions"):
+            with Horizontal(classes="action-group"):
                 yield Button("Back", id="back")
                 yield Button("Copy value", id="copy", classes="tertiary")
-                for index, title in enumerate(self.actions):
-                    yield Button(title, id=f"detail-{index}")
+                if include_editor and self.editor_target is not None:
+                    yield OpenInspection(
+                        self.editor_target, "Open in Neovim", id="detail-open-editor"
+                    )
+            if self.actions:
+                with Horizontal(classes="action-group"):
+                    for index, title in enumerate(self.actions):
+                        yield Button(title, id=f"detail-{index}")
+
+    def detail_height(self, content: str) -> int:
+        width = max(16, min(100, cast(WorkspaceHost, self).app.size.width * 96 // 100) - 7)
+        lines = sum(max(1, (len(line) + width - 1) // width) for line in content.split("\n"))
+        return min(40, max(2, lines + 1))
+
+    def fit_actions(self, width: int) -> None:
+        footer_width = min(100, width * 96 // 100) - 4
+        buttons = self.query(".detail-actions Button").results(Button)
+        required_width = sum(cell_len(str(button.label)) + 3 for button in buttons)
+        self.set_class(bool(self.actions) and required_width > footer_width, "wrap-detail-actions")
+
+    def on_mount(self) -> None:
+        self.fit_actions(cast(WorkspaceHost, self).app.size.width)
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.fit_actions(event.size.width)
+        for text in self.query("#detail-text").results(TextArea):
+            text.styles.height = self.detail_height(self.value_text)
 
     def action_back(self) -> None:
         self.dismiss(None)
@@ -727,20 +1115,7 @@ class Detail(ModalScreen[None]):
     async def action_copy(self) -> None:
         value = self.query_one(TextArea).selected_text or self.value_text
         app = cast(WorkspaceHost, self).app
-        if len(value.encode("utf-8")) > 74_000:
-            self.notify(
-                "Clipboard limit is 74,000 bytes. Select a smaller passage or export the log.",
-                severity="warning",
-            )
-            return
-        provider = None if app.is_headless else await disk(deliver, value)
-        if provider:
-            self.notify(f"Copied via {provider}.")
-        else:
-            app.copy_to_clipboard(value)
-            self.notify(
-                "OSC 52 sent. If paste fails, select text with your terminal's mouse override."
-            )
+        await copy_text(app, value)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         identity = event.button.id or ""
@@ -748,7 +1123,7 @@ class Detail(ModalScreen[None]):
             self.dismiss(None)
         elif identity == "copy":
             self.action_copy()
-        elif identity.startswith("detail-"):
+        elif identity.startswith("detail-") and identity.removeprefix("detail-").isdigit():
             callback = list(self.actions.values())[int(identity.removeprefix("detail-"))]
             self.dismiss(None)
             cast(WorkspaceHost, self).app.call_later(callback)
@@ -762,6 +1137,7 @@ class LiveDetail(Detail):
         super().__init__(title, snapshot())
 
     def on_mount(self) -> None:
+        super().on_mount()
         self.set_interval(0.5, self.reload)
 
     def reload(self) -> None:
@@ -771,7 +1147,7 @@ class LiveDetail(Detail):
             widget = self.query_one(TextArea)
             x, y = widget.scroll_x, widget.scroll_y
             widget.load_text(content)
-            widget.styles.height = min(40, max(2, content.count("\n") + 2))
+            widget.styles.height = self.detail_height(content)
             widget.scroll_to(x, y, animate=False, immediate=True)
 
 
@@ -839,29 +1215,31 @@ class RunDetail(Detail):
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog detail"):
             yield Label(self.title_text, classes="dialog-title", markup=False)
-            with Horizontal(classes="buttons"):
+            with Horizontal(classes="buttons detail-tabs"):
                 for index, title in enumerate(self.sections):
-                    yield Button(title, id=f"run-section-{index}")
-            text = TextArea(self.value_text, read_only=True, soft_wrap=False, id="detail-text")
-            text.styles.height = min(40, max(2, self.value_text.count("\n") + 2))
+                    yield Button(
+                        title,
+                        id=f"run-section-{index}",
+                        classes="run-section primary" if index == 0 else "run-section",
+                    )
+            text = TextArea(self.value_text, read_only=True, soft_wrap=True, id="detail-text")
+            text.styles.height = self.detail_height(self.value_text)
             yield text
-            with Horizontal(classes="buttons"):
-                yield Button("Back", id="back")
-                yield Button("Copy value", id="copy", classes="tertiary")
-                for index, title in enumerate(self.actions):
-                    yield Button(title, id=f"detail-{index}")
+            yield from self.render_actions(include_editor=False)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         identity = event.button.id or ""
         if not identity.startswith("run-section-"):
             super().on_button_pressed(event)
             return
+        for button in self.query(".run-section").results(Button):
+            button.set_class(button is event.button, "primary")
         name = list(self.sections)[int(identity.removeprefix("run-section-"))]
         content = self.sections[name]
         self.value_text = pretty(content) if content else f"No retained {name.lower()} fields."
         widget = self.query_one(TextArea)
         widget.load_text(self.value_text)
-        widget.styles.height = min(40, max(2, self.value_text.count("\n") + 2))
+        widget.styles.height = self.detail_height(self.value_text)
 
 
 def primary_label(action: Action) -> str:
@@ -880,6 +1258,20 @@ def primary_label(action: Action) -> str:
         "refresh": "Refresh selection",
         "verify": "Verify selected input",
     }.get(word, word.capitalize())
+
+
+def historical_interval_fields() -> tuple[Field, ...]:
+    return tuple(
+        Field(
+            f"{key}--{part}",
+            f"{label} · {part.title()}",
+            default="00:00:00" if part == "time" else "",
+            group="Historical interval · optional bounds",
+            placeholder="YYYY-MM-DD" if part == "date" else "HH:MM:SS",
+        )
+        for key, label in (("start", "Start UTC (inclusive)"), ("end", "End UTC (exclusive)"))
+        for part in ("date", "time")
+    )
 
 
 def grouped_fields(items: tuple[Field, ...]) -> dict[str, list[Field]]:

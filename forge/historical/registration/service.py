@@ -30,7 +30,7 @@ from forge.historical.metadata.resolution import specification
 from forge.historical.normalization.service import write_job
 from forge.historical.profiles import service as profiles
 from forge.historical.registration.models import Recipe, groups
-from forge.orchestration.registry import begin, complete_call
+from forge.orchestration.registry import begin, complete_call, retain_recipe
 from forge.shared.database.connection import (
     database_connection,
     database_dsn,
@@ -192,12 +192,22 @@ async def apply(paths: ProjectPaths, source: Path, *, planning: bool = False) ->
 async def _apply(paths: ProjectPaths, source: Path, *, planning: bool) -> dict[str, Any]:
     submitted = await disk(source.read_bytes)
     recipe = Recipe.model_validate(tomllib.loads(submitted.decode()))
+    run_id = f"register-{uuid4().hex}"
+    operation = paths.runs_dir / run_id
+    operation.mkdir(parents=True, exist_ok=False)
+    if planning:
+        (operation / "registration.toml").write_bytes(submitted)
+    else:
+        await disk(
+            retain_recipe,
+            RunOperation.ACQUISITION,
+            source,
+            submitted,
+            family="registration",
+            effective=recipe.model_dump(mode="json"),
+        )
     async with database_connection(database_dsn(paths.root)) as c:
         result, configs, frozen_groups = await preflight(c, recipe, paths)
-        run_id = f"register-{uuid4().hex}"
-        operation = paths.runs_dir / run_id
-        operation.mkdir(parents=True, exist_ok=False)
-        (operation / "registration.toml").write_bytes(submitted)
         result.update(
             {
                 "run_id": run_id,

@@ -9,7 +9,11 @@ use crate::historical::normalize::{
 fn route_sources(
     mut batch: PreparedBatch,
     rows: &[&str],
-) -> (crate::historical::job::ProcessingJob, Routed) {
+) -> (
+    crate::historical::job::ProcessingJob,
+    Routed,
+    tempfile::TempDir,
+) {
     batch.jobs[0].tasks.truncate(rows.len());
     let mut job = support::resolved(&batch);
     let temp = tempfile::tempdir().unwrap();
@@ -29,18 +33,11 @@ fn route_sources(
     }
     let groups = super::super::streams::plan(&job).unwrap();
     assert_eq!(groups.len(), 1);
-    let routed = route(
-        &groups[0],
-        &Quota::new(
-            support::runtime()
-                .resources
-                .normalization_limits
-                .reconciliation_bytes,
-        ),
-        &support::runtime(),
-    );
+    let config = support::runtime_in(temp.path());
+    let quota = Quota::new(config.resources.normalization_limits.reconciliation_bytes);
+    let routed = route(&groups[0], &quota, &config);
     drop(groups);
-    (job, routed)
+    (job, routed, temp)
 }
 fn report(job: &crate::historical::job::ProcessingJob, routed: &Routed) -> ProcessingMetricsReport {
     let mut report = ProcessingMetricsReport::default();
@@ -63,7 +60,7 @@ fn include_filters_unknown_unselected_symbols_before_contract_lookup() {
             symbols: vec!["BTC-USD_UM-261030".into()],
         });
     }
-    let (job, routed) = route_sources(b, &["BTC-USD_UM-261225\nBTC-USD_UM-261030\n"]);
+    let (job, routed, _temp) = route_sources(b, &["BTC-USD_UM-261225\nBTC-USD_UM-261030\n"]);
     assert!(routed.failure.is_none());
     assert_eq!(routed.stats.values().map(|s| s.physical).sum::<u64>(), 2);
     assert_eq!(routed.stats.values().map(|s| s.filtered).sum::<u64>(), 1);
@@ -80,7 +77,7 @@ fn include_filters_unknown_unselected_symbols_before_contract_lookup() {
 fn all_never_hides_encountered_missing_or_unsupported_metadata() {
     let mut b = support::batch();
     b.instruments.pop();
-    let (_, routed) = route_sources(b, &["BTC-USD_UM-261225\n"]);
+    let (_, routed, _temp) = route_sources(b, &["BTC-USD_UM-261225\n"]);
     assert!(
         routed
             .failure
@@ -101,12 +98,12 @@ fn all_never_hides_encountered_missing_or_unsupported_metadata() {
     let mut b = support::batch();
     b.instruments[1].instrument.contract_value = None;
     b.instruments[1].instrument.contract_value_asset = None;
-    let (_, routed) = route_sources(b.clone(), &["BTC-USD_UM-261030\n"]);
+    let (_, routed, _temp) = route_sources(b.clone(), &["BTC-USD_UM-261030\n"]);
     assert!(
         routed.failure.is_none(),
         "unencountered candidate must not require full contract metadata"
     );
-    let (_, routed) = route_sources(b, &["BTC-USD_UM-261225\n"]);
+    let (_, routed, _temp) = route_sources(b, &["BTC-USD_UM-261225\n"]);
     assert!(
         routed
             .failure
@@ -120,7 +117,7 @@ fn all_never_hides_encountered_missing_or_unsupported_metadata() {
 }
 #[test]
 fn changing_monthly_population_is_routed_once_with_per_source_absence() {
-    let (job, routed) = route_sources(
+    let (job, routed, temp) = route_sources(
         support::batch(),
         &["BTC-USD_UM-261030\n", "BTC-USD_UM-261225\n"],
     );
@@ -145,19 +142,20 @@ fn never_observed_include_is_unsatisfied_but_absence_in_one_source_is_allowed() 
             symbols: vec!["BTC-USD_UM-261030".into(), "BTC-USD_UM-261225".into()],
         });
     }
-    let (job, routed) = route_sources(b.clone(), &["BTC-USD_UM-261030\n", "BTC-USD_UM-261030\n"]);
+    let (job, routed, _temp) =
+        route_sources(b.clone(), &["BTC-USD_UM-261030\n", "BTC-USD_UM-261030\n"]);
     assert!(
         validate_selection(&job, &report(&job, &routed))
             .unwrap_err()
             .to_string()
             .contains("never observed")
     );
-    let (job, routed) = route_sources(b, &["BTC-USD_UM-261030\n", "BTC-USD_UM-261225\n"]);
+    let (job, routed, _temp) = route_sources(b, &["BTC-USD_UM-261030\n", "BTC-USD_UM-261225\n"]);
     validate_selection(&job, &report(&job, &routed)).unwrap();
 }
 #[test]
 fn one_mixed_decode_and_bounded_queues_replace_per_symbol_archive_reads() {
-    let (job, routed) = route_sources(
+    let (job, routed, temp) = route_sources(
         support::batch(),
         &["BTC-USD_UM-261030\nBTC-USD_UM-261225\n"],
     );
@@ -180,7 +178,7 @@ fn one_mixed_decode_and_bounded_queues_replace_per_symbol_archive_reads() {
         tasks: job.tasks.iter().enumerate().collect(),
         key: "synthetic".into(),
     };
-    let limited = route(&group, &Quota::new(1), &support::runtime());
+    let limited = route(&group, &Quota::new(1), &support::runtime_in(temp.path()));
     assert!(matches!(
         limited.failure,
         Some((_, MarketForgeError::ResourceLimit(_)))
@@ -199,7 +197,12 @@ fn redundant_equivalent_family_selection_reads_first_only() {
         task.source_compression = crate::shared::io::container::SourceContainer::Plain;
     }
     let groups = super::super::streams::plan(&job).unwrap();
-    let routed = route(&groups[0], &Quota::new(1024 * 1024), &support::runtime());
+    let scratch = tempfile::tempdir().unwrap();
+    let routed = route(
+        &groups[0],
+        &Quota::new(1024 * 1024),
+        &support::runtime_in(scratch.path()),
+    );
     assert!(routed.failure.is_none());
     assert_eq!(routed.stats.values().map(|s| s.physical).sum::<u64>(), 1);
     assert_eq!(
@@ -229,7 +232,12 @@ fn jsonl_depth_routes_interleaved_instruments_without_a_shared_timestamp_domain(
         task.source_compression = crate::shared::io::container::SourceContainer::Plain;
     }
     let groups = super::super::streams::plan(&job).unwrap();
-    let routed = route(&groups[0], &Quota::new(1024 * 1024), &support::runtime());
+    let scratch = tempfile::tempdir().unwrap();
+    let routed = route(
+        &groups[0],
+        &Quota::new(1024 * 1024),
+        &support::runtime_in(scratch.path()),
+    );
     assert!(routed.failure.is_none());
     assert_eq!(routed.stats.values().map(|s| s.physical).sum::<u64>(), 3);
     let DecodedSource::DiskJson(a) = &routed.inputs[&0] else {
@@ -270,7 +278,8 @@ fn degradable_trade_csv_parse_errors_remain_bounded_file_diagnostics() {
         task.source_compression = crate::shared::io::container::SourceContainer::Plain;
     }
     let groups = super::super::streams::plan(&job).unwrap();
-    let mut config = support::runtime();
+    let scratch = tempfile::tempdir().unwrap();
+    let mut config = support::runtime_in(scratch.path());
     config.integrity_policy.parse_failure.action = crate::historical::job::IntegrityAction::Degrade;
     config.integrity_policy.parse_failure.max_count = Some(10);
     let routed = route(&groups[0], &Quota::new(1024 * 1024), &config);
@@ -306,7 +315,12 @@ fn csv_routing_uses_the_existing_authoritative_identity_column_precedence() {
         task.source_compression = crate::shared::io::container::SourceContainer::Plain;
     }
     let groups = super::super::streams::plan(&job).unwrap();
-    let routed = route(&groups[0], &Quota::new(1024 * 1024), &support::runtime());
+    let scratch = tempfile::tempdir().unwrap();
+    let routed = route(
+        &groups[0],
+        &Quota::new(1024 * 1024),
+        &support::runtime_in(scratch.path()),
+    );
     assert!(routed.failure.is_none());
     assert_eq!(routed.stats.values().map(|s| s.selected).sum::<u64>(), 1);
 }
@@ -328,7 +342,8 @@ fn routed_population_larger_than_old_queue_budget_stays_disk_backed() {
     }
     let quota = Quota::new(1 << 20);
     let units = super::super::streams::plan(&job).unwrap();
-    let routed = route(&units[0], &quota, &support::runtime());
+    let scratch = tempfile::tempdir().unwrap();
+    let routed = route(&units[0], &quota, &support::runtime_in(scratch.path()));
     assert!(
         routed.failure.is_none(),
         "{:?}",

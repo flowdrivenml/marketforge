@@ -4,6 +4,7 @@ import json
 import os
 import re
 from dataclasses import asdict
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -46,7 +47,9 @@ def run_root(root: Path, run_id: str) -> Path:
     return path
 
 
-def read_report(root: Path, run_id: str) -> dict[str, object]:
+def read_report(
+    root: Path, run_id: str, *, sources: dict[str, Path] | None = None
+) -> dict[str, object]:
     path = run_root(root, run_id)
     report = path / "report.json"
     if report.is_symlink():
@@ -57,11 +60,15 @@ def read_report(root: Path, run_id: str) -> dict[str, object]:
             "status": "report_missing_or_interrupted",
             "events_present": (path / "events.jsonl").is_file(),
         }
+    if sources is not None:
+        sources["Execution report"] = report
     if report.stat().st_size > 4 * 1024 * 1024:
+        if sources is not None:
+            return {"run_id": run_id, "status": "report_exceeds_preview_limit"}
         raise MarketForgeError("Run report exceeds 4 MiB inspection limit.")
     try:
         with report.open(encoding="utf-8") as source:
-            value: object = json.load(source)
+            value: object = json.load(source, parse_float=Decimal if sources is not None else float)
         from forge.markets.models import obj
 
         return obj(value)
@@ -92,7 +99,7 @@ def read_events(
     events: list[object] = []
     for line in lines[:limit]:
         try:
-            events.append(json.loads(line))
+            events.append(json.loads(line, parse_float=Decimal if sources is not None else float))
         except ValueError:
             events.append({"status": "incomplete_event_line"})
     return {
@@ -107,10 +114,12 @@ MANAGED_RUN = re.compile(
 )
 
 
-def read_managed_report(root: Path, run_id: str) -> dict[str, object]:
+def read_managed_report(
+    root: Path, run_id: str, *, sources: dict[str, Path] | None = None
+) -> dict[str, object]:
     """Read a known child execution receipt by its safe directory identity."""
     if not MANAGED_RUN.fullmatch(run_id):
-        return read_report(root, run_id)
+        return read_report(root, run_id, sources=sources)
     directory = root / run_id
     if directory.is_symlink() or directory.resolve().parent != root.resolve():
         raise MarketForgeError("Unsafe managed execution directory.")
@@ -122,12 +131,20 @@ def read_managed_report(root: Path, run_id: str) -> dict[str, object]:
     ):
         path = directory / filename
         if path.is_file() and not path.is_symlink():
+            if sources is not None:
+                sources["Execution report"] = path
             if path.stat().st_size > 4 * 1024 * 1024:
+                if sources is not None:
+                    return {"run_id": run_id, "status": "report_exceeds_preview_limit"}
                 raise MarketForgeError("Managed report exceeds 4 MiB inspection limit.")
             from forge.markets.models import obj
 
             try:
-                result = obj(json.loads(path.read_bytes()))
+                result = obj(
+                    json.loads(
+                        path.read_bytes(), parse_float=Decimal if sources is not None else float
+                    )
+                )
             except (ValueError, UnicodeError):
                 return {"run_id": run_id, "status": "report_incomplete_or_invalid"}
             return {**result, "run_id": run_id, "resolved_report": str(path), "liveness": "unknown"}
@@ -270,6 +287,19 @@ def read_managed_logs(
     directory = root / run_id
     if directory.is_symlink() or directory.resolve().parent != root.resolve():
         raise MarketForgeError("Unsafe managed execution directory.")
+    return read_engine_logs(
+        directory, truncated=truncated, supplemental=supplemental, sources=sources
+    )
+
+
+def read_engine_logs(
+    directory: Path,
+    *,
+    truncated: set[str] | None = None,
+    supplemental: dict[str, str] | None = None,
+    sources: dict[str, Path] | None = None,
+) -> dict[str, object]:
+    """Read fixed engine log files in a directory already checked by the caller."""
     logs: dict[str, object] = {}
     names = [
         f"{prefix}-{stream}.log"

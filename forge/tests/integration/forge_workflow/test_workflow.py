@@ -23,12 +23,14 @@ import psycopg
 import pytest
 from psycopg import sql
 
+from forge.historical.engine import work
 from forge.historical.engine.managed import checksum
 from forge.historical.normalization import datasets, execution
 from forge.historical.normalization.batch import prepare_batch
 from forge.historical.normalization.config import NormalizationRecipe
 from forge.historical.profiles.service import register as register_profile
 from forge.historical.registration import service as registration
+from forge.orchestration import registry as run_registry
 from forge.shared.config.toml import dumps
 from forge.shared.database.migrations import load_migrations
 from forge.shared.database.testing import testing_connection as db_connection
@@ -75,6 +77,9 @@ def isolated(
                 print(type(error).__name__, error.diag.message_primary)
                 raise
 
+        async def executemany(self, query: Any, params_seq: Any, **kwargs: Any) -> None:
+            await super().executemany(rewrite(query), params_seq, **kwargs)
+
     @asynccontextmanager
     async def connection(_: str) -> AsyncGenerator[Any]:
         async with db_connection(dsn) as c:
@@ -112,6 +117,8 @@ def isolated(
     for module in (
         registration,
         datasets,
+        run_registry,
+        work,
         __import__("forge.historical.normalization.batch", fromlist=["testing_connection"]),
     ):
         monkeypatch.setattr(module, "database_connection", connection)
@@ -123,10 +130,17 @@ def isolated(
     monkeypatch.setattr("forge.shared.database.connection.database_connection", connection)
     monkeypatch.setattr("forge.shared.database.connection.database_dsn", selected_dsn)
     monkeypatch.setattr(datasets, "database_dsn", selected_dsn)
+    monkeypatch.setattr(run_registry, "database_dsn", selected_dsn)
+    monkeypatch.setattr(work, "database_dsn", selected_dsn)
     monkeypatch.setattr("forge.historical.normalization.batch.database_dsn", selected_dsn)
     paths = ProjectPaths(tmp_path, tmp_path / "data")
     paths.bin_dir.mkdir()
-    shutil.copyfile(ROOT / ".bin/marketforge-normalize", paths.bin_dir / "marketforge-normalize")
+    normalizer = Path(
+        os.environ.get(
+            "MARKETFORGE_TEST_NORMALIZE_BINARY", str(ROOT / ".bin/marketforge-normalize")
+        )
+    )
+    shutil.copyfile(normalizer, paths.bin_dir / "marketforge-normalize")
     (paths.bin_dir / "marketforge-normalize").chmod(0o755)
     (paths.bin_dir / "manifest.json").write_text(
         json.dumps(
@@ -382,6 +396,47 @@ def test_trade_depth_registration_prepare_edit_execute_retry(
         Path(outcome["path"]).is_relative_to(paths.datasets_dir / "normalized")
         for outcome in result["registrations"]
     )
+
+    # Bind the actual registered Normalized stream through the same path as Data.
+    from forge.historical.merge import service as merge
+    from forge.tui import data_recipes
+    from forge.tui.resources import Row
+
+    monkeypatch.setattr(merge, "database_connection", connection)
+
+    async def bind_data_sources() -> None:
+        raw, _, _ = await data_recipes.normalization(paths, local_ids, registry, {})
+        assert {pin.archive_id for pin in ExactRecipe.model_validate(raw).archive_pins} == set(
+            local_ids
+        )
+        async with connection("") as c:
+            primary = await (
+                await c.execute(
+                    """SELECT d.id,p.id,p.engine_dataset_id,d.operation_details
+                        FROM historical.datasets d JOIN historical.dataset_publications p
+                        ON p.id=d.publication_id WHERE d.operation='normalize'
+                        AND d.data_type='trade' LIMIT 1"""
+                )
+            ).fetchone()
+        assert primary is not None
+        file_id, publication_id, engine_id, details = primary
+        stream = details["memberships"][0]["stream_id"]
+        row = Row(
+            str(file_id),
+            "BTCUSDT",
+            "Publication",
+            "Registered",
+            {"stream": stream, "primary_files": [file_id], "engine_publication": engine_id},
+            str(publication_id),
+        )
+        draft, review, _ = await data_recipes.merge(paths, (row,), registry, {})
+        configuration = merge.Recipe.model_validate(draft)
+        assert configuration.publication_ids == [publication_id]
+        assert configuration.dataset_ids == [file_id] and configuration.file_subset
+        assert stream in review
+        await data_recipes.validate_sources(paths, "merge", draft, registry)
+
+    asyncio.run(bind_data_sources())
 
     # Direct Rust invocation remains database-independent. Change only execution
     # identities/destinations in a new submitted document, retaining metadata.
@@ -800,3 +855,344 @@ def test_concurrent_registration_only(isolated: Any) -> None:
             assert await cur.fetchone() == (2,)
 
     asyncio.run(check())
+
+
+def test_tui_acquisition_normalization_requires_applicable_specification(
+    isolated: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Acquire through the TUI and publish only after applicable evidence exists."""
+    import gzip
+    from contextlib import redirect_stdout
+    from dataclasses import replace
+    from io import StringIO
+    from typing import cast
+
+    import httpx
+    import polars as pl
+    from textual.widgets import Input, Select
+
+    from forge.catalog.models import Instrument, Specification
+    from forge.catalog.service import add
+    from forge.cli.main import main
+    from forge.datasets import inventory, query
+    from forge.historical.archives import operation
+    from forge.historical.normalization.config import ExactRecipe
+    from forge.historical.normalization.recipes import load_configuration
+    from forge.orchestration.runs import inspect_run_evidence
+    from forge.shared.database.connection import database_environment
+    from forge.startup.context import build_context
+    from forge.tests.integration.cli.test_acquisition_execution import install_http
+    from forge.tui import workflows
+    from forge.tui.actions import BY_KEY
+    from forge.tui.app import ForgeApp
+    from forge.tui.inspection import ActionMenu, Inspection
+    from forge.tui.operation_view import OperationView
+    from forge.tui.run_views import project
+    from forge.tui.screens import Confirm, Detail, Form
+
+    paths, connection = isolated
+    dsn = db_dsn(ROOT)
+    monkeypatch.setenv("TEST_DATABASE_KEY", dsn)
+    for module in (operation, inventory, query, workflows):
+        monkeypatch.setattr(module, "database_connection", connection)
+
+    name = "BTCUSDT-2026-11-20.csv.gz"
+    start = datetime(2026, 11, 20, tzinfo=UTC)
+    end = datetime(2026, 11, 21, tzinfo=UTC)
+    stamp = int(start.timestamp()) * 1000
+    archive_bytes = gzip.compress(
+        f"id,timestamp,price,volume,side,rpi\n7,{stamp},200,3,buy,0\n".encode()
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/"):
+            return httpx.Response(
+                200, text=f'<pre><a href=../>../</a><a href="{name}">archive</a></pre>'
+            )
+        assert request.url.path.endswith(name)
+        return httpx.Response(200, stream=httpx.ByteStream(archive_bytes))
+
+    install_http(monkeypatch, handler)
+    request_source = """version = 1
+[interval]
+start = 2026-11-20T00:00:00Z
+end = 2026-11-21T00:00:00Z
+[[requests]]
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "trades"
+scope = { kind = "instrument", identifier = "BTCUSDT" }
+"""
+    paths.acquisition_config_dir.mkdir(parents=True)
+    acquisition_recipe = paths.acquisition_config_dir / "fixture.toml"
+    paths.normalization_recipe_dir.mkdir(parents=True)
+    known_recipe = paths.normalization_recipe_dir / "known.toml"
+    known_recipe.write_text(request_source)
+    args = ["--project-root", str(paths.root), "--json", "normalize"]
+    profile = ROOT / "data/.config/engine/normalize/profiles/trades/bybit.spot.spot.trades.toml"
+    asyncio.run(register_profile(paths, profile.stem, profile))
+
+    async def declare_specification(first: datetime, last: datetime) -> None:
+        async with connection(dsn) as c:
+            await add(
+                c,
+                Specification(
+                    instrument="bybit.spot.spot.BTCUSDT",
+                    quantity_type="base",
+                    tick_size=Decimal("0.01"),
+                    valid_from=first,
+                    valid_to=last,
+                    provenance="Synthetic Bybit fixture specification",
+                ),
+            )
+
+    async def seed() -> None:
+        async with connection(dsn) as c:
+            await add(
+                c,
+                Instrument(
+                    exchange="bybit",
+                    instrument_type="spot",
+                    market_category="spot",
+                    symbol="BTCUSDT",
+                    base_asset="BTC",
+                    quote_asset="USDT",
+                ),
+            )
+        await declare_specification(
+            datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)
+        )
+
+    asyncio.run(seed())
+    context = replace(build_context(project_root=paths.root, testing=True), paths=paths)
+
+    async def interact() -> dict[str, Any]:
+        class Workspace(ForgeApp):
+            CSS_PATH = ROOT / "forge/tui/workspace.tcss"
+
+        app = Workspace(context)
+        app.initial_area, app.initial_view = "Workflows", "Acquisition"
+        async with app.run_test(size=(145, 40)) as pilot:
+
+            async def wait_for(
+                kind: type[Form] | type[Inspection] | type[Confirm] | type[ActionMenu],
+            ) -> None:
+                async with asyncio.timeout(10):
+                    while not isinstance(app.screen, kind):
+                        if isinstance(app.screen, Detail):
+                            pytest.fail(app.screen.value_text)
+                        await pilot.pause(0.03)
+
+            async def submit(*, name: str | None = None) -> None:
+                await wait_for(Form)
+                if name:
+                    app.screen.query_one("#field-reference", Input).value = name
+                await pilot.pause()
+                assert await pilot.click("#submit")
+                await wait_for(Confirm)
+                await pilot.pause()
+                assert await pilot.click("#confirm")
+                await pilot.pause()
+
+            async def run_action(action: str, recipe: str) -> dict[str, Any]:
+                previous = app.controller.current
+                app.open_action(BY_KEY[action], None, {"reference": recipe})
+                submitted: set[Form | Confirm] = set()
+                async with asyncio.timeout(10):
+                    while app.controller.current is previous:
+                        await pilot.pause(0.05)
+                        screen = app.screen
+                        if isinstance(screen, Detail):
+                            pytest.fail(screen.value_text)
+                        if isinstance(screen, (Form, Confirm)) and screen not in submitted:
+                            button = "#confirm" if isinstance(screen, Confirm) else "#submit"
+                            if screen.query(button) and await pilot.click(button):
+                                submitted.add(screen)
+                assert app.controller.task is not None
+                result = await asyncio.wait_for(asyncio.shield(app.controller.task), timeout=20)
+                assert result.error is None
+                await pilot.pause()
+                while app.screen is not app.root_screen:
+                    await pilot.press("escape")
+                    await pilot.pause()
+                evidence = cast(dict[str, Any], result.result)
+                assert "execution_registry_warning" not in evidence, evidence
+                return evidence
+
+            app.open_action(BY_KEY["acquisition new"])
+            await wait_for(Form)
+            form = app.screen
+            assert isinstance(form, Form)
+            for key, value in {
+                "interval--start--date": "2026-11-20",
+                "interval--end--date": "2026-11-21",
+                "requests--0--scope--identifier": "BTCUSDT",
+            }.items():
+                form.query_one(f"#field-{key}", Input).value = value
+            for key, value in {
+                "exchange": "bybit",
+                "instrument_type": "spot",
+                "market_category": "spot",
+                "data_type": "trades",
+                "scope--kind": "instrument",
+            }.items():
+                cast(
+                    Select[str], form.query_one(f"#field-requests--0--{key}", Select)
+                ).value = value
+            await submit(name="fixture")
+            await wait_for(Inspection)
+            await pilot.press("escape")
+            assert acquisition_recipe.is_file()
+            assert (await run_action("acquisition validate", "fixture"))["status"] == "valid"
+            acquired = await run_action("acquisition download", "fixture")
+            assert acquired["file_counts"]["completed"] == 1, acquired
+
+            # The request and its UTC interval survive copying from the acquired
+            # recipe. A date-matched archive can still lack historical evidence.
+            await app.switch("Workflows", "Normalization")
+            app.open_action(BY_KEY["normalize new"], None, {"from_acquisition": "fixture"})
+            await submit(name="from-tui")
+            await wait_for(Inspection)
+            await pilot.press("escape")
+            candidate = paths.normalization_recipe_dir / "from-tui.toml"
+            request = load_configuration(candidate)
+            assert request == load_configuration(known_recipe)
+            assert "version" not in request.model_fields_set
+            assert "ranking_policy" not in request.model_fields_set
+            assert (await run_action("normalize validate", "from-tui"))["status"] == "valid"
+            blocked = await run_action("normalize run", "from-tui")
+            assert blocked["status"] == "blocked" and blocked["failed_stage"] == "Preparation"
+            assert blocked["prepared_job_count"] == 0
+            assert blocked["diagnostic_summary"]["matched_archive_count"] == 1
+            assert "No applicable immutable specification" in json.dumps(blocked)
+            assert "execution_id" not in blocked
+            retained = json.loads(await asyncio.to_thread(Path(blocked["report_path"]).read_bytes))
+            assert retained["failed_stage"] == "Preparation"
+            assert (
+                retained["diagnostic_summary"]["groups"][0]["category"]
+                == "missing_historical_specifications"
+            )
+            report = await inspect_run_evidence(
+                paths, blocked["logical_run_id"], action="report", limit=20, editor_targets=True
+            )
+            view = project(report, context, "report")
+            assert cast(dict[str, object], view.sections["Summary"])["Status"] == "blocked"
+            (archive_resolution,) = cast(
+                list[dict[str, object]], view.sections["Raw archive resolution"]
+            )
+            assert archive_resolution["Status"] == "Blocked"
+            assert any(target.path == Path(blocked["report_path"]) for target in view.files)
+            cli_output = StringIO()
+            with redirect_stdout(cli_output):
+                assert await asyncio.to_thread(main, [*args, "run", "from-tui", "--testing"]) == 1
+            cli_blocked = json.loads(cli_output.getvalue())
+            assert cli_blocked["status"] == "blocked"
+            assert cli_blocked["diagnostic_summary"] == blocked["diagnostic_summary"]
+            assert app.controller.current is not None
+            assert app.controller.current.state == "blocked"
+            links = app.operation_links(app.controller.current, None, None)
+            assert {
+                "Open report",
+                "Edit recipe",
+                "Review historical specification declaration",
+            } <= links.keys()
+            app.action_operation()
+            await pilot.pause()
+            assert isinstance(app.screen, OperationView)
+            await pilot.press("escape")
+
+            archive_id = retained["requests"][0]["matched_archives"][0]["local_id"]
+            await declare_specification(start, end)
+            await app.switch("Workflows", "Normalization")
+            app.open_action(BY_KEY["normalize new"])
+            await wait_for(ActionMenu)
+            await pilot.pause()
+            assert await pilot.click("#menu-1")
+            await wait_for(Form)
+            app.screen.query_one("#field-archive_ids", Input).value = str(archive_id)
+            await pilot.pause()
+            assert await pilot.click("#submit")
+            await pilot.pause()
+            await submit(name="exact")
+            await wait_for(Inspection)
+            await pilot.press("escape")
+            exact = load_configuration(paths.normalization_recipe_dir / "exact.toml")
+            assert isinstance(exact, ExactRecipe)
+            assert [pin.archive_id for pin in exact.archive_pins] == [archive_id]
+            assert exact.archive_pins[0].profile_id is None
+            assert "ranking_policy" not in exact.model_fields_set
+            prepared = await run_action("normalize prepare", "exact")
+            assert prepared["engine_ready"]
+            assert prepared["requests"][0]["selected_archives"][0]["profile"] == profile.stem
+            logs = await inspect_run_evidence(
+                paths, prepared["logical_run_id"], action="logs", limit=20, human=True
+            )
+            log_view = project(logs, context, "logs")
+            assert "validation-stdout.log" in log_view.log_files
+            assert any(target.path.name == "validation-stdout.log" for target in log_view.files)
+            batch = json.loads(await asyncio.to_thread(Path(prepared["batch_path"]).read_bytes))
+            assert batch["schema_version"] == 4
+            assert batch["requested_interval"] == {
+                "start": "2026-11-20T00:00:00Z",
+                "end": "2026-11-21T00:00:00Z",
+            }
+            normalized = await run_action("normalize run", "exact")
+            assert normalized["status"] == "complete", normalized
+            assert normalized.get("disposition") != "reused"
+            (publication,) = normalized["registrations"]
+            assert publication["registration"] == "registered"
+            assert normalized["verification"] == "verified"
+            output = Path(publication["path"])
+            assert output.is_relative_to(paths.datasets_dir / "normalized")
+            rows = await asyncio.to_thread(
+                pl.read_parquet,
+                output,
+                columns=["event_timestamp_ns", "instrument_id", "symbol", "stream_id", "trade_id"],
+            )
+            assert rows.rows() == [
+                (
+                    stamp * 1_000_000,
+                    batch["instruments"][0]["instrument_id"],
+                    "BTCUSDT",
+                    "bybit.spot.spot.BTCUSDT.trades",
+                    "7",
+                )
+            ]
+            await app.switch("Data", "Normalized")
+            async with asyncio.timeout(5):
+                while not app.state.rows:
+                    await pilot.pause(0.05)
+            assert any("BTCUSDT" in str(row.value) for row in app.state.rows.values())
+            return normalized
+
+    with database_environment(testing=True):
+        tui_result = asyncio.run(interact())
+    assert main([*args, "validate", "exact"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "valid"
+    assert main([*args, "run", "exact", "--testing"]) == 0
+    cli_result = json.loads(capsys.readouterr().out)
+    assert cli_result["disposition"] == "reused"
+    assert cli_result["catalogue_dataset_ids"] == tui_result["catalogue_dataset_ids"]
+
+    outside = paths.normalization_recipe_dir / "outside.toml"
+    outside.write_text(request_source.replace("11-21", "11-22").replace("11-20", "11-21"))
+    assert main([*args, "run", "outside", "--testing"]) == 1
+    no_match = json.loads(capsys.readouterr().out)
+    assert no_match["status"] == "blocked"
+    assert no_match["diagnostic_summary"]["matched_archive_count"] == 0
+    assert no_match["diagnostic_summary"]["coverage_gap_count"] == 1
+
+    # Keep an unrelated valid profile installed so Rust can report the specific
+    # missing profile for the selected Bybit Spot trades source.
+    unrelated = ROOT / "docs/content/examples/forge/binance.spot.spot.trades.toml"
+    asyncio.run(register_profile(paths, unrelated.stem, unrelated))
+    installed = paths.engine_config_dir / "normalize/profiles/trades" / profile.name
+    installed.unlink()
+    assert main([*args, "run", "known", "--testing"]) == 1
+    missing_profile = json.loads(capsys.readouterr().out)
+    assert missing_profile["failed_stage"] == "Engine batch validation"
+    assert profile.stem in missing_profile["validation_error"]
+    assert "profile" in missing_profile["validation_error"].lower()
+    assert "execution_id" not in missing_profile
+    assert Path(missing_profile["report_path"]).is_file()

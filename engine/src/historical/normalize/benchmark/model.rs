@@ -41,8 +41,8 @@ pub struct Args {
     pub retention: Retention,
     #[arg(long)]
     pub dry_run: bool,
-    #[arg(long, default_value = ".")]
-    pub project_root: PathBuf,
+    #[arg(long)]
+    pub project_root: Option<PathBuf>,
     #[arg(long, default_value = "data/.config/engine/normalize.toml")]
     pub config: PathBuf,
     #[arg(long)]
@@ -233,7 +233,7 @@ pub enum AnalysisCommand {
         intentional: Vec<super::comparison::Variable>,
         #[arg(long)]
         output_root: Option<PathBuf>,
-        #[arg(long, default_value = ".")]
-        project_root: PathBuf,
+        #[arg(long)]
+        project_root: Option<PathBuf>,
     },
 }

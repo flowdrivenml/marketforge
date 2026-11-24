@@ -15,7 +15,8 @@ pub(crate) struct LiveConversion {
     state: ReferenceState,
     generations: BTreeMap<String, crate::live::stream::registry::RuntimeGeneration>,
     settings: ConversionSettings,
-    integrity: BTreeMap<String, std::sync::Arc<crate::stream_protocol::DataIntegrityEvidence>>,
+    integrity:
+        BTreeMap<String, std::sync::Arc<crate::live::streaming::protocol::DataIntegrityEvidence>>,
 }
 pub(crate) fn decimal(value: Decimal) -> Result<ConversionDecimal, String> {
     ConversionDecimal::from_ratio(

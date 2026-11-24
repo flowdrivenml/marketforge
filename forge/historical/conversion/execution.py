@@ -234,6 +234,25 @@ async def execute(
     }
     if direct is not None:
         result["publication_source"] = direct.model_dump(mode="json")
+    from forge.historical.conversion.recipes import Recipe
+    from forge.orchestration.registry import recipe_evidence, retain_recipe
+    from forge.shared.identity import RunOperation
+
+    if not recipe_evidence() and (recipe_pin := pins.get("recipe_snapshot")):
+        _, original = await joined_io(
+            read_pin, recipe_pin, collection.parent, expected="recipe.toml"
+        )
+        import tomllib
+
+        recipe = Recipe.model_validate(tomllib.loads(original.decode()))
+        await joined_io(
+            retain_recipe,
+            RunOperation.CONVERT,
+            Path(report["recipe_path"]),
+            original,
+            effective=recipe.model_dump(mode="json"),
+            family="conversion",
+        )
     entries: list[dict[str, Any]] = document["jobs"]
     if source != collection:
         entries = [entry for entry in entries if entry["path"] == str(source)]

@@ -39,10 +39,15 @@ def editor_command(editor: str | None = None, *, fallback: str | None = None) ->
     return command
 
 
-def edit_file(
-    path: Path, *, editor: str | None = None, readonly: bool = False, fallback: str | None = None
-) -> Path:
-    """Open a file and wait for the configured editor to exit."""
+def file_command(
+    path: Path,
+    *,
+    editor: str | None = None,
+    readonly: bool = False,
+    fallback: str | None = None,
+    filetype: str = "",
+) -> tuple[Path, list[str]]:
+    """Build the editor argv after checking the file exists."""
     source = path.expanduser().resolve()
 
     if not source.is_file():
@@ -52,7 +57,36 @@ def edit_file(
     if readonly:
         # User startup files and command-line arguments can change write policy.
         executable = command[0] if Path(command[0]).name == "nvim" else "nvim"
-        command = [executable, "-u", "NONE", "-i", "NONE", "-n", "-R", "-M", "--"]
+        command = [
+            executable,
+            "-u",
+            "NONE",
+            "-i",
+            "NONE",
+            "-n",
+            "-R",
+            "-M",
+            "--cmd",
+            "set nomodeline",
+        ]
+        if filetype in {"json", "toml"}:
+            command.extend(("-c", "syntax enable", "-c", f"setfiletype {filetype}"))
+        command.append("--")
+    return source, [*command, str(source)]
+
+
+def edit_file(
+    path: Path,
+    *,
+    editor: str | None = None,
+    readonly: bool = False,
+    fallback: str | None = None,
+    filetype: str = "",
+) -> Path:
+    """Open a file and wait for the configured editor to exit."""
+    source, command = file_command(
+        path, editor=editor, readonly=readonly, fallback=fallback, filetype=filetype
+    )
     terminal = None
     with suppress(termios.error):
         if os.isatty(0):
@@ -61,13 +95,15 @@ def edit_file(
     interrupted = False
     try:
         returncode = subprocess.run(
-            [*command, str(source)],
+            command,
             check=False,
         ).returncode
     except OSError as exc:
         raise EditorError(f"Cannot launch editor {command[0]!r}: {exc}") from exc
     except KeyboardInterrupt:
         interrupted = True
+        if readonly:
+            raise EditorError("Neovim inspection interrupted.") from None
         raise
     finally:
         if terminal is not None:

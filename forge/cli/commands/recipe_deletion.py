@@ -77,17 +77,23 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
             section(console, "Recipes That Could Not Be Checked")
             for path in result.dependencies.unreadable:
                 console.print(display_path(path, root), style="mf.warning")
+        if result.dependencies.executions:
+            section(console, "Executions Requiring Original Configuration")
+            for path in result.dependencies.executions:
+                console.print(display_path(path, root))
         console.print()
         console.print(
-            "Only the recipe file was deleted."
+            "The recipe was archived and removed from active discovery."
             if result.status == "deleted"
             else "No files have been deleted."
         )
         console.print("Historical data and retained evidence are outside the scope of deletion.")
+        if result.archived_path:
+            reference(console, "Archived copy", display_path(result.archived_path, root))
         scope = "merge and conversion" if family == "normalization" else "conversion"
         if family != "conversion":
             console.print(f"Reference check covered managed {scope} recipes.", style="mf.secondary")
-        if result.status != "deleted":
+        if result.status != "deleted" and not result.dependencies.executions:
             group = {"normalization": "normalize", "conversion": "convert"}.get(family, family)
             force = " --force" if result.status == "blocked" else ""
             reference(

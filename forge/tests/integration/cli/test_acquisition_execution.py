@@ -526,3 +526,79 @@ async def test_independent_requests_overlap_and_coalesce_duplicate_acquisitions(
     assert bodies == 2
     assert report["file_counts"]["reused"] == 1
     assert [r["index"] for r in report["requests"]] == [0, 1, 2]
+
+
+def test_recipe_runs_pin_two_versions_across_archive(
+    workspace: Path,
+    request_file: Path,
+    isolated_acquisition: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import hashlib
+    import tomllib
+
+    from forge.historical.recipe_removal import configured_removals
+    from forge.shared.config.toml import dumps
+
+    install_http(monkeypatch, lambda _: httpx.Response(200, text="<pre><a href=../>../</a></pre>"))
+    first = b"# Preserve this comment and the original line endings\r\n" + request_file.read_bytes()
+    request_file.write_bytes(first)
+
+    def acquire() -> dict[str, object]:
+        assert run(workspace, "download") == 0
+        result: dict[str, object] = json.loads(capsys.readouterr().out)
+        return result
+
+    run_one = acquire()
+    second = (
+        first
+        + f"""
+[[requests]]
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "order_book_l2"
+[requests.scope]
+kind = "instrument"
+identifier = "{isolated_acquisition}"
+""".encode()
+    )
+    request_file.write_bytes(second)
+    run_two = acquire()
+    configured = tomllib.loads(second.decode())
+    request_file.write_text(
+        dumps(configured_removals("acquisition", configured)[0].apply(configured))
+    )
+    command = ["--project-root", str(workspace), "--json", "acquisition"]
+    assert main([*command, "validate", "request"]) == 0
+    capsys.readouterr()
+    assert main([*command, "delete", "request", "--apply"]) == 0
+    archived = Path(json.loads(capsys.readouterr().out)["archived_path"])
+    assert archived.is_file()
+    assert not request_file.exists()
+
+    for result, original, feed_types in (
+        (run_one, first, ["trades"]),
+        (run_two, second, ["trades", "order_book_l2"]),
+    ):
+        from forge.tui.run_views import retained_files
+
+        identity = str(result["run_id"])
+        assert (
+            main(
+                ["--project-root", str(workspace), "--json", "runs", "show", identity, "--testing"]
+            )
+            == 0
+        )
+        record = json.loads(capsys.readouterr().out)
+        files = retained_files(result, workspace / "data/runs", record=record)
+        snapshot = next(item for item in files if item.path.name == "submitted.toml")
+        assert snapshot.path.read_bytes() == original
+        assert snapshot.sha256 == hashlib.sha256(original).hexdigest()
+        settings = next(item for item in files if item.path.name == "effective-configuration.json")
+        effective = json.loads(settings.path.read_bytes())
+        report = json.loads(Path(str(result["report"])).read_bytes())
+        assert [item["data_type"] for item in effective["configuration"]["requests"]] == feed_types
+        assert [item["request"]["data_type"] for item in report["requests"]] == feed_types
+        assert all(item["scan_id"] > 0 for item in report["requests"])

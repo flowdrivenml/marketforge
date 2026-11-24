@@ -1,1 +1,1 @@
-pub use crate::management_protocol::definitions::persisted::*;
+pub use crate::live::management::protocol::definitions::persisted::*;

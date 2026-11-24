@@ -39,7 +39,13 @@ from forge.historical.archives.sources.exchanges import HISTORICAL_EXCHANGES, Ex
 from forge.historical.archives.storage.acquire import acquire, root_key
 from forge.historical.archives.storage.files import ArchiveFileError, contained, disk, fingerprint
 from forge.orchestration.artifacts import RunArtifacts
-from forge.orchestration.registry import begin, complete_call, current_execution
+from forge.orchestration.registry import (
+    begin,
+    complete_call,
+    current_execution,
+    retain_effective,
+    retain_recipe,
+)
 from forge.shared.async_work import bounded_map
 from forge.shared.database.connection import DatabaseError, database_connection
 from forge.shared.errors import MarketForgeError
@@ -510,12 +516,28 @@ async def _run_acquisition(
         "started_at": execution.started_at.isoformat(),
     }
     await disk(reporter.artifacts.root.mkdir, parents=True, exist_ok=True)
+    effective = {
+        "configuration": configuration.model_dump(mode="json"),
+        "http": context.settings.http.model_dump(mode="json"),
+        "requests_per_second_override": requests_per_second,
+        "download": download,
+        "refresh": refresh,
+    }
     if source_file is not None:
         submitted = await disk(source_file.read_bytes)
         if AcquisitionConfig.model_validate(tomllib.loads(submitted.decode())) != configuration:
             raise MarketForgeError("The acquisition recipe changed before execution.")
         reporter.metadata["recipe_sha256"] = hashlib.sha256(submitted).hexdigest()
-        await disk(reporter.artifacts.submitted_config.write_bytes, submitted)
+        await disk(
+            retain_recipe,
+            RunOperation.ACQUISITION,
+            source_file,
+            submitted,
+            effective=effective,
+            destination=reporter.artifacts.submitted_config,
+        )
+    else:
+        await disk(retain_effective, effective)
     clients: dict[str, HttpClient] = {}
     scope_locks = tuple(asyncio.Lock() for _ in range(640))
     archive_locks = tuple(asyncio.Lock() for _ in range(640))

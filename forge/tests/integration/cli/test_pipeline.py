@@ -618,6 +618,10 @@ async def interact_publications(
             await pilot.press("enter")
             await pilot.pause()
             if confirm:
+                assert not isinstance(app.screen, Form) or not app.screen.issues, (
+                    app.screen.spec.key,
+                    app.screen.issues,
+                )
                 await until(lambda: isinstance(app.screen, (Confirm, StreamOrder)))
                 if isinstance(app.screen, StreamOrder):
                     await pilot.click("#order-use")
@@ -692,13 +696,21 @@ async def interact_publications(
         table = app.query_one("#results", Results)
         table.move_cursor(row=list(app.state.rows).index(market.id))
         table.focus()
-        await choose("Add to acquisition…")
-        await submit(
-            confirm=True,
-            reference="market-selected",
-            start="2026-07-09T00:00:00Z",
-            end="2026-07-10T00:00:00Z",
+        from forge.historical.archives.templates import ACQUISITION_TEMPLATE
+
+        directory = app.context.paths.acquisition_config_dir
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "market-selected.toml").write_text(
+            ACQUISITION_TEMPLATE.replace("BTCUSDT", market_symbol)
+            .replace('"perpetual"', '"spot"')
+            .replace('"linear"', '"spot"')
+            .replace("2026-09-01", "2026-07-09")
+            .replace("2026-09-02", "2026-07-10")
         )
+        await app.switch("Workflows", "Acquisition")
+        await until(lambda: "market-selected" in app.state.rows)
+        app.query_one("#results", Results).focus()
+        await pilot.press("enter")
         await until(lambda: isinstance(app.screen, Inspection))
         await choose("Validate")
         await result("acquisition validate")
@@ -736,7 +748,11 @@ async def interact_publications(
             table.move_cursor(row=index)
             table.focus()
             await pilot.press("space")
-        await choose("Normalize selected archives…")
+        await app.switch("Workflows", "Normalization")
+        await pilot.click("#recipe-new")
+        await until(lambda: isinstance(app.screen, ActionMenu))
+        await pilot.click("#menu-1")
+        await submit(archive_ids=",".join(map(str, archive_ids)))
         await until(lambda: isinstance(app.screen, Form))
         for field in app.screen.spec.fields:
             if field.kind == "choice":
@@ -791,8 +807,13 @@ async def interact_publications(
             )
             table.focus()
             await pilot.press("space")
-        await choose("Create merge from selection…")
-        await submit(confirm=True, reference="exact-publication")
+        await app.switch("Workflows", "Merge")
+        await pilot.click("#recipe-new")
+        await until(lambda: isinstance(app.screen, ActionMenu))
+        await pilot.click("#menu-0")
+        await submit(
+            confirm=True, reference="exact-publication", publication_ids=",".join(normal_ids)
+        )
         await until(
             lambda: isinstance(app.screen, Inspection) and app.screen.heading == "Recipe saved"
         )
@@ -859,13 +880,19 @@ async def interact_publications(
         async def convert_publication(
             name: str, quote: str, external_id: str = ""
         ) -> dict[str, Any]:
-            await open_inventory("Merged", merge_id)
-            await choose("Convert publication…")
-            await until(lambda: isinstance(app.screen, Form))
-            await submit(confirm=True, reference=name, quote=quote)
-            await until(
-                lambda: isinstance(app.screen, Inspection) and app.screen.heading == "Recipe saved"
+            while app.screen != app.root_screen:
+                await pilot.press("escape")
+                await pilot.pause()
+            await app.switch("Workflows", "Conversion")
+            app.open_action(
+                BY_KEY["convert new"], None, {"route": "publication", "source": merge_id}
             )
+            await submit(reference=name, quote=quote)
+            await until(
+                lambda: isinstance(app.screen, Form) and app.screen.spec.key == "New · Convert"
+            )
+            await submit(confirm=True)
+            await until(lambda: isinstance(app.screen, Inspection))
             if external_id:
                 await choose("Browse external trade references…")
                 await submit(search=reference_symbol)

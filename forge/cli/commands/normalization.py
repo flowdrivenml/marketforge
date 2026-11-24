@@ -13,7 +13,7 @@ from forge.cli.commands.profiles import configure as configure_profiles
 from forge.cli.commands.recipe_deletion import configure_delete
 from forge.cli.environment import add_database_options
 from forge.cli.sorting import add_sorting
-from forge.historical.normalization.batch import prepare_batch
+from forge.historical.normalization.batch import blocked_execution, prepare_batch
 from forge.historical.normalization.config import ExactRecipe, NormalizationRecipe
 from forge.historical.normalization.datasets import register
 from forge.historical.normalization.execution import execute, recover
@@ -404,14 +404,8 @@ def run_operation(
                 allow_partial=arguments.allow_partial,
                 recipe=requested_name,
             )
-    if (
-        action == "execute"
-        and not arguments.dry_run
-        and result["status"] == "partial"
-        and "execution_id" not in result
-    ):
-        result["preparation_status"] = "partial"
-        result["status"] = "failed"
+    elif action == "execute" and not arguments.dry_run and "execution_id" not in result:
+        result = blocked_execution(result, recipe=requested_name)
     if "batch_path" in result or result.get("disposition") == "reused":
         result["recipe"] = requested_name
     result = finish_cli(result)
@@ -443,7 +437,7 @@ def run_operation(
         return 130
     return (
         1
-        if result["status"] in {"failed", "incomplete"}
+        if result["status"] in {"failed", "incomplete", "blocked", "invalid"}
         or (result["status"] == "partial" and "registrations" not in result)
         else 0
     )

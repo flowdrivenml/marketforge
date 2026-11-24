@@ -1,10 +1,12 @@
 """Persistent Textual workspace for the Forge service clients."""
 
 import asyncio
+import difflib
 import tomllib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from functools import partial
 from hashlib import sha256
 from pathlib import Path
@@ -19,6 +21,8 @@ from textual.command import Hit, Hits, Provider
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.events import Resize
+from textual.screen import Screen
+from textual.signal import Signal
 from textual.widgets import Button, DataTable, Footer, Input, Static
 
 from forge.catalog.service import currency_codes
@@ -29,12 +33,12 @@ from forge.historical.archives.progress import ProgressSnapshot
 from forge.historical.archives.storage.files import disk
 from forge.historical.authoring import (
     add_requests,
-    create_with_requests,
     publish_new,
     recipe_writer,
     replace_merge_source,
     replace_reviewed,
 )
+from forge.historical.engine.process import shutdown
 from forge.historical.pipelines.progress import PipelineSnapshot, StageSnapshot
 from forge.orchestration.inspection import (
     MANAGED_RUN,
@@ -42,8 +46,9 @@ from forge.orchestration.inspection import (
     read_managed_report,
     run_page,
 )
-from forge.orchestration.registry import workspace_runs
+from forge.orchestration.registry import list_index, show_index, workspace_runs
 from forge.orchestration.run_summary import when
+from forge.shared.config.deletion import RecipeFamily
 from forge.shared.config.library import list_config_names, resolve_config_file
 from forge.shared.config.models import AppSettings
 from forge.shared.config.toml import dumps
@@ -55,12 +60,14 @@ from forge.shared.database.connection import (
     selected_registry_id,
 )
 from forge.shared.documentation import SITE_URL
+from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import WorkspaceOwnership
-from forge.shared.terminal.editor import edit_file
-from forge.shared.terminal.palette import CYAN, FG, GREEN, MUTED, RED, YELLOW
+from forge.shared.terminal.editor import EditorError
+from forge.shared.terminal.editor_window import edit_in_window
+from forge.shared.terminal.palette import BLUE, CYAN, FG, GREEN, MUTED, RED, YELLOW
 from forge.startup.context import ApplicationContext
 from forge.tui import catalogue as catalogue_ui
-from forge.tui import overview
+from forge.tui import data_actions, data_recipes, market_recipes, overview
 from forge.tui import workspace_dashboard as dashboard
 from forge.tui.actions import (
     ACTIONS,
@@ -72,7 +79,7 @@ from forge.tui.actions import (
     Values,
     read_only,
 )
-from forge.tui.clipboard import deliver, plain, safe_text
+from forge.tui.clipboard import copy_text, plain, safe_text
 from forge.tui.configuration_screen import (
     CONFIG_TABS,
     ConfigurationEditor,
@@ -80,7 +87,15 @@ from forge.tui.configuration_screen import (
     DraftsChanged,
 )
 from forge.tui.controller import Controller, Invoke, Operation, document, outcome
-from forge.tui.design import SECONDARY, THEME, WorkspaceTitle, success_message
+from forge.tui.design import THEME, WorkspaceTitle, success_message, utilization
+from forge.tui.editor_inspection import (
+    LARGE_INSPECTION,
+    InspectionTarget,
+    OpenInspection,
+    RetainedFile,
+)
+from forge.tui.editor_inspection import stage as stage_inspection
+from forge.tui.editor_sessions import ApplyDraft, EditorSession, ValidateDraft
 from forge.tui.execution_monitor import observe
 from forge.tui.inspection import ActionMenu, Inspection
 from forge.tui.operation_view import OperationView
@@ -95,9 +110,12 @@ from forge.tui.presentation import (
     visible,
 )
 from forge.tui.recipe_forms import RecipeForm, model_for, summarize
+from forge.tui.recipe_inspection import configuration as recipe_configuration
+from forge.tui.recipe_inspection import retained_summary
+from forge.tui.recipe_inspection import sections as recipe_sections
 from forge.tui.resources import CATALOG, FAMILIES, Row, library, load_rows, records, value_at
-from forge.tui.run_views import RunView
-from forge.tui.screens import Confirm, Detail, EntityChoices, Form, StreamOrder
+from forge.tui.run_views import RunView, retained_files
+from forge.tui.screens import Confirm, Detail, EntityChoices, EntityPicker, Form, StreamOrder
 from forge.tui.services import apply_cleanup, execute, ranks
 from forge.tui.source_recipes import (
     conversion_candidate,
@@ -153,14 +171,27 @@ class Commands(Provider):
         matcher = self.matcher(query)
         for label, callback in (
             ("Switch environment", app.switch_environment),
+            ("Editor sessions", app.action_editor_sessions),
             (
                 "Edit Forge application settings",
                 partial(app.open_workspace_view, "Configs", "General"),
             ),
             ("Inspect registry settings", partial(app.configuration_settings, "environment")),
+            ("Refresh Market Observations", partial(app.open_action, BY_KEY["markets refresh"])),
+            ("Synchronize Market Instruments", partial(app.open_action, BY_KEY["markets sync"])),
+            ("Review Legacy Run Indexing", partial(app.run_maintenance, "index-legacy")),
+            ("Review Run Reconciliation", partial(app.run_maintenance, "reconcile")),
         ):
             if score := matcher.match(label):
                 yield Hit(score, matcher.highlight(label), callback, text=label)
+        if app.area not in {"Overview", "Configs"} and app.state.basket:
+            label = "Clear selection"
+            if score := matcher.match(label):
+                yield Hit(score, matcher.highlight(label), app.clear_basket, text=label)
+        if app.area == "Catalogue":
+            for label, callback in app.catalogue_actions(None).items():
+                if score := matcher.match(label):
+                    yield Hit(score, matcher.highlight(label), callback, text=label)
         for action in ACTIONS:
             score = matcher.match(action.key)
             if score > 0:
@@ -185,6 +216,7 @@ class ForgeApp(App[str]):
         Binding("ctrl+r", "reload", "Reload"),
         Binding("pageup", "previous", "Prev page", show=False, priority=True),
         Binding("pagedown", "next", "Next page", show=False, priority=True),
+        Binding("f9", "editor_sessions", "Editors", show=False),
         Binding("ctrl+o", "operation", "Run"),
         Binding("f2", "context", "Actions"),
         Binding("a", "context", "Actions", show=False),
@@ -194,8 +226,10 @@ class ForgeApp(App[str]):
         Binding("j", "row_down", "Next row", show=False),
         Binding("k", "row_up", "Previous row", show=False),
         Binding("y", "copy_row", "Copy", show=False),
+        Binding("ctrl+y", "copy_data_selection", "Copy selected text", show=False),
         Binding("question_mark", "workspace_help", "Help", show=False),
         Binding("shift+f10", "context", "Context menu", show=False),
+        Binding("ctrl+shift+x", "emergency_stop", "Stop all", priority=True),
         Binding("ctrl+c", "interrupt", "Interrupt", show=False, priority=True),
         Binding("ctrl+q", "quit_forge", "Quit", show=False, priority=True),
     ]
@@ -216,8 +250,10 @@ class ForgeApp(App[str]):
         self.states: dict[tuple[str, str], ViewState] = {}
         self.version = 0
         self.root_screen = self.screen_stack[0] if self.screen_stack else None
-        self.editor_open = False
+        self.editor_sessions: dict[Path, EditorSession] = {}
+        self.inspection_sessions: set[Path | int] = set()
         self.recipe_activation = False
+        self.emergency_confirmation = False
         self.inventory_generation = 0
         self.inventory_pending = False
         self.inventory_lock = asyncio.Lock()
@@ -254,11 +290,19 @@ class ForgeApp(App[str]):
         return f"MarketForge Workspace · {self.area}"
 
     def compose(self) -> ComposeResult:
-        yield WorkspaceTitle(
-            self.workspace_header(),
-            id="workspace-header",
-            markup=False,
-        )
+        with Horizontal(id="workspace-title-bar"):
+            yield Button(
+                "STOP ALL",
+                id="emergency-stop",
+                variant="error",
+                compact=True,
+                action="app.emergency_stop",
+            )
+            yield WorkspaceTitle(
+                self.workspace_header(),
+                id="workspace-header",
+                markup=False,
+            )
         yield Static("", id="workspace-monitor", classes="workspace-monitor", markup=False)
         with Horizontal(id="workspace-body"):
             with VerticalScroll(id="navigation"):
@@ -268,7 +312,7 @@ class ForgeApp(App[str]):
                 yield Horizontal(id="views")
                 yield ConfigurationEditor(
                     self.context,
-                    self.edit_recipe,
+                    self.queue_editor,
                     self.copy_value,
                     self.reload_application_settings,
                     self.configuration_environment,
@@ -314,6 +358,9 @@ class ForgeApp(App[str]):
         )
 
     async def on_mount(self) -> None:
+        screen_changes = cast(Signal[Screen[object]], self.screen_change_signal)  # pyright: ignore[reportUnknownMemberType]
+        screen_changes.subscribe(self, self.mount_emergency_button)
+        screen_changes.subscribe(self, self.clear_suspended_data_selection)
         self.root_screen = self.screen
         self.set_interval(0.25, self.render_operation)
         await self.switch(self.initial_area, self.initial_view)
@@ -325,6 +372,10 @@ class ForgeApp(App[str]):
         self.set_interval(2, self.sample_host)
         self.set_interval(20, self.sample_disk)
         self.set_interval(20, self.check_registry)
+
+    def clear_suspended_data_selection(self, screen: Screen[object]) -> None:
+        if self.root_screen is not None and screen is not self.root_screen and self.area == "Data":
+            self.resource_table().clear_text_selection()
 
     @work(group="workspace-registry", exit_on_error=False)
     async def check_registry(self) -> None:
@@ -385,31 +436,36 @@ class ForgeApp(App[str]):
             "checking": YELLOW,
             "stale": YELLOW,
         }
-        parts = Text(f"DB ● {self.database_environment.upper()} {state}", colors.get(state, MUTED))
+        parts = Text("DB ", BLUE)
+        parts.append("● ", colors.get(state, MUTED))
+        parts.append(self.database_environment.upper(), FG)
+        parts.append(f" {state}", colors.get(state, MUTED))
         if width >= 120 and self.database_id:
             parts.append(f" · {self.database_id[:8]}", MUTED)
         separator = "  │  " if width >= 120 else "  "
         cpu = self.host_percent
-        parts.append(separator + "CPU ", SECONDARY)
+        parts.append(separator + "CPU ", BLUE)
         parts.append(
             ("—" if cpu is None else f"{cpu:.1f}%"),
-            MUTED if cpu is None else YELLOW if cpu >= 90 else FG,
+            utilization(cpu),
         )
         memory = self.host_memory
         ram = 100 * memory[0] / memory[1] if memory and memory[1] else None
         usage = "—" if ram is None else f"{ram:.0f}%"
         if ram is not None and memory and width >= 100:
             usage = f"{memory[0] / 2**30:.1f}/{memory[1] / 2**30:.1f} GiB ({usage})"
-        parts.append(separator + "RAM ", SECONDARY)
-        parts.append(usage, MUTED if ram is None else YELLOW if ram >= 90 else FG)
+        parts.append(separator + "RAM ", BLUE)
+        parts.append(usage, utilization(ram))
         disk_sample = self.host_disk
         free = disk_sample[0] if disk_sample else None
         disk_label = "—" if free is None else dashboard.size_label(free) + " free"
         if free is not None and width < 100:
             disk_label = f"{free / 2**30:.0f} GiB free" if free >= 2**30 else disk_label
-        low_disk = bool(disk_sample and disk_sample[0] * 10 < disk_sample[1])
-        parts.append(separator + "Disk ", SECONDARY)
-        parts.append(disk_label, MUTED if free is None else YELLOW if low_disk else FG)
+        disk_used = (
+            100 * (1 - disk_sample[0] / disk_sample[1]) if disk_sample and disk_sample[1] else None
+        )
+        parts.append(separator + "Disk ", BLUE)
+        parts.append(disk_label, utilization(disk_used))
         clock = now.strftime(" %H:%M:%S UTC")
         parts.truncate(max(1, width - 2 - len(clock)), overflow="ellipsis")
         parts.append(clock, FG)
@@ -487,6 +543,8 @@ class ForgeApp(App[str]):
                 )
                 and not isinstance(self.focused, Input)
             )
+        if action == "copy_data_selection":
+            return self.screen == self.root_screen and isinstance(self.focused, Results)
         if action == "context":
             return self.screen == self.root_screen and not isinstance(self.focused, Input)
         if action == "filter" and self.area == "Overview" and self.screen == self.root_screen:
@@ -525,6 +583,7 @@ class ForgeApp(App[str]):
                 self.confirm_leave_configs(area, view, raw_complete)
                 return
         results = self.resource_table()
+        results.clear_text_selection()
         self.state.scroll = (results.scroll_x, results.scroll_y)
         if self.area == "Overview" and area != "Overview":
             self.inventory_generation += 1
@@ -631,6 +690,8 @@ class ForgeApp(App[str]):
     def request_query(self) -> None:
         if self.area == "Configs":
             return
+        if self.area == "Data":
+            self.resource_table().clear_text_selection()
         self.version += 1
         if self.area == "Overview":
             self.load_overview_history(self.version)
@@ -997,13 +1058,11 @@ class ForgeApp(App[str]):
         actions: dict[str, Callable[[], object]] = {
             "Copy archive IDs": partial(self.copy_dashboard_id, "\n".join(refs))
         }
-        if self.context.testing and rows:
-            selected = tuple(
-                Row(ref.removeprefix("local:"), ref, "Raw Archive", "", by_id[ref], ref)
-                for ref in refs
-                if ref in by_id
+        if self.context.testing and self.database_id and refs and all(ref in by_id for ref in refs):
+            row = Row(refs[0], value_at(item, "symbol"), "Raw Archive", "", item)
+            actions["Add to Recipe"] = partial(
+                self.add_data_to_recipe, "Raw", (row,), self.database_id, self.context.testing
             )
-            actions["Normalize selected archives…"] = partial(self.normalize_selection, selected)
         sections: dict[str, object] = {
             "Source": {
                 **{key: val for key, val in item.items() if key != "archives"},
@@ -1030,12 +1089,7 @@ class ForgeApp(App[str]):
 
     @work(exit_on_error=False)
     async def copy_dashboard_id(self, identity: str) -> None:
-        provider = None if self.is_headless else await disk(deliver, identity)
-        if provider:
-            self.notify(f"Copied via {provider}.")
-        else:
-            self.copy_to_clipboard(identity)
-            self.notify("Clipboard request sent via OSC 52.")
+        await copy_text(self, identity)
 
     def overview_needs_registration(self, evidence: Mapping[str, object]) -> bool:
         return overview.registration_problem(evidence) and (
@@ -1085,6 +1139,7 @@ class ForgeApp(App[str]):
             return
         table = self.resource_table()
         page = self.state
+        table.text_selection_enabled = True
         table.recipe_links = self.area == "Workflows" or self.view in {"Recipes", "Policies"}
         table.clear(columns=True)
         self.resource_message("Loading records…")
@@ -1192,12 +1247,6 @@ class ForgeApp(App[str]):
             if row is not None and document(row.value).get("kind") == "historical_pipeline":
                 return ("runs report", "runs logs", "pipeline resume")
             return ("runs report", "runs logs")
-        if self.area == "Markets" and self.view != "Policies":
-            return (
-                ("markets rank show", "markets rank update", "markets rank delete")
-                if self.view == "Rankings"
-                else ("markets show", "markets list", "markets refresh", "markets sync")
-            )
         if self.area == "Catalogue":
             return ()
         family = row.kind if row and row.path else FAMILIES.get(self.view)
@@ -1238,7 +1287,7 @@ class ForgeApp(App[str]):
         screen.query_one("#page-previous", Button).disabled = self.state.offset == 0
         screen.query_one("#page-next", Button).disabled = not self.state.more
         screen.query_one("#context-menu", Button).disabled = self.area != "Overview" and not (
-            row or self.related(row) or self.area in {"Data", "Runs", "Catalogue"}
+            row or self.related(row) or self.area in {"Data", "Runs", "Catalogue", "Workflows"}
         )
 
     @on(DataTable.RowHighlighted, "#results, #overview-results")
@@ -1306,12 +1355,11 @@ class ForgeApp(App[str]):
             self.open_overview_run(row)
             return
         actions: dict[str, Callable[[], object]] = {
-            "Copy ID": lambda: self.copy_value(row.reference or row.id)
+            "Copy Full Identifier": lambda: self.copy_value(row.reference or row.id)
         }
         if row.path:
             actions["Edit TOML"] = partial(self.edit_selected, row)
-            actions["Copy path"] = lambda: self.copy_value(str(row.path))
-        for key in self.related(row):
+        for key in self.related(row) if self.area != "Markets" else ():
             actions[key.rsplit(" ", 1)[-1].title()] = lambda key=key: self.open_action(
                 BY_KEY[key], row
             )
@@ -1329,13 +1377,18 @@ class ForgeApp(App[str]):
                             row.reference,
                             {**document(row.value), "configuration": data, "source_toml": source},
                             sections={
-                                "Summary": {
-                                    "Workflow": row.kind,
-                                    **summarize(data, row.state, str(row.path)),
-                                }
+                                **recipe_sections(row.kind, data, row.state, str(row.path)),
+                                **await self.recipe_source_evidence(row.kind, data),
+                                **await self.recipe_run_evidence(row, source),
                             },
                             actions=self.saved_recipe_actions(row.kind, row.reference, row.path),
                             evidence_label="F3 Advanced details",
+                            files=self.inspection_files(
+                                "Recipe TOML", row.path, self.context.paths.config_dir
+                            ),
+                            section_values={
+                                "Configuration": tomllib.loads(source, parse_float=Decimal)
+                            },
                         )
                     )
                     return
@@ -1345,7 +1398,196 @@ class ForgeApp(App[str]):
         selected = self.selection(row)
         if selected.kind == "file":
             actions.update(self.file_links(int(selected.identity)))
-        self.push_screen(Inspection(row.name, detail, actions=actions))
+        self.push_screen(
+            Inspection(
+                row.name,
+                detail,
+                actions=actions,
+                scalar_summary=self.area == "Markets",
+                files=self.inspection_files("Recipe TOML", row.path, self.context.paths.config_dir),
+            )
+        )
+
+    async def recipe_run_evidence(self, row: Row, source: str) -> dict[str, object]:
+        if (
+            self.database_id is None
+            or row.path is None
+            or row.kind not in {"acquisition", "normalize", "merge", "convert", "pipeline"}
+        ):
+            return {}
+        path = await disk(row.path.resolve)
+        fingerprint = sha256(source.encode()).hexdigest()
+        matched: list[dict[str, object]] = []
+        try:
+            with (
+                database_environment(testing=self.context.testing),
+                pinned_registry(self.database_id),
+            ):
+                page = await list_index(
+                    self.context.paths,
+                    limit=8,
+                    operation=row.kind,
+                    recipe=row.reference,
+                )
+                for run in records(page, "runs"):
+                    run_id = value_at(run, "run_id")
+                    if not run_id:
+                        continue
+                    run_record = await show_index(self.context.paths, run_id)
+                    for attempt in records(run_record, "attempts"):
+                        attempt_id = str(attempt.get("attempt_id"))
+                        outcome = attempt.get("outcome_path")
+                        if not isinstance(outcome, str):
+                            continue
+                        summary = await disk(
+                            retained_summary,
+                            self.context.paths.runs_dir,
+                            run_id,
+                            attempt_id,
+                            Path(outcome),
+                        )
+                        provenance = document(summary.get("recipe_source"))
+                        if (
+                            provenance.get("path") != str(path)
+                            or provenance.get("sha256") != fingerprint
+                        ):
+                            continue
+                        matched.append(
+                            {
+                                "run_id": run_id,
+                                "attempt_id": attempt.get("attempt_id"),
+                                "action": attempt.get("action") or run.get("action"),
+                                "recorded_state": attempt.get("status"),
+                                "preparation": document(summary.get("preparation")),
+                                "report_path": attempt.get("report_path"),
+                            }
+                        )
+        except Exception as error:
+            return {"Prior runs": {"Evidence": f"Retained run lookup unavailable: {error}"}}
+        if matched:
+            return {"Prior runs": recipe_configuration({"Previously recorded attempts": matched})}
+        return {}
+
+    async def recipe_source_evidence(
+        self, family: str, data: dict[str, object]
+    ) -> dict[str, object]:
+        selection = document(data.get("selection"))
+        source = document(data.get("source"))
+        pinned = source.get("registry_id") or data.get("registry_id")
+        if pinned and pinned != self.database_id:
+            return {
+                "Source evidence": {
+                    "State": "Configured source belongs to another or unavailable registry."
+                }
+            }
+        ids: dict[int, str] = {}
+        for refs in (data.get("publication_ids"), selection.get("publication_ids")):
+            if isinstance(refs, list):
+                ids.update(
+                    (ref, "Configured publication")
+                    for ref in cast(list[object], refs)
+                    if type(ref) is int
+                )
+        if type(ref := source.get("registry_publication_id")) is int:
+            ids[ref] = "Configured source publication"
+        if type(ref := data.get("reference_publication_id")) is int:
+            ids[ref] = "Configured reference publication"
+        archives = records(data, "archive_pins")
+        primary_files = data.get("dataset_ids")
+        files = cast(list[object], primary_files) if isinstance(primary_files, list) else []
+        if family == "convert" and not files:
+            selected_files = selection.get("file_dataset_ids")
+            files = cast(list[object], selected_files) if isinstance(selected_files, list) else []
+        evidence: dict[str, object] = {}
+        with database_environment(testing=self.context.testing), pinned_registry(self.database_id):
+            for ref, label in ids.items():
+                try:
+                    page = await publications(self.context.paths, identity=ref)
+                    matches = records(page, "publications")
+                    if not matches:
+                        raise ValueError("Publication unavailable")
+                    item = matches[0]
+                    if label == "Configured source publication" and str(
+                        item.get("engine_dataset_id")
+                    ) != source.get("engine_publication_id"):
+                        raise ValueError(
+                            "Registry metadata disagrees with the configured Engine identity"
+                        )
+                    streams = records(item, "streams")
+                    by_id = {
+                        value_at(stream, "stream_id", value_at(stream, "id")): stream
+                        for stream in streams
+                    }
+                    members = [
+                        {
+                            **by_id.get(value_at(member, "stream_id"), {}),
+                            **{key: value for key, value in member.items() if value is not None},
+                        }
+                        for member in records(item, "registered_memberships")
+                    ] or streams
+                    evidence[f"{label} {ref}"] = {
+                        "engine_publication_id": item.get("engine_dataset_id"),
+                        "generation": item.get("generation"),
+                        "integrity": item.get("integrity"),
+                        "membership": list(members) or "Membership unavailable",
+                    }
+                except Exception as error:
+                    evidence[f"{label} {ref}"] = str(error)
+            for ref in files:
+                if type(ref) is not int:
+                    continue
+                try:
+                    item = await browse(self.context.paths, DatasetRequest("show", id=ref))
+                    evidence[f"Primary file {ref}"] = item or "Metadata unavailable"
+                except Exception as error:
+                    evidence[f"Primary file {ref}"] = str(error)
+            for archive in archives:
+                ref = str(archive.get("archive_id"))
+                try:
+                    page = await self.catalogue_call("storage show", {"archive": ref})
+                    matches = records(page, "archives")
+                    evidence[f"Raw archive {ref}"] = (
+                        dict(matches[0]) if matches else "Metadata unavailable"
+                    )
+                except Exception as error:
+                    evidence[f"Raw archive {ref}"] = str(error)
+        if family == "merge" and (reference := selection.get("source")):
+            from forge.historical.merge.config import normalization_source
+
+            try:
+                path, recipe, fingerprint = await disk(
+                    normalization_source, self.context.paths, str(reference)
+                )
+                evidence["Current upstream recipe declaration"] = {
+                    "path": str(path),
+                    "sha256": fingerprint,
+                    "requests": recipe.model_dump(mode="json")["requests"],
+                }
+            except Exception as error:
+                evidence["Current upstream recipe declaration"] = str(error)
+            evidence["Resolved source"] = (
+                "No current preparation evidence established by this view."
+            )
+        if family == "convert" and source.get("reference"):
+            from forge.historical.conversion.recipes import LoadedSource, Recipe, validate_binding
+
+            try:
+                recipe = Recipe.model_validate(data)
+                binding = await disk(validate_binding, self.context.paths, Path("recipe"), recipe)
+                if isinstance(binding, LoadedSource):
+                    evidence["Configured upstream recipe declaration"] = binding.config.model_dump(
+                        mode="json", exclude_unset=True
+                    )
+            except Exception as error:
+                evidence["Configured upstream recipe declaration"] = str(error)
+            evidence["Resolved source"] = (
+                "No current preparation evidence established by this view."
+            )
+        if family == "normalize" and (archives or data.get("requests")):
+            evidence["Profile resolution"] = (
+                "See configured profile pins. Automatic profile resolution is established during preparation."
+            )
+        return {"Source evidence": recipe_configuration(evidence)} if evidence else {}
 
     @work(exit_on_error=False)
     async def open_indexed_output(
@@ -1358,7 +1600,9 @@ class ForgeApp(App[str]):
                     DatasetRequest(action, output_ref=reference, part=part, limit=25, precise=True),
                 )
             except Exception as error:
-                self.push_screen(Detail("Indexed conversion output", str(error), raw=True))
+                self.push_screen(
+                    Detail("Indexed conversion output", str(error), raw=True, error=True)
+                )
                 return
         links: dict[str, Callable[[], object]] = {
             "Copy output reference": partial(self.copy_value, reference)
@@ -1445,6 +1689,9 @@ class ForgeApp(App[str]):
                 actions=links,
                 sections=sections,
                 choose=choose,
+                files=self.inspection_files(
+                    "Manifest", output.get("manifest_path"), self.context.paths.datasets_dir
+                ),
             )
         )
 
@@ -1455,7 +1702,7 @@ class ForgeApp(App[str]):
                     self.context.paths, DatasetRequest("timeline", timeline_reference=reference)
                 )
             except Exception as error:
-                self.push_screen(Detail("Timeline", str(error), raw=True))
+                self.push_screen(Detail("Timeline", str(error), raw=True, error=True))
                 return
         timeline = document(result.get("timeline"))
 
@@ -1567,18 +1814,20 @@ class ForgeApp(App[str]):
                 self.inspect_file(int(file_id), value_at(item, "primary_file"))
 
         links: dict[str, Callable[[], object]] = {
-            "Copy registry publication ID": partial(self.copy_value, str(identity)),
-            "Copy engine publication ID": partial(self.copy_value, engine),
+            "Copy Full Identifier": partial(self.copy_value, engine or str(identity)),
         }
-        if manifest := publication.get("manifest_path"):
-            links["Copy manifest path"] = partial(self.copy_value, str(manifest))
         if publication.get("primary_files_truncated"):
             links["Next file page"] = partial(self.publication_page, identity, offset + 50)
         if offset:
             links["Previous file page"] = partial(
                 self.publication_page, identity, max(0, offset - 50)
             )
-        links.update(self.publication_workflows(row, (row,)))
+        if self.database_id and publication.get("operation") == "merge":
+            links["Add to Recipe"] = partial(
+                self.add_data_to_recipe, "Merged", (row,), self.database_id, self.context.testing
+            )
+        elif publication.get("operation") == "normalize":
+            links["Browse Normalized Streams"] = partial(self.browse_data_publication, identity)
         links["Observed timelines"] = partial(self.inspect_inventory_timelines, identity)
         links["View supersession evidence"] = partial(self.inspect_supersession, identity)
         links["Physical partitions"] = partial(
@@ -1663,6 +1912,9 @@ class ForgeApp(App[str]):
                 },
                 choose=choose,
                 section=section,
+                files=self.inspection_files(
+                    "Manifest", publication.get("manifest_path"), self.context.paths.datasets_dir
+                ),
             )
         )
 
@@ -1700,7 +1952,7 @@ class ForgeApp(App[str]):
                     "datasets partitions", values, self.context, lambda _: None, self.edit_recipe
                 )
         except Exception as error:
-            self.push_screen(Detail("Physical partitions", str(error), raw=True))
+            self.push_screen(Detail("Physical partitions", str(error), raw=True, error=True))
             return
 
         def choose(_: str, item: Mapping[str, object]) -> None:
@@ -1804,6 +2056,10 @@ class ForgeApp(App[str]):
                         result.title,
                         result.evidence,
                         sections=result.sections,
+                        section_values=(
+                            {"Summary": result.evidence} if key == "runs report" else None
+                        ),
+                        files=result.files,
                         actions=actions,
                         searchable=key == "runs logs",
                         choose=choose,
@@ -1936,11 +2192,20 @@ class ForgeApp(App[str]):
                 severity=str(values.get("severity", "")),
             )
             if content:
-                self.push_screen(Detail(choice, content, raw=True))
+                self.push_screen(
+                    Detail(
+                        choice,
+                        content,
+                        raw=True,
+                        editor_target=RetainedFile.reference(
+                            "Retained log", path, self.context.paths.runs_dir
+                        ),
+                    )
+                )
             else:
                 self.notify("No matching log lines.")
         except Exception as error:
-            self.push_screen(Detail("Retained log", str(error), raw=True))
+            self.push_screen(Detail("Retained log", str(error), raw=True, error=True))
 
     def follow_lineage(self, section: str, item: Mapping[str, object]) -> None:
         identity = value_at(item, "id")
@@ -1963,15 +2228,27 @@ class ForgeApp(App[str]):
     @work(exit_on_error=False)
     async def open_managed_run(self, identity: str) -> None:
         try:
+            root = self.context.paths.runs_dir
+            sources: dict[str, Path] = {}
             item = {
-                **await disk(read_managed_report, self.context.paths.runs_dir, identity),
+                **await disk(read_managed_report, root, identity, sources=sources),
                 "run_id": identity,
             }
             self.push_screen(
-                Inspection(identity, item, actions=self.overview_run_links(identity, item))
+                Inspection(
+                    identity,
+                    item,
+                    actions=self.overview_run_links(identity, item),
+                    files=retained_files(
+                        item,
+                        root,
+                        sources=sources,
+                        prepared_root=self.context.paths.normalization_jobs_dir,
+                    ),
+                )
             )
         except Exception as error:
-            self.push_screen(Detail(identity, str(error), raw=True))
+            self.push_screen(Detail(identity, str(error), raw=True, error=True))
 
     def overview_run_links(
         self, identity: str, item: Mapping[str, object]
@@ -2069,9 +2346,18 @@ class ForgeApp(App[str]):
         path = Path(reference)
         try:
             value = await disk(overview.read_artifact, self.context.paths.runs_dir, path)
-            self.push_screen(Detail(str(path), value, raw=True))
+            target = RetainedFile.reference("Prepared artifact", path, self.context.paths.runs_dir)
+            self.push_screen(Detail(str(path), value, raw=True, editor_target=target))
         except Exception as error:
-            self.push_screen(Inspection("Prepared artifact unavailable", {"error": str(error)}))
+            self.push_screen(
+                Inspection(
+                    "Prepared artifact preview unavailable",
+                    {"error": str(error)},
+                    files=self.inspection_files(
+                        "Prepared artifact", path, self.context.paths.runs_dir
+                    ),
+                )
+            )
 
     @work(exit_on_error=False)
     async def open_overview_logs(self, identity: str) -> None:
@@ -2088,6 +2374,7 @@ class ForgeApp(App[str]):
                     if sources
                     else None,
                     searchable=True,
+                    files=retained_files({}, self.context.paths.runs_dir, sources=sources),
                     sections={
                         stream: [{"Line": line} for line in text.splitlines()]
                         for stream, text in logs.items()
@@ -2173,7 +2460,10 @@ class ForgeApp(App[str]):
     def context_requested(self, event: Results.ContextRequested) -> None:
         if self.area == "Overview":
             return
-        self.row_menu(self.state.rows.get(event.identity))
+        self.row_menu(
+            self.state.rows.get(event.identity),
+            anchor=event.anchor,
+        )
 
     def action_filters(self) -> None:
         self.open_filters()
@@ -2185,6 +2475,7 @@ class ForgeApp(App[str]):
                 "Tab / Shift+Tab  Focus\nEnter  Inspect\nSpace  Select\n"
                 "j / k  Move rows\n/  Search\nf / s  Filters and sort\n"
                 "PageUp / PageDown  Browse pages\na / F2  Actions\ny  Copy row\n"
+                "Drag over table text, then Ctrl+Y  Copy selected text\n"
                 "r  Refresh\nF1  Configs field help\nCtrl+E  Switch environment\n"
                 "Esc  Close detail or dialog\nCtrl+Q  Quit",
                 raw=True,
@@ -2196,6 +2487,15 @@ class ForgeApp(App[str]):
 
     def action_row_down(self) -> None:
         self.resource_table().action_cursor_down()
+
+    def action_copy_data_selection(self) -> None:
+        self.copy_data_selection(self.resource_table().selected_text)
+
+    def copy_data_selection(self, value: str) -> None:
+        if value:
+            self.copy_dashboard_id(value)
+        else:
+            self.notify("Drag over table text to select it.", severity="warning")
 
     def action_copy_row(self) -> None:
         if row := self.state.rows.get(self.state.selection or ""):
@@ -2383,7 +2683,9 @@ class ForgeApp(App[str]):
                 raise ValueError("The recipe changed during selection. Reopen it and retry.")
             self.edit_conversion_options(row, (publication_id, selected_streams))
         except Exception as error:
-            self.push_screen(Detail("External reference selection", str(error), raw=True))
+            self.push_screen(
+                Detail("External reference selection", str(error), raw=True, error=True)
+            )
 
     async def available_currencies(self) -> tuple[str, ...]:
         try:
@@ -2600,16 +2902,14 @@ class ForgeApp(App[str]):
                 )
             )
         except Exception as error:
-            self.push_screen(Detail("Conversion recipe settings", str(error), raw=True))
+            self.push_screen(Detail("Conversion recipe settings", str(error), raw=True, error=True))
 
     def saved_recipe_actions(
         self, family: str, name: str, path: Path
     ) -> dict[str, Callable[[], object]]:
         row = Row(name, name, family, "", {"path": str(path)}, name, path)
         actions: dict[str, Callable[[], object]] = {
-            "Edit": partial(
-                self.edit_conversion_options if family == "convert" else self.edit_recipe_form, row
-            ),
+            "Edit": partial(self.edit_recipe_form, row),
             "Edit TOML": partial(self.edit_selected, row),
         }
         if family == "convert":
@@ -2619,52 +2919,20 @@ class ForgeApp(App[str]):
             actions["Edit policy and reference trades…"] = partial(
                 self.edit_conversion_options, row
             )
-        for verb in ("inspect", "validate", "plan", "prepare", "map", "download", "run"):
+        for verb in ("validate", "plan", "prepare", "map", "download", "run"):
             if action := BY_KEY.get(f"{family} {verb}"):
                 actions[verb.title()] = partial(self.open_action, action, row)
+        if family in FAMILIES.values():
+            actions["Remove from Recipe…"] = partial(self.remove_recipe_input, row)
+            actions["Delete Recipe…"] = partial(self.delete_managed_recipe, row)
         return actions
 
-    def publication_workflows(
-        self, row: Row, selected: tuple[Row, ...]
-    ) -> dict[str, Callable[[], object]]:
-        stage = document(row.value).get("operation")
-        if stage == "merge":
-            return {
-                "Convert publication…": partial(
-                    self.open_action,
-                    BY_KEY["convert new"],
-                    None,
-                    {"route": "publication", "source": row.reference or row.id},
-                )
-            }
-        if stage == "normalize" and all(
-            document(item.value).get("operation") == "normalize" for item in selected
-        ):
-            return {"Create merge from selection…": partial(self.merge_selection, selected)}
-        return {}
-
     @work(exit_on_error=False)
-    async def merge_selection(self, selected: tuple[Row, ...]) -> None:
-        fields = (
-            Field("reference", "New merge recipe name", required=True),
-            Field("timeline_ordering", "Timeline ordering", "choice", ("chronological", "causal")),
-            Field("stream_ranks", "Stream ranks (stream=rank, comma-separated)"),
-            Field("start_ns", "Start (Unix nanoseconds, default first observation)", "integer"),
-            Field(
-                "end_ns",
-                "Exclusive end (Unix nanoseconds, default last observation + 1)",
-                "integer",
-            ),
-        )
-        values = await self.push_screen_wait(
-            Form(Action("Create merge from selected publications", "Data", fields), local=True)
-        )
-        if values is None:
-            return
-        values["publication_ids"] = ",".join(
-            dict.fromkeys(item.reference or item.id for item in selected)
-        )
-        await self.review_merge(values)
+    async def browse_data_publication(self, identity: int) -> None:
+        while self.screen != self.root_screen:
+            self.pop_screen()
+        await self.switch("Data", "Normalized")
+        self.query_one("#filter", Input).value = str(identity)
 
     async def review_merge(self, values: Values) -> None:
         registry = self.database_id
@@ -2715,20 +2983,6 @@ class ForgeApp(App[str]):
                 await self.create_recipe(BY_KEY["merge new"], values)
         except Exception as error:
             self.push_screen(Detail("Merge publication selection", str(error), raw=True))
-
-    @work(exit_on_error=False)
-    async def normalize_selection(self, selected: tuple[Row, ...]) -> None:
-        if not self.context.testing:
-            self.notify(
-                "Open the testing workspace to create registry-bound recipes.", severity="warning"
-            )
-            return
-        refs: dict[int, None] = {}
-        for row in selected:
-            value = document(row.value).get("archives")
-            for ref in cast(list[object], value) if isinstance(value, list) else [row.id]:
-                refs[int(str(ref).removeprefix("local:"))] = None
-        await self.author_exact_normalization(tuple(refs))
 
     async def author_exact_normalization(self, archive_ids: tuple[int, ...]) -> None:
         from forge.historical.normalization.batch import inspect_exact_archives
@@ -2850,7 +3104,7 @@ class ForgeApp(App[str]):
             with WorkspaceOwnership(self.context.paths):
                 await save_normalization(path, recipe)
         except Exception as error:
-            self.push_screen(Detail("Normalization selection", str(error), raw=True))
+            self.push_screen(Detail("Normalization selection", str(error), raw=True, error=True))
         else:
             self.push_screen(
                 Inspection(
@@ -2878,7 +3132,7 @@ class ForgeApp(App[str]):
                 reviewed = await deduplication.inventory(paths, operation, apply=False)
                 await disk(deduplication.save_preview, paths, reviewed)
         except Exception as error:
-            self.push_screen(Detail("Deduplication preview", str(error), raw=True))
+            self.push_screen(Detail("Deduplication preview", str(error), raw=True, error=True))
             return
 
         async def apply() -> object:
@@ -2906,7 +3160,7 @@ class ForgeApp(App[str]):
             ):
                 result = await inspect_supersession(self.context.paths, identity)
         except Exception as error:
-            self.push_screen(Detail("Publication supersession", str(error), raw=True))
+            self.push_screen(Detail("Publication supersession", str(error), raw=True, error=True))
             return
         self.push_screen(Inspection(f"Supersession · publication {identity}", result))
 
@@ -2935,7 +3189,9 @@ class ForgeApp(App[str]):
                 )
                 await disk(deduplication.save_preview, self.context.paths, reviewed)
         except Exception as error:
-            self.push_screen(Detail("Publication deletion preview", str(error), raw=True))
+            self.push_screen(
+                Detail("Publication deletion preview", str(error), raw=True, error=True)
+            )
             return
 
         async def apply() -> object:
@@ -2958,7 +3214,7 @@ class ForgeApp(App[str]):
         self.push_screen(
             ConfigurationExplorer(
                 self.context,
-                self.edit_recipe,
+                self.queue_editor,
                 self.copy_value,
                 self.reload_application_settings,
                 self.configuration_environment,
@@ -3052,7 +3308,7 @@ class ForgeApp(App[str]):
                     history_only=bool(values.get("history_only")),
                 )
         except Exception as error:
-            self.push_screen(Detail("Run deletion preview", str(error), raw=True))
+            self.push_screen(Detail("Run deletion preview", str(error), raw=True, error=True))
             return
 
         @work(exit_on_error=False)
@@ -3065,7 +3321,7 @@ class ForgeApp(App[str]):
                 with database_environment(testing=True), pinned_registry(self.database_id):
                     result = await run_delete.apply(app.context.paths, Path(report["plan_path"]))
             except Exception as error:
-                app.push_screen(Detail("Run deletion", str(error), raw=True))
+                app.push_screen(Detail("Run deletion", str(error), raw=True, error=True))
                 return
             app.push_screen(Inspection("Run deletion result", result))
             app.request_query()
@@ -3092,7 +3348,7 @@ class ForgeApp(App[str]):
             ):
                 result = await service(self.context.paths, limit=50, offset=0, apply=False)
         except Exception as error:
-            self.push_screen(Detail(verb, str(error), raw=True))
+            self.push_screen(Detail(verb, str(error), raw=True, error=True))
             return
 
         async def apply() -> object:
@@ -3115,26 +3371,110 @@ class ForgeApp(App[str]):
             )
         )
 
+    @staticmethod
+    def lifecycle_family(kind: str) -> RecipeFamily:
+        return cast(
+            RecipeFamily,
+            {
+                "normalize": "normalization",
+                "convert": "conversion",
+                "acquisition import": "import",
+                "acquisition register": "registration",
+                "markets rank": "ranking",
+            }.get(kind, kind),
+        )
+
+    @work(exit_on_error=False)
+    async def restore_managed_recipe(self, kind: str) -> None:
+        from forge.shared.config.deletion import archived_recipes, restore_recipe
+
+        paths = self.context.paths
+        family = self.lifecycle_family(kind)
+        archived = await disk(archived_recipes, paths, family)
+        if not archived:
+            self.push_screen(Inspection("Archived recipes", {"Status": "No archived recipes"}))
+            return
+        choices = {f"{path.stem} · {path.parent.name}": path for path in archived}
+        selected = await self.push_screen_wait(
+            ActionMenu("Restore archived recipe", tuple(choices))
+        )
+        if selected is None:
+            return
+        try:
+            await disk(restore_recipe, paths, family, choices[selected])
+        except (MarketForgeError, OSError) as error:
+            self.push_screen(Inspection("Restore unavailable", {"Error": str(error)}))
+        else:
+            self.request_query()
+
+    @work(exit_on_error=False)
+    async def remove_recipe_input(self, row: Row) -> None:
+        from forge.historical.recipe_removal import configured_removals, remove_configured_input
+
+        if row.path is None or self.recipe_activation:
+            return
+        self.recipe_activation = True
+        registry, testing = self.database_id, self.context.testing
+        try:
+            original = await disk(row.path.read_bytes)
+            data = tomllib.loads(original.decode())
+            choices = {entry.label: entry for entry in configured_removals(row.kind, data)}
+            if not choices:
+                self.push_screen(
+                    Inspection(
+                        "Remove from Recipe",
+                        {
+                            "Recipe": row.reference,
+                            "Configured entries": "No removable explicit entries. Use Edit to change the selection policy.",
+                        },
+                    )
+                )
+                return
+            choice = await self.push_screen_wait(
+                ActionMenu(f"Remove from {row.reference}", tuple(choices))
+            )
+            if choice is None:
+                return
+            self.check_recipe_environment(registry, testing)
+            with database_environment(testing=testing), pinned_registry(registry):
+                candidate = await remove_configured_input(
+                    data,
+                    row.kind,
+                    choices[choice],
+                    paths=self.context.paths,
+                    registry=registry,
+                )
+            await self.author_recipe(
+                row.kind,
+                row,
+                initial=candidate,
+                expected=original,
+                removal_review=choice,
+            )
+        except Exception as error:
+            self.push_screen(Inspection("Removal unavailable", {"Error": str(error)}))
+        finally:
+            self.recipe_activation = False
+
     @work(exit_on_error=False)
     async def delete_managed_recipe(self, row: Row) -> None:
         from dataclasses import asdict
 
         from forge.historical.recipe_dependencies import inspect_references
-        from forge.shared.config.deletion import RecipeFamily, delete_recipe
+        from forge.shared.config.deletion import delete_recipe
 
-        family = cast(
-            RecipeFamily,
-            {"normalize": "normalization", "convert": "conversion"}.get(row.kind, row.kind),
-        )
+        family = self.lifecycle_family(row.kind)
         paths = self.context.paths
 
-        def request(*, apply: bool = False) -> object:
+        def request(*, apply: bool = False, digest: str | None = None) -> object:
             return asdict(
                 delete_recipe(
                     paths,
                     family,
                     row.reference,
                     apply=apply,
+                    expected_sha256=digest,
+                    expected_path=row.path,
                     dependencies=partial(inspect_references, paths, family),
                 )
             )
@@ -3142,19 +3482,28 @@ class ForgeApp(App[str]):
         try:
             preview = document(await disk(request))
         except Exception as error:
-            self.push_screen(Detail("Recipe deletion preview", str(error), raw=True))
+            self.push_screen(Detail("Recipe deletion preview", str(error), raw=True, error=True))
             return
 
         @work(exit_on_error=False)
         async def apply(app: ForgeApp) -> None:
             if not await app.push_screen_wait(
-                Confirm("Delete managed recipe", plain(preview), destructive=True)
+                Confirm(
+                    "Delete managed recipe",
+                    f"{row.reference} · {family.title()}\n\n"
+                    "The recipe will leave active Workflows and can be restored from the archive. "
+                    "This is shared workspace configuration for Testing and Production. "
+                    "Retained Runs and datasets will remain available.",
+                    destructive=True,
+                    confirm_label="Delete Recipe",
+                    back_label="Cancel",
+                )
             ):
                 return
             try:
-                result = await disk(request, apply=True)
+                result = await disk(request, apply=True, digest=str(preview["sha256"]))
             except Exception as error:
-                app.push_screen(Detail("Recipe deletion", str(error), raw=True))
+                app.push_screen(Detail("Recipe deletion", str(error), raw=True, error=True))
                 return
             app.push_screen(Inspection("Recipe deletion result", result))
             app.request_query()
@@ -3169,111 +3518,269 @@ class ForgeApp(App[str]):
             )
         )
 
-    def row_menu(self, row: Row | None) -> None:
+    @work(exit_on_error=False)
+    async def edit_recipe_sources(self, row: Row) -> None:
+        from forge.historical.conversion.evidence import inspect_publication_source
+        from forge.historical.merge.service import publication_recipe
+        from forge.historical.normalization.batch import inspect_exact_archives
+        from forge.tui.screens import PathPicker
+
+        if row.path is None or self.recipe_activation:
+            return
+        self.recipe_activation = True
+        try:
+            original = await disk(row.path.read_bytes)
+            data = tomllib.loads(original.decode())
+            if row.kind in {"acquisition", "pipeline"}:
+                await self.author_recipe(row.kind, row, expected=original, add_entry=True)
+                return
+            if row.kind == "normalize" and "archive_pins" not in data:
+                await self.author_recipe(row.kind, row, expected=original)
+                return
+            if row.kind == "acquisition import":
+
+                def resolve_root() -> Path:
+                    return (
+                        self.context.paths.root / Path(str(data["root"])).expanduser()
+                    ).resolve()
+
+                root = await disk(resolve_root)
+                path = await self.push_screen_wait(PathPicker(root))
+                if path is None:
+                    return
+                selected = str((await disk(path.resolve)).relative_to(root))
+                data["files"] = list(
+                    dict.fromkeys([*cast(list[str], data.get("files", [])), selected])
+                )
+            else:
+                if row.kind == "merge" and not {"selection", "publication_ids"} & data.keys():
+                    await self.author_recipe(row.kind, row, expected=original)
+                    return
+                key, label = {
+                    "normalize": ("archive_ids", "Registered raw archives"),
+                    "merge": ("publication_ids", "Registered normalized publications"),
+                    "convert": ("source", "Registered merged publication"),
+                }[row.kind]
+                values = await self.push_screen_wait(
+                    Form(
+                        Action("Select sources", "Workflows", (Field(key, label, required=True),)),
+                        {"route": "publication"},
+                        local=True,
+                        submit_label="Open draft",
+                        search_fields=frozenset({key}),
+                        multiple_entities=frozenset({key}) if key != "source" else frozenset(),
+                        entity_search=self.search_entities,
+                    )
+                )
+                if values is None:
+                    return
+                ids = [int(part) for part in str(values[key]).split(",")]
+                with (
+                    database_environment(testing=self.context.testing),
+                    pinned_registry(self.database_id),
+                ):
+                    if row.kind == "normalize":
+                        registry, archives = await inspect_exact_archives(
+                            self.context.paths, tuple(ids)
+                        )
+                        if data.get("registry_id") != registry:
+                            raise ValueError("This recipe belongs to another registry.")
+                        pins = cast(list[dict[str, object]], data["archive_pins"])
+                        known = {pin["archive_id"] for pin in pins}
+                        pins.extend(
+                            {
+                                "archive_id": item["archive_id"],
+                                "selection_sha256": item["selection_sha256"],
+                            }
+                            for item in archives
+                            if item["archive_id"] not in known
+                        )
+                    elif row.kind == "merge":
+                        if data.get("file_subset"):
+                            raise ValueError(
+                                "Use Data → Normalized → Add to Recipe to extend an exact file selection."
+                            )
+                        if "selection" in data:
+                            selection = cast(dict[str, object], data["selection"])
+                            selection["publication_ids"] = list(
+                                dict.fromkeys(
+                                    [*cast(list[int], selection.get("publication_ids", [])), *ids]
+                                )
+                            )
+                        else:
+                            if data.get("registry_id") != self.database_id:
+                                raise ValueError("This recipe belongs to another registry.")
+                            recipe, _ = await publication_recipe(
+                                self.context.paths,
+                                list(
+                                    dict.fromkeys([*cast(list[int], data["publication_ids"]), *ids])
+                                ),
+                                start_ns=int(str(data["start_ns"])),
+                                end_ns=int(str(data["end_ns"])),
+                                stream_ranks=cast(dict[str, int], data.get("stream_ranks")),
+                                timeline_ordering=cast(str | None, data.get("timeline_ordering")),
+                            )
+                            for name in (
+                                "dataset_ids",
+                                "publication_ids",
+                                "registry_id",
+                                "selection_sha256",
+                            ):
+                                data[name] = recipe.model_dump(mode="json")[name]
+                    else:
+                        if len(ids) != 1:
+                            raise ValueError("Select one merged publication.")
+                        bound = await inspect_publication_source(self.context.paths, ids[0])
+                        data["source"] = bound.model_dump(mode="json")
+                        data["interval"] = bound.interval.model_dump(mode="json")
+                        data["selection"] = {"whole_publication": True}
+            await self.author_recipe(row.kind, row, initial=data, expected=original)
+        except Exception as error:
+            self.push_screen(Inspection("Source selection unavailable", {"Error": str(error)}))
+        finally:
+            self.recipe_activation = False
+
+    def recipe_menu(self, row: Row) -> dict[str, Callable[[], object]]:
+        assert row.path is not None
+        choices: dict[str, Callable[[], object]] = {"Inspect": partial(self.open_row, row)}
+        choices.update(self.saved_recipe_actions(row.kind, row.reference, row.path))
+        choices.pop("Browse external trade references…", None)
+        choices.pop("Edit policy and reference trades…", None)
+        for key in self.related(row):
+            label = key.removeprefix(row.kind + " ").title()
+            if label not in {"List", "Inspect", "Edit", "New", "Sources"}:
+                choices.setdefault(label, partial(self.open_action, BY_KEY[key], row))
+        source = {
+            "acquisition": "Add Instrument",
+            "pipeline": "Add Acquisition Request",
+            "normalize": "Select Sources",
+            "merge": "Select Normalized Sources",
+            "convert": "Replace Source Publication",
+            "acquisition import": "Add Source Files",
+        }.get(row.kind)
+        if source:
+            choices[source] = partial(self.edit_recipe_sources, row)
+        if row.kind == "pipeline":
+            for verb in ("resume", "status"):
+                choices[verb.title() + " Run"] = partial(
+                    self.open_action, BY_KEY[f"pipeline {verb}"]
+                )
+        if row.kind == "convert":
+            choices["Add Reference Streams"] = partial(self.select_conversion_reference, row)
+        return choices
+
+    def show_data_actions(
+        self,
+        title: str,
+        actions: dict[str, Callable[[], object]],
+        *,
+        primary: str = "",
+        anchor: tuple[int, int] | None = None,
+    ) -> None:
+        def choose(label: str | None) -> None:
+            if label is not None:
+                actions[label]()
+
+        self.push_screen(ActionMenu(title, tuple(actions), primary=primary, anchor=anchor), choose)
+
+    @work(exit_on_error=False)
+    async def add_data_to_recipe(
+        self, view: str, rows: tuple[Row, ...], registry: str | None, testing: bool
+    ) -> None:
+        await data_actions.add_data_to_recipe(self, view, rows, registry, testing)
+
+    def row_menu(
+        self,
+        row: Row | None,
+        *,
+        anchor: tuple[int, int] | None = None,
+    ) -> None:
+        if self.area == "Data":
+            data_actions.row_actions(self, row, anchor)
+            return
         if self.area == "Catalogue":
             actions = self.catalogue_actions(row)
-
-            def choose_catalogue(key: str | None) -> None:
-                if key is not None:
-                    actions[key]()
-
-            self.push_screen(
-                ActionMenu(row.name if row else self.view, tuple(actions)), choose_catalogue
-            )
+        elif self.area == "Workflows" and row and row.path:
+            actions = self.recipe_menu(row)
+        else:
+            actions: dict[str, Callable[[], object]] = {}
+            if row:
+                if self.area == "Markets" and self.view == "Instruments":
+                    selected = self.selected_rows(row)
+                    if self.database_id and all(
+                        market_recipes.instrument_from_row(item) for item in selected
+                    ):
+                        for label, family in (
+                            ("Add to Acquisition", "acquisition"),
+                            ("Add to Pipeline", "pipeline"),
+                        ):
+                            actions[label] = partial(
+                                self.add_to_recipe,
+                                selected,
+                                family,
+                                self.database_id,
+                                self.context.testing,
+                            )
+                actions["Inspect"] = partial(self.open_row, row)
+                if self.area == "Markets" and self.view == "Rankings":
+                    actions["Copy Full Identifier"] = partial(self.copy_value, row.reference)
+                    actions["View Ranking Results"] = partial(
+                        self.open_action,
+                        BY_KEY["markets rank show"],
+                        None,
+                        {"reference": row.reference},
+                    )
+                if self.area == "Markets" and self.view == "Policies" and row.path:
+                    actions["Edit TOML"] = partial(self.edit_selected, row)
+                    actions["Validate"] = partial(
+                        self.open_action, BY_KEY["markets rank validate"], row
+                    )
+                if self.area == "Runs":
+                    for key, label in (
+                        ("runs report", "Open Report"),
+                        ("runs logs", "Open Logs"),
+                        ("pipeline resume", "Resume Pipeline"),
+                    ):
+                        if key in self.related(row):
+                            actions[label] = partial(self.open_action, BY_KEY[key], row)
+                    if row.kind == "Indexed run" and self.context.testing:
+                        actions["Review run deletion…"] = partial(
+                            self.delete_runs, self.selected_rows(row)
+                        )
+                    actions["Copy Full Identifier"] = partial(
+                        self.copy_value, row.reference or row.id
+                    )
+            if self.area == "Runs" and row is None:
+                for verb, label in (
+                    ("index-legacy", "Review Legacy Run Indexing…"),
+                    ("reconcile", "Review Run Reconciliation…"),
+                ):
+                    actions[label] = partial(self.run_maintenance, verb)
+            if row is None and self.area == "Markets" and self.view == "Instruments":
+                for verb, label in (
+                    ("refresh", "Refresh Observations…"),
+                    ("sync", "Synchronize Instruments…"),
+                ):
+                    actions[label] = partial(self.open_action, BY_KEY[f"markets {verb}"])
+        if self.area == "Workflows" and (family := FAMILIES.get(self.view)):
+            actions["Restore Archived Recipe…"] = partial(self.restore_managed_recipe, family)
+        if not actions:
             return
-        choices: dict[str, Callable[[], object]] = {
-            key: partial(self.open_action, BY_KEY[key], row) for key in self.related(row)
-        }
-        if self.area == "Data":
-            if self.view == "Raw":
-                choices["Browse normalization profiles"] = partial(
-                    self.open_workspace_view, "Catalogue", "Profiles"
-                )
-            choices["Preview dataset deduplication…"] = self.dataset_deduplication
-        if self.area == "Runs":
-            for verb in ("index-legacy", "reconcile"):
-                choices[f"Review {verb}…"] = partial(self.run_maintenance, verb)
-        if self.state.basket:
-            choices["Review selection"] = partial(
-                self.copy_value,
-                "\n".join(f"{item.id}  {item.name}" for item in self.state.basket.values()),
-            )
-            choices["Clear selection"] = self.clear_basket
-        if row:
-            choices["Inspect"] = partial(self.open_row, row)
-            choices["Copy row"] = partial(self.copy_value, plain(row.value))
-            if self.area == "Data" and row.reference:
-                choices["Copy exact ID"] = partial(self.copy_dashboard_id, row.reference)
-            if row.kind == "Raw Archive":
-                refs = document(row.value).get("archives")
-                if isinstance(refs, list):
-                    choices["Copy archive IDs"] = partial(
-                        self.copy_dashboard_id, "\n".join(map(str, cast(list[object], refs)))
-                    )
-            cells = (
-                dashboard.stage_columns(self.view, document(row.value))
-                if self.area == "Data"
-                else columns(self.view, row.name, row.kind, row.state, row.value)
-            )
-            for cell in cells:
-                choices[f"Copy {cell.label}"] = partial(self.copy_value, plain(cell.value))
-            selected = tuple(self.state.basket.values()) or (row,)
-            if row.kind == "Indexed run":
-                choices["Review run deletion…"] = partial(self.delete_runs, selected)
-            if self.area == "Data" and self.view == "Raw" and self.context.testing:
-                choices["Normalize selected archives…"] = partial(
-                    self.normalize_selection, selected
-                )
-            if row.kind == "Indexed conversion output" and self.context.testing:
-                choices["Preview output deletion…"] = partial(self.delete_publications, selected)
-            if row.kind == "Publication":
-                choices.update(self.publication_workflows(row, selected))
-                choices["Preview publication deletion…"] = partial(
-                    self.delete_publications, selected
-                )
-            if (self.area == "Markets" and self.view == "Instruments") or row.kind == "instrument":
-                for destination in ("acquisition", "pipeline"):
-                    choices[f"Add to {destination}…"] = partial(
-                        self.add_to_recipe, row, destination, selected
-                    )
-            if row.path and row.kind == "convert":
-                choices["Browse external trade references…"] = partial(
-                    self.select_conversion_reference, row
-                )
-                choices["Edit policy and reference trades…"] = partial(
-                    self.edit_conversion_options, row
-                )
-            if row.path and row.kind in {"acquisition", "normalize", "merge", "convert"}:
-                choices["Preview recipe deletion…"] = partial(self.delete_managed_recipe, row)
-            if row.path and row.kind == "acquisition":
-                choices["Create normalization recipe…"] = partial(
-                    self.open_action,
-                    BY_KEY["normalize new"],
-                    None,
-                    {"from_acquisition": row.reference},
-                )
-            if row.path and row.kind == "normalize":
-                choices["Create merge recipe…"] = partial(
-                    self.open_action, BY_KEY["merge new"], None, {"from_normalize": row.reference}
-                )
-            if row.path and row.kind == "normalize":
-                choices["Replace source in a derived merge…"] = partial(
-                    self.update_merge_source, row
-                )
-            if row.path and row.kind in {"acquisition", "normalize", "merge"}:
-                choices["Create conversion recipe…"] = partial(
-                    self.open_action,
-                    BY_KEY["convert new"],
-                    None,
-                    {"route": row.kind, "source": row.reference},
-                )
-        if choices:
+        title = row.name if row else self.view
+        if row and row.path and self.area == "Workflows":
+            title = f"{row.kind.upper()} · {row.name}"
+        if row and self.area == "Markets" and self.view == "Instruments":
+            exchange = value_at(document(row.value), "exchange")
+            title = f"{row.name} · {exchange.title()}"
+            if "Add to Acquisition" in actions:
+                count = len(self.selected_rows(row))
+                if count > 1:
+                    title += f" · {count} selected"
+        self.show_data_actions(title, actions, anchor=anchor)
 
-            def choose(key: str | None) -> None:
-                if key is not None:
-                    choices[key]()
-
-            self.push_screen(ActionMenu(row.name if row else self.view, tuple(choices)), choose)
+    def selected_rows(self, row: Row) -> tuple[Row, ...]:
+        basket = self.state.basket
+        return tuple(basket.values()) if row.id in basket else (row,)
 
     @work(exit_on_error=False)
     async def catalogue_docs(self, url: str) -> None:
@@ -3284,24 +3791,30 @@ class ForgeApp(App[str]):
 
     def catalogue_actions(self, row: Row | None) -> dict[str, Callable[[], object]]:
         view = self.view
-        actions: dict[str, Callable[[], object]] = {
-            f"New {catalogue_ui.LABELS[view]}": partial(self.new_catalogue, view),
-            "Documentation": partial(self.catalogue_docs, catalogue_ui.documentation_url(view)),
-        }
+        if row is None:
+            actions: dict[str, Callable[[], object]] = {
+                f"New {catalogue_ui.LABELS[view]}": partial(self.new_catalogue, view),
+                "Documentation": partial(self.catalogue_docs, catalogue_ui.documentation_url(view)),
+            }
+            if view == "Profiles":
+                actions["Resume profile draft"] = partial(self.begin_profile, "resume")
+            else:
+                actions["Review saved declaration"] = partial(self.open_catalogue_declaration, view)
+                actions["Edit saved declaration"] = partial(
+                    self.open_catalogue_declaration, view, edit=True
+                )
+            return actions
+
+        actions = {"Inspect": partial(self.open_row, row)}
         if view == "Profiles":
-            actions["Resume profile draft"] = partial(self.begin_profile, "resume")
-            if row:
-                actions["Clone Profile"] = partial(self.begin_profile, "clone", row)
-                actions["Edit profile draft"] = partial(self.begin_profile, "edit", row)
-                actions["Rust validate profile"] = partial(self.validate_installed_profile, row)
-        else:
-            actions["Review saved declaration"] = partial(self.open_catalogue_declaration, view)
-            actions["Edit saved declaration in Neovim"] = partial(
-                self.open_catalogue_declaration, view, edit=True
+            actions["Clone Profile"] = partial(self.begin_profile, "clone", row)
+            actions["Edit profile draft"] = partial(self.begin_profile, "edit", row)
+            actions["Rust validate profile"] = partial(self.validate_installed_profile, row)
+        elif row.kind == "instrument":
+            actions["View Specifications"] = partial(
+                self.catalogue_related, "Specifications", row.reference
             )
-        if row:
-            actions["Inspect"] = partial(self.open_row, row)
-            actions["Copy exact reference"] = partial(self.copy_dashboard_id, row.reference)
+        actions["Copy Full Identifier"] = partial(self.copy_dashboard_id, row.reference)
         return actions
 
     async def catalogue_call(
@@ -3345,6 +3858,10 @@ class ForgeApp(App[str]):
                         "Mappings": catalogue_ui.configured_mappings(definition),
                         "Schema": catalogue_ui.profile_parameters(definition, row.reference),
                     },
+                    files=self.inspection_files(
+                        "Profile TOML", row.path, self.context.paths.config_dir
+                    ),
+                    section_values={"Summary": definition},
                 )
             )
             return
@@ -3475,23 +3992,35 @@ class ForgeApp(App[str]):
         kind = CATALOG[view]
         label = catalogue_ui.LABELS[view]
         registry = self.database_id
+        if edit:
+            context = self.context
+
+            async def validate(candidate: Path) -> object:
+                with database_environment(testing=context.testing), pinned_registry(registry):
+                    return await self.controller.invoke(
+                        f"catalog {kind} validate",
+                        {"source": str(candidate)},
+                        context,
+                        lambda _: None,
+                        self.edit_recipe,
+                    )
+
+            async def apply(original: bytes, updated: bytes) -> None:
+                self.check_recipe_environment(registry, context.testing)
+                await disk(catalogue_ui.update_draft, path, original, updated.decode())
+                self.notify(f"{label} draft updated. Open the declaration to review registration.")
+
+            self.queue_editor(path, validate, apply, None)
+            return
         try:
             original = await disk(path.read_bytes)
             with TemporaryDirectory(prefix="marketforge-catalogue-") as directory:
                 frozen = Path(directory) / path.name
                 await disk(frozen.write_bytes, original)
-                if edit:
-                    await self.edit_recipe(frozen)
-                submitted = await disk(frozen.read_bytes)
+                submitted = original
                 values: Values = {"source": str(frozen)}
                 valid = await self.catalogue_call(f"catalog {kind} validate", values)
                 declaration = document(valid.get("declaration"))
-                if edit and original != submitted:
-                    if not await self.push_screen_wait(
-                        Confirm(f"Save {label} draft", plain(declaration))
-                    ):
-                        return
-                    await disk(catalogue_ui.update_draft, path, original, submitted.decode())
                 if not registry or self.database_id != registry:
                     raise ValueError(
                         "Connect to a verified registry before reviewing registration."
@@ -3756,27 +4285,29 @@ class ForgeApp(App[str]):
 
     @work(exit_on_error=False)
     async def edit_profile_toml(self, path: Path) -> None:
-        from forge.historical.profiles import service as profiles
+        paths = self.context.paths
 
-        try:
-            original = await disk(path.read_bytes)
-            with TemporaryDirectory(prefix="marketforge-profile-editor-") as directory:
-                candidate = Path(directory) / path.name
-                await disk(candidate.write_bytes, original)
-                await self.edit_recipe(candidate)
-                updated = await disk(candidate.read_bytes)
-                if original == updated:
-                    return
-                result = await disk(profiles.validate, self.context.paths, candidate)
-                if await self.push_screen_wait(
-                    Confirm("Apply validated changes to draft", plain(result))
+        async def validate(candidate: Path) -> object:
+            return await disk(validate_recipe_draft, paths, "Profile", candidate)
+
+        async def apply(original: bytes, updated: bytes) -> None:
+            await disk(catalogue_ui.update_draft, path, original, updated.decode())
+            if self.area == "Catalogue":
+                self.request_query()
+            # Refresh the profile view only after an explicit editor review.
+            if (
+                isinstance(self.screen, Inspection)
+                and self.screen.heading == f"Editor · {path.name}"
+            ):
+                self.pop_screen()
+                current = self.screen_stack[-1]
+                if (
+                    isinstance(current, Inspection)
+                    and current.heading == f"Profile draft · {path.stem}"
                 ):
-                    await disk(catalogue_ui.update_draft, path, original, updated.decode())
                     await self.show_profile_draft(path, replace_screen=True)
-        except Exception as error:
-            self.push_screen(
-                Inspection("Profile edit blocked", {"Draft": str(path), "error": str(error)})
-            )
+
+        self.queue_editor(path, validate, apply, None)
 
     @work(exit_on_error=False)
     async def validate_installed_profile(self, row: Row) -> None:
@@ -4052,109 +4583,143 @@ class ForgeApp(App[str]):
         except Exception as error:
             self.notify(str(error), severity="error")
 
-    @work(exit_on_error=False)
-    async def add_to_recipe(self, row: Row, family: str, selected: tuple[Row, ...] = ()) -> None:
-        selected = selected or (row,)
-        import tomllib
+    def check_recipe_environment(self, registry: str | None, testing: bool) -> None:
+        if registry != self.database_id or testing != self.context.testing:
+            raise ValueError("The selected environment changed. Refresh the source selection.")
 
-        from forge.shared.config.library import resolve_config_file
-
+    async def select_existing_recipe(
+        self,
+        family: str,
+        title: str,
+        source: str,
+        describe: Callable[[bytes], Awaitable[tuple[bool, str]]],
+    ) -> Path | None:
         directory = library(self.context, family)
-        choices = await disk(list_config_names, directory)
-        values = await self.push_screen_wait(
-            Form(
-                Action(
-                    f"Add {len(selected)} instrument(s) to {family}",
-                    self.area,
-                    (
-                        Field("reference", "Destination recipe", required=True),
-                        Field("new", "Create a new recipe", "check", default=not choices),
-                        Field("start", "New recipe start (UTC)"),
-                        Field("end", "New recipe end (UTC, exclusive)"),
-                        Field("trades", "Trades", "check", default=True),
-                        Field("depth", "Depth", "check"),
-                    ),
-                ),
-                {},
-                choices,
-                self.context.paths.root,
+        if not await disk(list_config_names, directory):
+            choice = await self.push_screen_wait(
+                ActionMenu(
+                    f"No existing {title} recipes found. Create a recipe in Workflows → {title} first.",
+                    ("Open Workflows", "Cancel"),
+                )
+            )
+            if choice == "Open Workflows":
+                await self.switch("Workflows", title)
+            return None
+
+        incompatible: set[str] = set()
+
+        async def search(term: str) -> EntityChoices:
+            matches: list[tuple[str, str]] = []
+            incompatible.clear()
+            for name in await disk(list_config_names, directory):
+                if term.casefold() not in name.casefold():
+                    continue
+                path = resolve_config_file(directory, name)
+                try:
+                    compatible, state = await describe(await disk(path.read_bytes))
+                except Exception as error:
+                    compatible, state = False, str(error)
+                if not compatible:
+                    state = f"Incompatible · {state}"
+                    incompatible.add(name)
+                matches.append((f"{name} · {state}", name))
+                if len(matches) == 30:
+                    break
+            return tuple(matches)
+
+        name = await self.push_screen_wait(
+            EntityPicker(
+                f"Existing {title} recipe",
+                search,
+                "",
+                context=source,
+                selectable=lambda name: name not in incompatible,
             )
         )
-        if values is None:
+        return resolve_config_file(directory, name) if name is not None else None
+
+    @work(exit_on_error=False)
+    async def add_to_recipe(
+        self, selected: tuple[Row, ...], family: str, registry: str, testing: bool
+    ) -> None:
+        if self.recipe_activation:
             return
-        name = str(values["reference"])
+        self.recipe_activation = True
         try:
-            destination = resolve_config_file(directory, name)
-            creating = bool(values.get("new"))
-            expected = b"" if creating else await disk(destination.read_bytes)
-            dates = (
-                values if creating else document(tomllib.loads(expected.decode()).get("interval"))
-            )
-            interval = f"{dates.get('start', '—')} → {dates.get('end', '—')} (exclusive)"
-            requests = tuple(
-                ArchiveRequest.model_validate(
-                    {
-                        key: item.get(key)
-                        for key in ("exchange", "instrument_type", "market_category")
-                    }
-                    | {
-                        "data_type": kind,
-                        "scope": {"kind": "instrument", "identifier": item.get("symbol")},
-                    }
+            self.check_recipe_environment(registry, testing)
+            title = family.title()
+            directory = library(self.context, family)
+            names = tuple(await disk(list_config_names, directory))
+            if not names:
+                choice = await self.push_screen_wait(
+                    ActionMenu(
+                        f"No {title} recipes found. Create an {title} recipe in Workflows first."
+                        if family == "acquisition"
+                        else "No Pipeline recipes found. Create a Pipeline recipe in Workflows first.",
+                        ("Open Workflows", "Cancel"),
+                    )
                 )
-                for selected_row in selected
-                for item in (document(selected_row.value),)
-                for field, kind in (("trades", "trades"), ("depth", "order_book_l2"))
-                if values.get(field)
-            )
-            if not requests:
-                self.notify("Choose trades, depth, or both.", severity="warning")
+                if choice == "Open Workflows":
+                    await self.switch("Workflows", title)
                 return
-            if not await self.push_screen_wait(
-                Confirm(
-                    "Apply recipe addition",
-                    f"{destination}\n{interval}\n"
-                    + "\n".join(
-                        f"{r.exchange} / {r.instrument_type} / {r.market_category} / {r.scope.identifier} / {r.data_type}"
-                        for r in requests
-                    ),
-                )
-            ):
+            identities = tuple(market_recipes.instrument_from_row(row) for row in selected)
+            instruments = tuple(item for item in identities if item is not None)
+            if len(instruments) != len(selected):
+                raise ValueError("Select registered instruments with complete market identities.")
+
+            async def save(
+                destination: market_recipes.Destination, requests: tuple[ArchiveRequest, ...]
+            ) -> None:
+                if self.controller.shutdown.emergency:
+                    raise ValueError("Recipe saving is unavailable during emergency shutdown.")
+                self.check_recipe_environment(registry, testing)
+                with database_environment(testing=testing), pinned_registry(registry):
+                    if await selected_registry_id(self.context.paths.root) != registry:
+                        raise ValueError(
+                            "The selected registry changed. Refresh the source selection."
+                        )
+                self.check_recipe_environment(registry, testing)
+                with WorkspaceOwnership(self.context.paths):
+                    await disk(
+                        add_requests,
+                        directory,
+                        destination.path.stem,
+                        requests,
+                        expected=destination.original,
+                        pipeline=family == "pipeline",
+                    )
+
+            result = await self.push_screen_wait(
+                market_recipes.MarketRecipeDialog(family, directory, names, instruments, save)
+            )
+            if result is None:
                 return
-            if creating:
-                change = await disk(
-                    create_with_requests,
-                    directory,
-                    name,
-                    requests,
-                    pipeline=family == "pipeline",
-                    start=str(values.get("start", "")),
-                    end=str(values.get("end", "")),
-                )
-            else:
-                change = await disk(
-                    add_requests,
-                    directory,
-                    name,
-                    requests,
-                    pipeline=family == "pipeline",
-                    expected=expected,
-                )
+            path, additions = result
+            self.request_query()
             self.push_screen(
                 Inspection(
                     "Recipe updated",
                     {
-                        "Path": str(change.path),
-                        "Added": change.added,
-                        "Already included": change.already_present,
+                        "Recipe": path.stem,
+                        "Path": str(path),
+                        "Added": [market_recipes.preview_label(r) for r in additions],
                     },
-                    actions={
-                        **self.saved_recipe_actions(family, name, change.path),
-                    },
+                    actions=self.saved_recipe_actions(family, path.stem, path),
                 )
             )
         except Exception as error:
-            self.notify(str(error), severity="error")
+            self.push_screen(Detail("Add to Recipe · Blocked", str(error), raw=True, error=True))
+        finally:
+            self.recipe_activation = False
+
+    def show_duplicate_source(self) -> None:
+        self.push_screen(
+            Detail(
+                "Already Included",
+                "This source is already included in the selected recipe. No changes required.",
+                raw=True,
+            )
+        )
 
     def selection(self, row: Row) -> Selection:
         item = document(row.value)
@@ -4342,9 +4907,7 @@ class ForgeApp(App[str]):
                     validate=self.validate_conversion_input
                     if action.key == "convert new"
                     else None,
-                    submit_label="Review source" if action.key == "convert new" else None,
-                    review=self.review_conversion_source if action.key == "convert new" else None,
-                    commit_label="Save recipe",
+                    submit_label="Configure recipe" if action.key == "convert new" else None,
                     locked=(
                         frozenset({"route", "source"})
                         if action.key == "convert new"
@@ -4369,7 +4932,7 @@ class ForgeApp(App[str]):
                 path = resolve_config_file(library(self.context, family), name)
                 self.edit_recipe_form(Row(name, name, family, "", {}, name, path))
             except Exception as error:
-                self.push_screen(Detail(action.key, str(error), raw=True))
+                self.push_screen(Detail(action.key, str(error), raw=True, error=True))
             return
         if action.key.startswith("catalog ") and action.key.endswith(" add"):
             view = next(view for view, kind in CATALOG.items() if kind == action.key.split()[1])
@@ -4386,10 +4949,11 @@ class ForgeApp(App[str]):
         if action.key in {"runs show", "runs report", "runs logs"}:
             await self.inspect_request(action.key, values, action.key)
             return
+        if action.key == "convert new":
+            await self.author_conversion(values)
+            return
         if action.key.endswith(" new") and family in FAMILIES.values():
-            if action.key != "convert new" and (
-                values.get("route") == "publication" or values.get("publication_ids")
-            ):
+            if values.get("route") == "publication" or values.get("publication_ids"):
                 if not await self.push_screen_wait(
                     Confirm(action.key, await self.review_scope(action, values))
                 ):
@@ -4436,7 +5000,7 @@ class ForgeApp(App[str]):
                         self.push_screen(Inspection("Execution blocked by validation", evidence))
                         return
             except Exception as error:
-                self.push_screen(Detail("Execution preflight", str(error), raw=True))
+                self.push_screen(Detail("Execution preflight", str(error), raw=True, error=True))
                 return
         if action.effect in {"engine", "network", "write"} and not read_only(action, values):
             review = await self.review_scope(action, values)
@@ -4458,6 +5022,9 @@ class ForgeApp(App[str]):
         await self.start_action(action, values, reviewed=reviewed)
 
     async def create_recipe(self, action: Action, values: Values) -> None:
+        if self.controller.shutdown.emergency:
+            return
+
         async def deferred_editor(_: Path) -> None:
             return
 
@@ -4517,6 +5084,8 @@ class ForgeApp(App[str]):
     async def start_action(
         self, action: Action, values: Values, *, reviewed: tuple[Path, bytes] | None = None
     ) -> None:
+        if self.controller.shutdown.emergency:
+            return
         anchor = self.screen
         if action.effect == "editor":
             try:
@@ -4526,7 +5095,7 @@ class ForgeApp(App[str]):
                 self.push_screen(Detail(action.key, result))
                 self.request_query()
             except Exception as error:
-                self.push_screen(Detail(action.key, str(error), raw=True))
+                self.push_screen(Detail(action.key, str(error), raw=True, error=True))
             return
         if action.key == "normalize prepare" and values.get("from_acquisition"):
 
@@ -4538,7 +5107,7 @@ class ForgeApp(App[str]):
                     "normalize new", values, self.context, lambda _: None, keep_generated_recipe
                 )
             except Exception as error:
-                self.push_screen(Detail(action.key, str(error), raw=True))
+                self.push_screen(Detail(action.key, str(error), raw=True, error=True))
                 return
             values = {**values, "from_acquisition": ""}
         if read_only(action, values) and self.controller.active():
@@ -4605,7 +5174,7 @@ class ForgeApp(App[str]):
             identity = (
                 snapshot.run_id
                 if isinstance(snapshot, PipelineSnapshot)
-                else result.get("run_id") or op.run_id
+                else result.get("logical_run_id") or op.run_id or result.get("run_id")
             )
             if not isinstance(identity, str):
                 self.notify("The operation has not supplied a retained run ID.", severity="warning")
@@ -4614,6 +5183,7 @@ class ForgeApp(App[str]):
             else:
                 self.open_indexed_run(identity)
 
+        token = shutdown.set(self.controller.shutdown)
         try:
             await observe(
                 op,
@@ -4632,6 +5202,8 @@ class ForgeApp(App[str]):
             )
             if self.screen is anchor and self.controller.current is op:
                 self.show_operation(op, action, values)
+        finally:
+            shutdown.reset(token)
 
     async def review_action(self, action: Action, values: Values, op: Operation) -> None:
         reviewed = dict(document(op.result))
@@ -4685,26 +5257,323 @@ class ForgeApp(App[str]):
         self.show_operation(op)
         self.request_query()
 
-    async def edit_recipe(self, path: Path) -> None:
-        if self.editor_open:
-            raise ValueError("An editor is already open.")
-        self.editor_open = True
-        try:
-            with recipe_writer(path), self.suspend():
-                await disk(
-                    edit_file,
-                    path,
-                    editor=self.context.settings.presentation.editor,
-                    fallback="nvim",
-                )
-        finally:
-            self.editor_open = False
+    @staticmethod
+    def inspection_files(label: str, reference: object, scope: Path) -> tuple[RetainedFile, ...]:
+        target = RetainedFile.reference(label, reference, scope)
+        return (target,) if target is not None else ()
 
-    def review_conversion_source(self, values: Values) -> str:
-        summary = review_text(values, self.database_environment)
-        if self.database_id:
-            summary += f"\nRegistry  {self.database_id}"
-        return summary + "\nAction  Save source binding and target quote\nPreparation  Pending"
+    async def terminal_editor(
+        self,
+        path: Path,
+        *,
+        readonly: bool = False,
+        filetype: str = "",
+        on_ready: Callable[[], None] | None = None,
+    ) -> None:
+        await edit_in_window(
+            path,
+            cwd=self.context.paths.root,
+            editor="nvim" if readonly else self.context.settings.presentation.editor,
+            readonly=readonly,
+            filetype=filetype,
+            on_ready=on_ready,
+        )
+
+    @property
+    def editor_open(self) -> bool:
+        return bool(
+            self.inspection_sessions or any(item.busy for item in self.editor_sessions.values())
+        )
+
+    @work(group="editor-windows", exit_on_error=False)
+    async def inspect_in_editor(self, target: InspectionTarget) -> None:
+        if self.controller.shutdown.emergency:
+            return
+        identity = target.path if isinstance(target, RetainedFile) else id(target)
+        if identity in self.inspection_sessions:
+            self.notify("This inspection is already open.", severity="warning")
+            return
+        self.inspection_sessions.add(identity)
+        origin = self.screen
+        try:
+            with TemporaryDirectory(prefix="marketforge-inspect-") as directory:
+                path, filetype, size = await disk(stage_inspection, target, Path(directory))
+                self.mark_missing_inspection(origin, target, missing=False)
+                if self.screen is not origin:
+                    return
+                if size > LARGE_INSPECTION and not await self.push_screen_wait(
+                    Confirm(
+                        "Open large inspection?",
+                        f"{size / (1024 * 1024):,.1f} MiB. Neovim may take time to load this evidence.",
+                        confirm_label="Open",
+                    )
+                ):
+                    return
+                await self.terminal_editor(path, readonly=True, filetype=filetype)
+        except OSError as error:
+            if isinstance(error, FileNotFoundError):
+                self.mark_missing_inspection(origin, target, missing=True)
+            message = (
+                f"{target.path}: {error.strerror or error}"
+                if isinstance(target, RetainedFile)
+                else str(error)
+            )
+            self.notify(message, title="Neovim inspection failed", severity="error")
+        except (EditorError, ValueError, TypeError, RuntimeError) as error:
+            self.notify(str(error), title="Neovim inspection failed", severity="error")
+        finally:
+            self.inspection_sessions.discard(identity)
+
+    @staticmethod
+    def mark_missing_inspection(
+        screen: Screen[object], target: InspectionTarget, *, missing: bool
+    ) -> None:
+        if isinstance(target, RetainedFile):
+            for button in screen.query(OpenInspection):
+                if button.target is target and button.parent is not None:
+                    button.parent.set_class(missing, "artifact-missing")
+
+    async def edit_recipe(self, path: Path) -> None:
+        """Route service-requested editing through the managed recipe workflow."""
+        for family in FAMILIES.values():
+            directory = library(self.context, family)
+            if path.parent.resolve() == directory.resolve():
+                self.edit_selected(Row(path.stem, path.stem, family, "", {}, path.stem, path))
+                return
+        raise EditorError(f"No managed editing workflow for {path}.")
+
+    def queue_editor(
+        self, target: Path, validate: ValidateDraft, apply: ApplyDraft, original: bytes | None
+    ) -> None:
+        if self.controller.shutdown.emergency:
+            return
+        try:
+            identity = target.resolve()
+        except (OSError, RuntimeError) as error:
+            self.notify(str(error), title="Editor target unavailable", severity="error")
+            return
+        if session := self.editor_sessions.get(identity):
+            if session.busy:
+                self.notify(f"{target.name} is already being edited.", severity="warning")
+            else:
+                self.show_editor_session(session)
+            return
+        session = EditorSession(identity, validate, apply, original)
+        self.editor_sessions[identity] = session
+        self.run_editor_session(session)
+
+    @work(group="editor-windows", exit_on_error=False)
+    async def run_editor_session(self, session: EditorSession) -> None:
+        session.busy = True
+        session.state = "Opening"
+        session.updated = None
+        session.error = ""
+        try:
+            draft = await disk(session.stage)
+            self.notify(f"{session.target.name} · F9 for editor sessions")
+            await self.terminal_editor(draft, on_ready=lambda: setattr(session, "state", "Editing"))
+            updated = await disk(draft.read_bytes)
+            if updated == session.original:
+                await disk(session.discard)
+                del self.editor_sessions[session.target]
+                self.notify(f"{session.target.name} · No changes detected")
+                return
+            session.state = "Validating"
+            await session.validate(draft)
+            updated.decode("utf-8")
+            if updated != await disk(draft.read_bytes):
+                raise EditorError(
+                    "The draft changed during validation. Reopen and close it to validate again."
+                )
+            session.updated = updated
+            session.state = "Ready for review"
+        except asyncio.CancelledError:
+            session.state = "Interrupted"
+            raise
+        except Exception as error:
+            session.state = (
+                "Validation failed" if session.state == "Validating" else "Editor failed"
+            )
+            session.error = str(error)
+        finally:
+            session.busy = False
+        self.notify(
+            f"{session.target.name} · {session.state}. F9 for details.",
+            severity="error" if session.error else "information",
+        )
+
+    @work(exit_on_error=False)
+    async def action_editor_sessions(self) -> None:
+        sessions = {str(target): session for target, session in self.editor_sessions.items()}
+        if not sessions:
+            self.notify("No pending editor sessions.")
+            return
+        choice = await self.push_screen_wait(ActionMenu("Editor sessions", tuple(sessions)))
+        if choice is not None:
+            self.show_editor_session(sessions[choice])
+
+    def show_editor_session(self, session: EditorSession) -> None:
+        actions: dict[str, Callable[[], object]] = {}
+        details: dict[str, object] = {
+            "Target": str(session.target),
+            "Draft": str(session.draft or ""),
+            "State": session.state,
+        }
+        if session.error:
+            details["Diagnostic"] = session.error
+        if session.draft:
+            actions["Copy draft path"] = partial(self.copy_value, str(session.draft))
+        if not session.busy:
+            if session.updated is not None and session.original is not None:
+                details["Changes"] = "".join(
+                    difflib.unified_diff(
+                        session.original.decode(errors="replace").splitlines(keepends=True),
+                        session.updated.decode().splitlines(keepends=True),
+                        "Original",
+                        "Validated draft",
+                    )
+                )
+                actions["Apply reviewed changes"] = partial(self.apply_editor_session, session)
+                if session.error:
+                    actions["Compare with current file"] = partial(
+                        self.compare_editor_session, session
+                    )
+            actions["Reopen in Neovim" if session.draft else "Retry"] = partial(
+                self.reopen_editor_session, session
+            )
+            actions["Discard draft"] = partial(self.discard_editor_session, session)
+        changes = details.pop("Changes", None)
+        self.push_screen(
+            Inspection(
+                f"Editor · {session.target.name}",
+                details,
+                actions=actions,
+                sections={"Summary": details, "Changes": changes} if changes is not None else None,
+                section="Changes" if changes is not None else None,
+            )
+        )
+
+    @work(exit_on_error=False)
+    async def compare_editor_session(self, session: EditorSession) -> None:
+        if session.updated is None:
+            return
+        screen = self.screen
+        try:
+            current = await disk(session.target.read_bytes)
+        except OSError as error:
+            self.notify(str(error), title="Current file unavailable", severity="error")
+            return
+        if self.screen is screen:
+            diff = "".join(
+                difflib.unified_diff(
+                    current.decode(errors="replace").splitlines(keepends=True),
+                    session.updated.decode().splitlines(keepends=True),
+                    "Current file",
+                    "Validated draft",
+                )
+            )
+            self.push_screen(
+                Detail("Current file and editor draft", diff or "Same contents", raw=True)
+            )
+
+    def reopen_editor_session(self, session: EditorSession) -> None:
+        if (
+            not self.controller.shutdown.emergency
+            and self.editor_sessions.get(session.target) is session
+            and not session.busy
+        ):
+            session.busy = True
+            self.run_editor_session(session)
+
+    @work(exit_on_error=False)
+    async def discard_editor_session(self, session: EditorSession) -> None:
+        if self.editor_sessions.get(session.target) is not session or session.busy:
+            return
+        session.busy = True
+        try:
+            if await self.push_screen_wait(
+                Confirm(
+                    "Discard editor draft?", str(session.draft or session.target), destructive=True
+                )
+            ):
+                await disk(session.discard)
+                del self.editor_sessions[session.target]
+                self.notify("Editor draft discarded.")
+        except OSError as error:
+            self.notify(str(error), severity="error")
+        finally:
+            session.busy = False
+
+    @work(exit_on_error=False)
+    async def apply_editor_session(self, session: EditorSession) -> None:
+        if self.editor_sessions.get(session.target) is not session or session.busy:
+            return
+        original, updated, draft = session.original, session.updated, session.draft
+        if original is None or updated is None or draft is None:
+            return
+        session.busy = True
+        try:
+            if not await self.push_screen_wait(
+                Confirm("Apply reviewed changes?", str(session.target), confirm_label="Apply")
+            ):
+                return
+            updated.decode("utf-8")
+            if updated != await disk(draft.read_bytes):
+                raise EditorError(
+                    "The draft changed after validation. Reopen and validate it again."
+                )
+            await session.apply(original, updated)
+            del self.editor_sessions[session.target]
+            await disk(session.discard)
+            self.notify(success_message("Reviewed changes accepted"), markup=True)
+        except Exception as error:
+            session.state = "Apply blocked"
+            session.error = str(error)
+            self.notify(str(error), title="Draft retained", severity="error")
+        finally:
+            session.busy = False
+
+    async def author_conversion(self, values: Values) -> None:
+        from forge.historical.conversion.evidence import inspect_publication_source
+        from forge.historical.conversion.recipes import SourceKind, load_source
+
+        route = str(values["route"])
+        reference = str(values["source"])
+        names = str(values["reference"])
+        registry = self.database_id
+        testing = self.context.testing
+        try:
+            with database_environment(testing=testing), pinned_registry(registry):
+                if route == "publication":
+                    source = await inspect_publication_source(self.context.paths, int(reference))
+                    declaration = source.model_dump(mode="json")
+                    interval = source.interval
+                else:
+                    loaded = await disk(
+                        load_source, self.context.paths, cast(SourceKind, route), reference
+                    )
+                    declaration = loaded.declaration.model_dump(mode="json")
+                    interval = loaded.interval
+            if registry != self.database_id or testing != self.context.testing:
+                raise ValueError("The selected registry changed during source binding.")
+            await self.author_recipe(
+                "convert",
+                initial={
+                    "version": 1,
+                    "source": declaration,
+                    "interval": interval.model_dump(),
+                    **(
+                        {"selection": {"whole_publication": True}} if route == "publication" else {}
+                    ),
+                    "conversion": {
+                        "target_quote": values["quote"],
+                        "max_staleness_ns": 60_000_000_000,
+                    },
+                },
+                name=names,
+            )
+        except Exception as error:
+            self.push_screen(Inspection("Conversion source unavailable", {"Error": str(error)}))
 
     async def validate_conversion_input(self, values: Values) -> dict[str, str]:
         from pydantic import TypeAdapter, ValidationError
@@ -4757,47 +5626,6 @@ class ForgeApp(App[str]):
             if route == "Registered normalized publications"
             else Field("from_normalize", "Normalization recipe", required=True, group="Source")
         )
-        bounds = (
-            (
-                Field(
-                    "start",
-                    "Start UTC (inclusive)",
-                    group="Historical interval",
-                    placeholder="Default: first observation",
-                ),
-                Field(
-                    "end",
-                    "End UTC (exclusive)",
-                    group="Historical interval",
-                    placeholder="Default: last observation + 1 ns",
-                ),
-            )
-            if field.key == "publication_ids"
-            else ()
-        )
-
-        async def validate(values: Values) -> dict[str, str]:
-            from pydantic import AwareDatetime, TypeAdapter, ValidationError
-
-            from forge.historical.merge.config import Timestamp, unix_ns
-
-            issues: dict[str, str] = {}
-            for bound in bounds:
-                if values.get(bound.key):
-                    try:
-                        parsed = TypeAdapter(AwareDatetime).validate_python(values[bound.key])
-                        TypeAdapter(Timestamp).validate_python(unix_ns(parsed))
-                    except ValidationError:
-                        issues[bound.key] = (
-                            "Use an ISO 8601 timestamp with a timezone in the engine's nanosecond range."
-                        )
-            if not issues and values.get("start") and values.get("end"):
-                if datetime.fromisoformat(str(values["start"])) >= datetime.fromisoformat(
-                    str(values["end"])
-                ):
-                    issues["end"] = "End must be later than start."
-            return issues
-
         values = await self.push_screen_wait(
             Form(
                 Action(
@@ -4806,7 +5634,6 @@ class ForgeApp(App[str]):
                     (
                         Field("reference", "Recipe name", required=True, group="Recipe"),
                         field,
-                        *bounds,
                         Field(
                             "timeline_ordering",
                             "Timeline ordering",
@@ -4821,17 +5648,12 @@ class ForgeApp(App[str]):
                 search_fields=frozenset({field.key}),
                 entity_search=self.search_entities,
                 multiple_entities=frozenset({"publication_ids"}),
-                validate=validate,
+                historical_interval=True if field.key == "publication_ids" else None,
             )
         )
         if values is None:
             return
         if values.get("publication_ids"):
-            from forge.historical.merge.config import unix_ns
-
-            for bound in bounds:
-                if raw := values.pop(bound.key, ""):
-                    values[bound.key + "_ns"] = unix_ns(datetime.fromisoformat(str(raw)))
             await self.review_merge(values)
         else:
             await self.create_recipe(BY_KEY["merge new"], values)
@@ -4905,12 +5727,12 @@ class ForgeApp(App[str]):
                 identity = ".".join((exchange, kind, market, symbol))
                 choices.append(
                     (
-                        f"{symbol} · {exchange} · {kind} / {market}",
+                        f"{exchange} · {symbol} · {kind} / {market} · {identity}",
                         symbol if leaf == "identifier" else identity,
                     )
                 )
             return tuple(choices)
-        if key in {"publication_ids", "source"}:
+        if leaf == "publication_ids" or key == "source":
             if key == "source" and (route := values.get("route")) != "publication":
                 files = await disk(list_config_names, library(self.context, str(route)))
                 return tuple((name, name) for name in files if search.casefold() in name.casefold())
@@ -4998,17 +5820,31 @@ class ForgeApp(App[str]):
         row: Row | None = None,
         *,
         initial: dict[str, object] | None = None,
+        expected: bytes | None = None,
+        add_entry: bool = False,
+        name: str = "",
+        source_review: str | None = None,
+        removal_review: str | None = None,
     ) -> None:
         path = row.path if row else None
         original = await disk(path.read_bytes) if path else None
-        data = tomllib.loads(original.decode()) if original is not None else initial or {}
+        if expected is not None and original != expected:
+            raise ValueError("The recipe changed while selecting sources. Reopen it and try again.")
+        before = tomllib.loads(original.decode()) if original is not None else {}
+        data = initial if initial is not None else before
         model = model_for(family, data)
         if model is None:
             return
         adapter = RecipeForm(model, data, new=path is None)
         fields, preset = adapter.build()
+        if add_entry:
+            fields, preset = adapter.add(preset)
+            if family == "acquisition":
+                preset[f"requests--{adapter.count - 1}--scope--kind"] = "instrument"
         if path is None:
             fields = (Field("reference", "Recipe name", required=True, group="Recipe"), *fields)
+            if name:
+                preset["reference"] = name
         directory = library(self.context, family)
         registry = self.database_id
         testing = self.context.testing
@@ -5036,6 +5872,25 @@ class ForgeApp(App[str]):
                         await disk(draft.write_text, dumps(candidate))
                         with database_environment(testing=testing), pinned_registry(registry):
                             await disk(validate_recipe_draft, self.context.paths, family, draft)
+                if removal_review is not None and family == "convert":
+                    from forge.historical.conversion.service import prepare
+
+                    with TemporaryDirectory(prefix="marketforge-conversion-review-") as folder:
+                        draft = Path(folder) / target.name
+                        await disk(draft.write_text, dumps(candidate))
+                        with database_environment(testing=testing), pinned_registry(registry):
+                            result = await prepare(self.context.paths, draft, dry_run=True)
+                        blockers = result.get("blockers", []) + result.get(
+                            "compatibility_blockers", []
+                        )
+                        if blockers:
+                            return {"": "\n".join(blockers)}
+                if source_review is not None:
+                    assert registry is not None
+                    with database_environment(testing=testing), pinned_registry(registry):
+                        await data_recipes.validate_sources(
+                            self.context.paths, family, candidate, registry
+                        )
             except Exception as error:
                 return {"" if path else "reference": str(error)}
             return {}
@@ -5052,7 +5907,15 @@ class ForgeApp(App[str]):
             if family == "pipeline":
                 summary["Stages"] = stages
             summary["Action"] = "Save recipe configuration"
-            return "\n".join(f"{key}  {value}" for key, value in summary.items())
+            if removal_review is not None:
+                summary["Removing"] = removal_review
+                summary["Recipe scope"] = (
+                    "Shared workspace configuration for Testing and Production"
+                )
+            if source_review is not None:
+                summary["Reviewed source changes"] = source_review
+            heading = "\n".join(f"{key}  {value}" for key, value in summary.items())
+            return heading + "\n\nConfigured values\n" + recipe_configuration(candidate).plain
 
         guide = {
             "acquisition": "acquisition/historical-data/#1-create-a-recipe",
@@ -5073,7 +5936,13 @@ class ForgeApp(App[str]):
                 or family == "merge"
                 and data.get("selection_sha256")
                 and field.key
-                in {"dataset_ids", "publication_ids", "registry_id", "selection_sha256"}
+                in {
+                    "dataset_ids",
+                    "publication_ids",
+                    "registry_id",
+                    "selection_sha256",
+                    "file_subset",
+                }
                 or family == "convert"
                 and (
                     field.key == "source"
@@ -5098,6 +5967,10 @@ class ForgeApp(App[str]):
                 review=review,
                 commit_label="Save recipe",
                 expand=adapter.add if adapter.can_add else None,
+                expand_label="Add Request" if "requests" in model.model_fields else "Add Input",
+                initial_focus=f"requests--{adapter.count - 1}--exchange"
+                if add_entry
+                else "reference",
                 locked=locked,
                 search_fields={
                     "acquisition": frozenset({"identifier"}),
@@ -5105,12 +5978,15 @@ class ForgeApp(App[str]):
                     "normalize": frozenset({"identifier"}),
                     "acquisition import": frozenset({"exchange", "format_profile"}),
                     "acquisition register": frozenset({"instrument", "profile", "specification"}),
-                    "merge": frozenset({"dataset_ids"}),
+                    "merge": frozenset({"dataset_ids", "selection--publication_ids"}),
                 }.get(family, frozenset()),
+                multiple_entities=frozenset({"dataset_ids", "selection--publication_ids"})
+                if family == "merge"
+                else frozenset(),
                 entity_search=self.search_entities,
             )
         )
-        if values is None:
+        if values is None or self.controller.shutdown.emergency:
             return
         if (
             registry is not None and registry != self.database_id
@@ -5118,30 +5994,37 @@ class ForgeApp(App[str]):
             raise ValueError("The selected environment changed during review.")
         target = destination(values)
         candidate, _ = adapter.candidate(values)
+        if source_review is not None:
+            assert registry is not None
+            with database_environment(testing=testing), pinned_registry(registry):
+                await data_recipes.validate_sources(self.context.paths, family, candidate, registry)
         with WorkspaceOwnership(self.context.paths), pinned_registry(registry):
             if original is None:
                 await disk(publish_new, target, dumps(candidate))
-            elif candidate != data:
+            elif candidate != before:
                 from forge.tui.recipe_forms import update_recipe
 
-                updated = update_recipe(original, data, candidate)
+                updated = update_recipe(original, before, candidate)
                 with recipe_writer(target):
                     await disk(replace_reviewed, target, original, updated)
         name = target.stem
-        self.state.selection = name
-        self.request_query()
+        if self.area != "Data":
+            self.state.selection = name
+            self.request_query()
         self.push_screen(
             Inspection(
-                f"{family.title()} · {name}",
+                f"Recipe saved · {name}"
+                if source_review is not None
+                else f"{family.title()} · {name}",
                 candidate,
-                sections={"Summary": summarize(candidate, "Saved", str(target))},
+                sections=recipe_sections(family, candidate, "Saved", str(target)),
                 actions=self.saved_recipe_actions(family, name, target),
             )
         )
 
     @work(exit_on_error=False)
     async def edit_recipe_form(self, row: Row) -> None:
-        if self.recipe_activation or self.editor_open or row.path is None:
+        if self.recipe_activation or row.path is None:
             return
         self.recipe_activation = True
         try:
@@ -5159,33 +6042,23 @@ class ForgeApp(App[str]):
 
     @work(exit_on_error=False)
     async def edit_selected(self, row: Row) -> None:
-        if self.recipe_activation or self.editor_open or row.path is None:
+        if row.path is None:
             return
-        self.recipe_activation = True
-        try:
-            original = await disk(row.path.read_bytes)
-            with TemporaryDirectory(prefix="marketforge-recipe-") as directory:
-                draft = Path(directory) / row.path.name
-                await disk(draft.write_bytes, original)
-                await self.edit_recipe(draft)
-                updated = await disk(draft.read_bytes)
-                if updated != original:
-                    with (
-                        database_environment(testing=self.context.testing),
-                        pinned_registry(self.database_id),
-                    ):
-                        await disk(validate_recipe_draft, self.context.paths, row.kind, draft)
-                    with recipe_writer(row.path):
-                        await disk(replace_reviewed, row.path, original, updated.decode())
-            if original == updated:
-                self.notify("Recipe unchanged")
-            else:
-                self.notify(success_message("Recipe reloaded and validated"), markup=True)
-        except Exception as error:
-            self.push_screen(Detail("Editor or validation error", str(error), raw=True))
-        finally:
-            self.recipe_activation = False
-            self.request_query()
+        path = row.path
+        paths, testing, registry = self.context.paths, self.context.testing, self.database_id
+
+        async def validate(draft: Path) -> object:
+            with database_environment(testing=testing), pinned_registry(registry):
+                return await disk(validate_recipe_draft, paths, row.kind, draft)
+
+        async def apply(original: bytes, updated: bytes) -> None:
+            self.check_recipe_environment(registry, testing)
+            with recipe_writer(path):
+                await disk(replace_reviewed, path, original, updated.decode())
+            if self.area == "Workflows":
+                self.request_query()
+
+        self.queue_editor(path, validate, apply, None)
 
     def render_operation(self) -> None:
         if self.root_screen is None:
@@ -5268,6 +6141,30 @@ class ForgeApp(App[str]):
                 links[f"Inspect {stage.name} stage"] = partial(self.inspect_pipeline_stage, stage)
         if result and (action is None or not read_only(action, values or {})):
             links["Inspect result"] = partial(self.inspect_operation_result, op)
+        if result.get("kind") == "normalization_prepare_report":
+            if result.get("failed_stage") == "Engine binary resolution":
+                links["Build normalization Engine"] = partial(
+                    self.open_action, BY_KEY["engine build"], None, {"reference": "normalize"}
+                )
+            if op.reference and op.state in {"failed", "blocked"}:
+                try:
+                    path = resolve_config_file(
+                        self.context.paths.normalization_recipe_dir, op.reference
+                    )
+                except ValueError:
+                    pass
+                else:
+                    links["Edit recipe"] = self.saved_recipe_actions("normalize", path.stem, path)[
+                        "Edit"
+                    ]
+            diagnostics = document(result.get("diagnostic_summary"))
+            if any(
+                group.get("category") == "missing_historical_specifications"
+                for group in records(diagnostics, "groups")
+            ):
+                links["Review historical specification declaration"] = partial(
+                    self.open_action, BY_KEY["catalog specs add"]
+                )
         if op.error:
             links["Copy diagnostic"] = partial(self.copy_value, op.error)
         if op.run_id:
@@ -5275,8 +6172,8 @@ class ForgeApp(App[str]):
             links["Open retained logs"] = partial(
                 self.open_action, BY_KEY["runs logs"], None, {"reference": op.run_id}
             )
-        if result.get("run_id"):
-            ref = str(result["run_id"])
+        if report_run := result.get("logical_run_id") or op.run_id or result.get("run_id"):
+            ref = str(report_run)
             links["Open report"] = lambda: self.open_action(
                 BY_KEY["runs report"], Row(ref, ref, "Run", "", {}, ref)
             )
@@ -5321,6 +6218,66 @@ class ForgeApp(App[str]):
         else:
             self.notify("No owned operations.")
 
+    async def mount_emergency_button(self, screen: Screen[object]) -> None:
+        if (
+            screen is not self.screen
+            or self.emergency_confirmation
+            or screen.query("#emergency-stop")
+        ):
+            return
+        screen.add_class("has-emergency-stop")
+        await screen.mount(
+            Button(
+                "STOP ALL",
+                id="emergency-stop",
+                variant="error",
+                compact=True,
+                classes="screen-stop",
+                action="app.emergency_stop",
+            )
+        )
+
+    @work(group="emergency-stop", exit_on_error=False)
+    async def action_emergency_stop(self) -> None:
+        if self.emergency_confirmation or self.controller.shutdown.emergency:
+            return
+        self.emergency_confirmation = True
+        try:
+            confirmed = await self.push_screen_wait(
+                Confirm(
+                    "Emergency Stop",
+                    "Stop all processing owned by this MarketForge session?\n\n"
+                    f"Active operations: {int(self.controller.active())}\n"
+                    f"Observed managed processes: {self.controller.shutdown.process_count()}\n\n"
+                    "Processing will be interrupted. Existing committed datasets are kept. "
+                    "The MarketForge TUI will exit after shutdown. "
+                    "Editable Neovim windows stay open. Their private drafts can be recovered "
+                    "from the editor buffer path.",
+                    destructive=True,
+                    confirm_label="STOP ALL & EXIT",
+                    back_label="Cancel",
+                )
+            )
+            if confirmed:
+                self.controller.shutdown.emergency = True
+                for worker in self.workers:
+                    if worker.group == "execution-monitor":
+                        worker.cancel()
+                stopped = await self.controller.emergency_stop()
+                for worker in self.workers:
+                    if worker.group != "emergency-stop":
+                        worker.cancel()
+                self.exit(
+                    message=None
+                    if stopped
+                    else (
+                        "Emergency shutdown could not verify that all owned work stopped. "
+                        "Inspect retained runs and logs in the same registry before resuming."
+                    )
+                )
+        finally:
+            self.emergency_confirmation = False
+
     @work(exit_on_error=False)
     async def action_interrupt(self) -> None:
         if self.controller.active() and await self.push_screen_wait(
@@ -5334,6 +6291,20 @@ class ForgeApp(App[str]):
 
     @work(exit_on_error=False)
     async def action_quit_forge(self) -> None:
+        if self.editor_open:
+            self.notify("Close Neovim before quitting Forge.", severity="warning")
+            return
+        if self.editor_sessions and not await self.push_screen_wait(
+            Confirm(
+                "Quit with editor drafts?",
+                "Editor drafts can be recovered from these paths:\n\n"
+                + "\n".join(
+                    str(item.draft) for item in self.editor_sessions.values() if item.draft
+                ),
+                confirm_label="Keep drafts and quit",
+            )
+        ):
+            return
         if any(isinstance(screen, Form) and screen.has_pending() for screen in self.screen_stack):
             if not await self.push_screen_wait(
                 Confirm(

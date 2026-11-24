@@ -553,8 +553,14 @@ def build_plan(
             "current_rust_protocol_version": 4,
             "validation": "pending production parser validation",
         },
-        "execution": "Not executed; use mf normalize run on the saved JSON.",
+        "execution": (
+            "Engine execution did not start. Resolve preparation blockers and prepare again."
+            if blocked
+            else "Not executed; use mf normalize run on the saved JSON."
+        ),
     }
+    if blocked:
+        report["failed_stage"] = "Preparation"
     if ranking is not None:
         report["ranking_resolution"] = {
             **ranking.details,
@@ -800,6 +806,19 @@ async def plan_manual_batch(
     return plan
 
 
+def blocked_execution(report: Mapping[str, object], *, recipe: str) -> dict[str, object]:
+    """Project an unexecuted preparation result into a recipe run outcome."""
+    state = report["status"]
+    return {
+        **report,
+        "recipe": recipe,
+        "preparation_status": state,
+        "status": "failed" if state in {"failed", "invalid"} else "blocked",
+        "failed_stage": report.get("failed_stage", "Preparation"),
+        "execution": "Engine execution did not start.",
+    }
+
+
 async def prepare_batch(
     paths: ProjectPaths,
     recipe: AcquisitionConfig | NormalizationRecipe | PreparationRequest | ExactRecipe,
@@ -838,6 +857,11 @@ async def prepare_batch(
                     executable=executable,
                 )
         report = cast(dict[str, object], json.loads(json.dumps(plan.report, default=str)))
+        if not dry_run:
+            from forge.orchestration.registry import recipe_evidence
+
+            if recipe_snapshot := recipe_evidence():
+                report["recipe_evidence"] = recipe_snapshot
         report["dry_run"] = dry_run
         if report.get("status") == "prepared" and pinned is None:
             from forge.historical.engine.managed import resolve
@@ -948,7 +972,16 @@ def stage_batch(
     report["submitted_sha256"] = checksum(source)
     if plan.batch["status"] != "prepared":
         return None
-    binary = executable or resolve(paths)
+    try:
+        binary = executable or resolve(paths)
+    except MarketForgeError as error:
+        report.update(
+            status="blocked",
+            failed_stage="Engine binary resolution",
+            engine_binary_available=False,
+            error=str(error),
+        )
+        return None
     report["executable_sha256"] = checksum(binary)
     if expected := report.get("exact_profile_fingerprints"):
         pinned = compiled_profiles(
@@ -998,10 +1031,14 @@ def publish_batch(paths: ProjectPaths, plan: BatchPlan, report: dict[str, object
         argv = stage_batch(paths, plan, report, directory, None, None)
         if argv is not None:
             response = supervised(argv, cwd=paths.root)
-            require(
-                response.returncode == 0, f"Production batch validation failed: {response.stdout}"
-            )
-            record_batch_validation(report, response.stdout)
+            if response.returncode:
+                report.update(
+                    status="invalid",
+                    failed_stage="Engine batch validation",
+                    validation_error=response.stdout,
+                )
+            else:
+                record_batch_validation(report, response.stdout)
         write_job(directory / "prepare-report.json", report)
         require(
             not plan.run.exists() and not plan.run.is_symlink(), f"Batch already exists: {plan.run}"
@@ -1052,6 +1089,7 @@ async def validate_candidate(
     if response.returncode:
         report.update(
             status="invalid",
+            failed_stage="Engine batch validation",
             validation_error=response.stdout,
             report_path=str(directory / "prepare-report.json"),
         )

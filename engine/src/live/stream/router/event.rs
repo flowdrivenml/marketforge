@@ -132,7 +132,7 @@ impl NativeMarketEvent {
 #[derive(Debug, Clone)]
 pub struct EventValuation {
     pub target_quote: String,
-    pub reference_integrity: Vec<Arc<crate::stream_protocol::DataIntegrityEvidence>>,
+    pub reference_integrity: Vec<Arc<crate::live::streaming::protocol::DataIntegrityEvidence>>,
     pub evaluation: crate::shared::conversion::evaluation::EvaluatedConversion,
     pub reference_generations: Vec<(String, crate::live::stream::registry::RuntimeGeneration)>,
     pub path: Vec<String>,

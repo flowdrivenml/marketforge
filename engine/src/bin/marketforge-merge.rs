@@ -20,7 +20,7 @@ struct CliArgs {
     job: PathBuf,
     validate: bool,
     result_file: Option<PathBuf>,
-    project_root: PathBuf,
+    project_root: Option<PathBuf>,
     config: PathBuf,
     config_origin: Option<PathBuf>,
 
@@ -141,8 +141,6 @@ fn parse_args() -> Result<CliArgs, String> {
     }
     let job = job.ok_or("missing required argument --job")?;
 
-    let project_root = project_root.unwrap_or_else(|| PathBuf::from("."));
-
     Ok(CliArgs {
         job,
         validate,
@@ -204,10 +202,10 @@ struct MergeCliResult {
 // -----------------------------------------------------------------------------
 
 fn run(args: CliArgs) -> Result<serde_json::Value, String> {
-    let project_root = args
-        .project_root
-        .canonicalize()
-        .map_err(|error| format!("invalid project root: {error}"))?;
+    let invocation = env::current_dir().map_err(|error| error.to_string())?;
+    let project_root =
+        marketforge_engine::shared::workspace::resolve(args.project_root.as_deref(), &invocation)
+            .map_err(|error| format!("invalid project root: {error}"))?;
 
     let job_path = if args.job.is_absolute() {
         args.job

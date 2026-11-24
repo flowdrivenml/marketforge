@@ -63,7 +63,9 @@ async def test_acquisition_form_review_and_save(tmp_path: Path, width: int, heig
         screen = app.screen
         assert isinstance(screen, Form)
         assert not screen.query_one("#form-error").display
-        assert "blank" in str(screen.query_one("#form-progress", Static).content)
+        assert "required fields remaining" in str(
+            screen.query_one("#form-progress", Static).content
+        )
         if width == 80:
             reference = screen.query_one("#field-reference", Input)
             reference.focus()
@@ -71,9 +73,9 @@ async def test_acquisition_form_review_and_save(tmp_path: Path, width: int, heig
             assert screen.focused is not reference
             await pilot.press("shift+tab")
             assert screen.focused is reference
-            assert await pilot.click("#help-interval--start")
+            assert await pilot.click("#help-interval--start--date")
             await pilot.pause()
-            assert isinstance(app.screen, Detail) and "ISO 8601" in app.screen.value_text
+            assert isinstance(app.screen, Detail) and "YYYY-MM-DD" in app.screen.value_text
             assert await pilot.click("#detail-0")
             await pilot.pause()
             assert isinstance(app.screen, Detail)
@@ -86,16 +88,19 @@ async def test_acquisition_form_review_and_save(tmp_path: Path, width: int, heig
         assert screen.query_one("#error-reference").display
         snapshot(app, f"{width}x{height}-invalid")
         text(screen, "reference", "pilot")
-        text(screen, "interval--start", START)
-        text(screen, "interval--end", END)
+        assert screen.query_one("#field-interval--start--time", Input).value == "00:00:00"
+        assert screen.query_one("#field-interval--end--time", Input).value == "00:00:00"
+        text(screen, "interval--start--date", START[:10])
+        text(screen, "interval--end--date", END[:10])
         choose(screen, "requests--0--exchange", "bybit")
         choose(screen, "requests--0--instrument_type", "perpetual")
         choose(screen, "requests--0--market_category", "linear")
         choose(screen, "requests--0--data_type", "trades")
         choose(screen, "requests--0--scope--kind", "instrument")
-        screen.query_one(".fields", VerticalScroll).scroll_end(animate=False, immediate=True)
+        find = screen.query_one("#find-requests--0--scope--identifier")
+        screen.query_one(".fields", VerticalScroll).scroll_to_widget(find, animate=False)
         await pilot.pause()
-        assert await pilot.click("#find-requests--0--scope--identifier")
+        assert await pilot.click(find)
         await pilot.pause()
         picker = app.screen
         assert isinstance(picker, EntityPicker)
@@ -171,8 +176,10 @@ async def test_pipeline_toggle_preserves_pending_values_and_writes_only_active_o
         await pilot.pause()
         assert screen.query_one("#field-convert--target_quote", Input).value == "USDT"
         conversion.value = False
-        text(screen, "interval--start", START)
-        text(screen, "interval--end", END)
+        assert screen.query_one("#field-interval--start--time", Input).value == "00:00:00"
+        assert screen.query_one("#field-interval--end--time", Input).value == "00:00:00"
+        text(screen, "interval--start--date", START[:10])
+        text(screen, "interval--end--date", END[:10])
         choose(screen, "requests--0--exchange", "bybit")
         choose(screen, "requests--0--instrument_type", "spot")
         choose(screen, "requests--0--market_category", "spot")
@@ -246,9 +253,12 @@ async def test_pipeline_authoring_adds_ordered_requests_and_reviews_optional_sta
         await pilot.pause()
         screen = app.screen
         assert isinstance(screen, Form)
+        snapshot(app, "pipeline-new-100x30")
         text(screen, "reference", "staged")
-        text(screen, "interval--start", START)
-        text(screen, "interval--end", END)
+        assert screen.query_one("#field-interval--start--time", Input).value == "00:00:00"
+        assert screen.query_one("#field-interval--end--time", Input).value == "00:00:00"
+        text(screen, "interval--start--date", START[:10])
+        text(screen, "interval--end--date", END[:10])
         controls = {
             "exchange": "bybit",
             "instrument_type": "spot",
@@ -259,9 +269,10 @@ async def test_pipeline_authoring_adds_ordered_requests_and_reviews_optional_sta
             choose(screen, f"requests--0--{key}", value)
         choose(screen, "requests--0--data_type", "trades")
         text(screen, "requests--0--scope--identifier", "BTCUSDT")
-        screen.query_one(".fields", VerticalScroll).scroll_end(animate=False, immediate=True)
+        add = screen.query_one("#form-add")
+        screen.query_one(".fields", VerticalScroll).scroll_to_widget(add, animate=False)
         await pilot.pause()
-        assert await pilot.click("#form-add")
+        assert await pilot.click(add)
         await pilot.pause()
         assert screen.query_one("#field-reference", Input).value == "staged"
         for key, value in controls.items():
@@ -275,6 +286,7 @@ async def test_pipeline_authoring_adds_ordered_requests_and_reviews_optional_sta
         assert await pilot.click("#submit")
         assert isinstance(app.screen, Confirm)
         assert "Acquisition → Normalization → Merge → Conversion" in app.screen.explanation
+        snapshot(app, "pipeline-review-100x30")
         assert await pilot.click("#confirm")
         await pilot.pause()
         assert isinstance(app.screen, Inspection) and app.screen.heading == "Pipeline · staged"

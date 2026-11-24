@@ -105,36 +105,48 @@ def add_requests(
     with recipe_writer(path):
         if path.read_bytes() != expected:
             raise MarketForgeError("Recipe changed since review. Reload it before applying.")
-        model = PipelineRecipe if pipeline else AcquisitionConfig
-        source = tomlkit.parse(expected.decode())
-        existing = model.model_validate(source.unwrap())
-        keys = {request_key(request) for request in existing.requests}
-        additions: list[ArchiveRequest] = []
-        for request in requests:
-            validate_request(request)
-            key = request_key(request)
-            if key not in keys:
-                keys.add(key)
-                additions.append(request)
-        if not additions:
-            return RecipeChange(path, 0, len(requests))
-        entries = source["requests"]
-        if not isinstance(entries, (AoT, Array)):
-            raise MarketForgeError("Recipe requests must be an array.")
-        for request in additions:
-            values = request.model_dump(exclude_none=True)
-            if isinstance(entries, Array):
-                item = tomlkit.inline_table()
-                for key, value in values.items():
-                    item[key] = value
-            else:
-                item = tomlkit.table()
-                for key, value in values.items():
-                    item[key] = value
-            cast(list[object], entries).append(item)
-        model.model_validate(source.unwrap())
-        replace_reviewed(path, expected, tomlkit.dumps(source))
+        draft, additions = request_addition(expected, requests, pipeline=pipeline)
+        if additions:
+            replace_reviewed(path, expected, draft)
     return RecipeChange(path, len(additions), len(requests) - len(additions))
+
+
+def request_addition(
+    expected: bytes, requests: tuple[ArchiveRequest, ...], *, pipeline: bool
+) -> tuple[str, tuple[ArchiveRequest, ...]]:
+    """Build and validate the exact TOML that an existing-recipe append would save."""
+    model = PipelineRecipe if pipeline else AcquisitionConfig
+    source = tomlkit.parse(expected.decode())
+    existing = model.model_validate(source.unwrap())
+    if not pipeline:
+        for request in existing.requests:
+            validate_request(request)
+    keys = {request_key(request) for request in existing.requests}
+    additions: list[ArchiveRequest] = []
+    for request in requests:
+        validate_request(request)
+        key = request_key(request)
+        if key not in keys:
+            keys.add(key)
+            additions.append(request)
+    if not additions:
+        return expected.decode(), ()
+    entries = source["requests"]
+    if not isinstance(entries, (AoT, Array)):
+        raise MarketForgeError("Recipe requests must be an array.")
+    for request in additions:
+        values = request.model_dump(exclude_none=True)
+        if isinstance(entries, Array):
+            item = tomlkit.inline_table()
+            for key, value in values.items():
+                item[key] = value
+        else:
+            item = tomlkit.table()
+            for key, value in values.items():
+                item[key] = value
+        cast(list[object], entries).append(item)
+    model.model_validate(source.unwrap())
+    return tomlkit.dumps(source), tuple(additions)
 
 
 def replace_reviewed(path: Path, expected: bytes, text: str) -> None:

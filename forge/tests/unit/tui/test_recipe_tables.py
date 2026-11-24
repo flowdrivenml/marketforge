@@ -2,6 +2,7 @@
 
 import tomllib
 from pathlib import Path
+from typing import cast
 
 import pytest
 from rich.console import Console
@@ -125,48 +126,13 @@ async def test_recipe_mouse_activation_sort_and_exact_menu(tmp_path: Path) -> No
         await pilot.click("#results", offset=(10, first_row + 1), button=3)
         await pilot.pause()
         assert isinstance(app.screen, ActionMenu)
-        assert app.screen.heading == "b"
+        assert app.screen.heading == "PIPELINE · b"
+        assert {"Inspect", "Edit", "Validate", "Plan", "Run", "Add Acquisition Request"} <= set(
+            app.screen.actions
+        )
+        assert "Pipeline list" not in app.screen.actions and "List" not in app.screen.actions
         await pilot.press("escape")
         assert app.state.selection == "b"
-
-
-@pytest.mark.asyncio
-async def test_instrument_apply_updates_exact_destination(tmp_path: Path) -> None:
-    from textual.widgets import Input
-
-    from forge.tui.screens import Confirm
-
-    paths = ProjectPaths(tmp_path, tmp_path / "data")
-    recipe = create_pipeline(paths.pipeline_config_dir, "target")
-    other = create_pipeline(paths.pipeline_config_dir, "unrelated")
-    retained = other.read_bytes()
-    row = Row(
-        "one",
-        "ETHUSDT",
-        "instrument",
-        "",
-        {
-            "exchange": "bybit",
-            "instrument_type": "spot",
-            "market_category": "spot",
-            "symbol": "ETHUSDT",
-        },
-    )
-    app = ForgeApp(ApplicationContext(AppSettings(), paths, None, Console(), Console()))
-    async with app.run_test(size=(120, 40)) as pilot:
-        app.add_to_recipe(row, "pipeline")
-        await pilot.pause()
-        app.screen.query_one("#field-reference", Input).value = "target"
-        await pilot.click("#submit")
-        await pilot.pause()
-        assert isinstance(app.screen, Confirm)
-        assert str(recipe) in app.screen.explanation
-        await pilot.click("#confirm")
-        await pilot.pause()
-        assert isinstance(app.screen, Inspection)
-        requests = tomllib.loads(recipe.read_text())["requests"]
-        assert [item["scope"]["identifier"] for item in requests] == ["BTCUSDT", "ETHUSDT"]
-        assert other.read_bytes() == retained
 
 
 def test_runs_filter_and_sort_retained_duration_before_page(tmp_path: Path) -> None:
@@ -237,3 +203,74 @@ async def test_workspace_configuration_actions_use_shared_reports(
     assert await services.system(
         "engine runtime", {"reference": "pipeline"}, context, lambda _: None
     ) == {"effective": {"normalize": {}, "merge": {}}}
+
+
+@pytest.mark.asyncio
+async def test_pipeline_source_menu_opens_reviewable_draft(tmp_path: Path) -> None:
+    from textual.containers import VerticalScroll
+    from textual.widgets import Input, Select
+
+    from forge.tui.actions import Values
+    from forge.tui.screens import Confirm, EntityChoices, EntityPicker, Form
+
+    paths = ProjectPaths(tmp_path, tmp_path / "data")
+    path = create_pipeline(paths.pipeline_config_dir, "sources")
+    before = path.read_bytes()
+
+    class Workspace(ForgeApp):
+        CSS_PATH = Path(__file__).resolve().parents[3] / "tui/workspace.tcss"
+
+        async def search_entities(self, key: str, search: str, values: Values) -> EntityChoices:
+            assert key == "requests--1--scope--identifier"
+            assert values["requests--1--exchange"] == "bybit"
+            return (("Bybit · ETHUSDT · Spot · bybit.spot.spot.ETHUSDT", "ETHUSDT"),)
+
+    app = Workspace(ApplicationContext(AppSettings(), paths, None, Console(), Console()))
+    async with app.run_test(size=(120, 32)) as pilot:
+        await app.switch("Workflows", "Pipeline")
+        await pilot.pause(0.35)
+        table = app.query_one("#results", Results)
+        table.focus()
+        await pilot.press("f2")
+        await pilot.pause()
+        menu = app.screen
+        assert isinstance(menu, ActionMenu)
+        index = menu.actions.index("Add Acquisition Request")
+        menu.query_one(f"#menu-{index}").focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, Form)
+        for key, value in (
+            ("exchange", "bybit"),
+            ("instrument_type", "spot"),
+            ("market_category", "spot"),
+            ("scope--kind", "instrument"),
+            ("data_type", "trades"),
+        ):
+            control = cast(Select[str], form.query_one(f"#field-requests--1--{key}", Select))
+            control.value = value
+        find = form.query_one("#find-requests--1--scope--identifier")
+        form.query_one(".fields", VerticalScroll).scroll_to_widget(find, animate=False)
+        await pilot.pause()
+        assert await pilot.click(find)
+        await pilot.pause()
+        assert isinstance(app.screen, EntityPicker)
+        await pilot.press("enter", "down", "enter")
+        await pilot.pause()
+        assert await pilot.click("#entity-use")
+        await pilot.pause()
+        assert form.query_one("#field-requests--1--scope--identifier", Input).value == "ETHUSDT"
+        assert path.read_bytes() == before
+        assert await pilot.click("#submit")
+        await pilot.pause()
+        assert isinstance(app.screen, Confirm)
+        assert "ETHUSDT" in app.screen.explanation
+        assert path.read_bytes() == before
+        assert await pilot.click("#confirm")
+        await pilot.pause()
+        assert isinstance(app.screen, Inspection)
+        assert app.controller.history == []
+    saved = tomllib.loads(path.read_text())
+    assert saved["requests"][1]["scope"]["identifier"] == "ETHUSDT"
+    assert saved["interval"] == tomllib.loads(before.decode())["interval"]

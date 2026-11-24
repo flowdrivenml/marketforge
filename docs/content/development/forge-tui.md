@@ -116,6 +116,14 @@ adapter sanitizes terminal controls and credential fields, enforces a size
 cap, and calls desktop and tmux providers in a worker. Textual sends the
 OSC 52 fallback.
 
+Data recipe drafts use exact archive pins, registry-bound primary-file
+selections, and committed Conversion source bindings. A Merge recipe with
+`file_subset = true` verifies the listed file IDs against the pinned
+publication IDs and selection fingerprint during preparation. Existing
+whole-publication Merge recipes retain whole-publication membership checks.
+Data tables select displayed render cells, while inspector summaries use
+Textual text selection. Clipboard requests share the standard provider adapter.
+
 Textual Pilot covers navigation, settings, recipe forms and exact copying.
 The disposable PostgreSQL fixture drives archive, normalized and merged
 publication handoffs through the Engine services. See [Testing](testing.md)
@@ -174,3 +182,137 @@ TCSS roles, and Rich accents synchronized when changing the palette.
   refresh. Use fixed-height, repaint-only updates for the monitoring bar.
   Preserve scrolling on dense tabs and wide evidence tables, and check the
   workspace at 80×24 and a wide terminal with Textual Pilot.
+
+## Dialog layouts
+
+Use the existing `Form`, `Confirm`, `Detail` and picker classes in
+`forge/tui/screens.py`. They share the Tokyo Night roles in
+`forge/tui/workspace.tcss`. A modal starts with `.dialog` and a
+`.dialog-title`. Use `.dialog-compact` for short forms and confirmations,
+the default width for selectors, and `.dialog-large` for long forms that benefit from a viewport-sized body.
+
+- Give a form field a meaningful `Field.group`. The form groups active
+  controls in `.form-section` containers with cyan `.form-heading`
+  labels and a subtle rule. Leave one row between field groups and keep
+  labels next to their controls. Use `.field-pair` for related controls
+  such as exchange and instrument type. Fields stack below 96 columns.
+  At 116 columns and up, the two historical endpoints share a row.
+  Each endpoint retains separate date and UTC time controls.
+- Place the fields inside `.dialog-body` and the validation summary
+  and buttons in `.form-footer`. Long forms allocate the remaining
+  height to the body. Keep one vertical scroll container and the
+  actions visible below it, with the primary action at the end. Use
+  `.buttons` and `.dialog-buttons` for short confirmation and picker
+  action rows. Detail dialogs move additional actions to a second row
+  when both groups would exceed the available width.
+- Put validation messages in `.field-error` under their own control.
+  The footer summarizes remaining required fields, draft edits and
+  issues. Leave untouched required fields neutral. Use the existing
+  yellow indicators for required labels and changed values, red for
+  errors, and green for successful validation. Maintain the visible
+  focus background for all three states.
+- Use Textual disclosures for repeated requests and Advanced Options.
+  Keep the field widgets mounted across disclosure changes. A closed
+  header reports enabled state, pending changes or errors where
+  applicable. Reveal and focus the first invalid active control after
+  validation, including controls in a collapsed section.
+- Keep context-menu actions one row high. Use a single gap between
+  handoff actions and inspection where both appear. Inspector summaries
+  group identity, market data, storage and recorded outcomes. Retain the
+  exact values and full-evidence actions for copying and Neovim.
+
+Check dialogs with Textual Pilot at 80×24, 100×30, 120×32 and 160×48.
+Exercise the scroll body, keyboard focus, dropdowns and validation with
+populated and empty fixtures. Set `MARKETFORGE_FORM_SNAPSHOTS` to an
+existing directory to export the workflow form tests as SVGs.
+
+## Recipe field coverage
+
+The authoring form walks the selected Pydantic model's JSON Schema. Counts
+below describe top-level model fields. Nested fields use the same descriptors.
+The managed filename is a separate form field.
+
+| Recipe model | Total | Required at schema level | Optional or defaulted | Conditional and read-only values |
+| --- | ---: | --- | ---: | --- |
+| Acquisition | 3 | Interval, requests | 1 | Request classification and scope constrain valid feeds. |
+| Normalization, historical requests | 4 | Interval, requests | 2 | Equity requires a source key. Feed options depend on source and data kind. |
+| Normalization, exact archives | 4 | Registry ID, archive pins | 2 | Picker supplies verified archive pins. An explicit profile requires a corresponding fingerprint. |
+| Normalization, explicit preparation | 7 | Job ID, dataset ID, content type, inputs | 3 | Each archive/member and task ID is unique. Output paths are optional. |
+| Merge, exact files | 9 | Dataset IDs, start and end | 6 | Publication selection derives the primary-file IDs, registry identity and selection fingerprint. |
+| Merge, derived | 5 | Version, interval, selection | 2 | The interval derives Engine nanosecond bounds. Source recipe selection and current preparation are separate. |
+| Conversion | 8 | Version, source, interval, conversion policy | 4 | A bound publication fixes the source, whole-publication selection, and interval. External reference publications require stream IDs. |
+| Pipeline | 6 | Version, interval, requests | 3 | Stage switches expose explicit overrides. Reference publication requires stream IDs. |
+| Import | 13 | Source key, root, identity, data type | 9 | Requires explicit files or bounded patterns. Specification overrides require base and quote assets. |
+| Registration | 4 | Registration, source, inputs, coverage | 0 | Input identity and declaration relationships are validated by the registration model. |
+
+The form places resource requests, fingerprints where editable, bindings,
+and other advanced fields under their respective schema-backed groups or
+Advanced Options. Complex TOML values remain editable where dedicated
+controls are unavailable. Source pickers supply derived binding values that
+are locked in the form.
+
+
+## Existing-recipe handoffs
+
+Markets uses the verified registry row and the historical source adapter to
+offer supported data kinds for the exact instrument scope. Acquisition and
+Pipeline use the same request mutation service for preview and save. The
+service checks canonical request equality, validates the complete recipe,
+and compares the reviewed bytes while holding the writer lock.
+
+Data uses the same existing-recipe selector. Exact archive and publication
+resolvers pin the selected source evidence and validate the reviewed draft
+before writing to the managed recipe. New recipe entry points remain under
+Workflows. Terminal clipboard transport is shared with inspectors.
+
+## External editor lifecycle
+
+The editor and processing windows share the Ghostty launcher and graphical
+display probe. Each launch uses argv, an explicit working directory, detached
+standard streams, and a new process session. The Ghostty GTK arguments
+disable single-instance forwarding and close the editor window when its
+command exits. The child environment excludes tmux pane and socket identifiers.
+
+A supervisor runs on the new window's PTY. It records editor readiness and
+then an atomic exit receipt in the private session directory. Forge checks
+both receipts and monitors early Ghostty exit asynchronously. Missing
+completion evidence leaves the draft available for recovery. The Textual
+driver stays active and keeps its own input, mouse reporting, and screen state.
+
+Editable sessions are keyed by canonical target path. A session keeps the
+original bytes, its private draft, and its validated candidate for explicit
+review. Keep the validator and writer in the owning Forge service. Settings
+use the existing snapshot and apply flow, including integrity acknowledgement
+and pinned inputs. Recipe and catalogue writes compare against the original
+and use existing atomic replacement. Inspection uses private copies of
+authorized artifacts or structured JSON and removes them after the window
+closes. The editor worker never dispatches a managed processing job.
+
+The Pilot tests cover review, navigation, invalid drafts and conflicts.
+The Linux PTY tests exercise the real Textual driver with controlled editor
+processes and independent terminals. For graphical verification, use
+disposable recipes and observe the editor window opening and closing under
+Ghostty directly and from inside tmux. Select Wayland or X11 explicitly
+when testing both backends on the same desktop.
+
+## Historical configuration evidence
+
+The execution registry indexes run lifecycle and links to evidence in the
+existing run storage. Registered recipe loaders retain the attempt's exact TOML
+before processing. Recipe metadata records the artifact path, SHA-256, source
+identity and registry. Effective configuration records the validated model and
+its defaults. Runtime snapshots, prepared jobs, receipts and publication
+manifests remain the authority for Engine settings and resolved data identities.
+
+| Workflow | Evidence in the original implementation | Lifecycle extension |
+| --- | --- | --- |
+| Acquisition | Submitted TOML, request and scan records, archive selections, reports and event logs. Acquisition used its parsed configuration. | Immutable publication, attempt provenance, effective HTTP settings and overrides. |
+| Normalization | Registered attempt recipe TOML and source hash, prepared batch, profile snapshots, execution intent and registration results. Prepared execution used retained inputs. | Explicit resolved recipe and runtime settings, with recipe lineage through a separately submitted batch. |
+| Merge | Registered attempt recipe TOML and source hash, prepared job, publication and primary-file evidence, runtime settings and execution intent. | Extended identity and configuration metadata, with recipe lineage through a separately submitted job. |
+| Conversion | Attempt and collection recipe snapshots, optional upstream copy, compatibility results, catalogue and runtime pins, per-job intents and manifests. | Effective recipe settings and recipe snapshot association for separately submitted collections. |
+| Pipeline | Submitted TOML, resolved plan, stage runtime fingerprints, jobs, reports and child acquisition references. Resume verified the original and plan. | Original recipe published without replacement and exposed through the run report. |
+| Import / Registration | Submitted TOML, frozen file selections, registration intents and results. Legacy Import reread the TOML when writing evidence. | Import verifies that retained bytes match the executed model. Registration commits the original and effective configuration before preflight. |
+
+The managed path records provenance. Recipe archival is blocked when a matching
+retained execution intent still points to the managed file and lacks a retained
+original. Current configuration is never labeled as an older run's snapshot.

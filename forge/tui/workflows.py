@@ -28,8 +28,8 @@ from forge.historical.imports.service import run_import
 from forge.historical.merge import service as merge
 from forge.historical.merge.config import DerivedRecipe, normalization_source
 from forge.historical.normalization import execution as normalize
-from forge.historical.normalization.batch import prepare_batch
-from forge.historical.normalization.config import ExactRecipe
+from forge.historical.normalization.batch import blocked_execution, prepare_batch
+from forge.historical.normalization.ranking import RankingPreparationError
 from forge.historical.normalization.recipes import create_recipe, load_configuration, recipe_path
 from forge.historical.pipelines import service as pipeline
 from forge.historical.pipelines.config import load_recipe_file
@@ -255,35 +255,36 @@ async def workflow_operation(
                 )
         recipe = await disk(load_configuration, source)
         if action in {"new", "validate", "show"}:
-            if isinstance(recipe, ExactRecipe) and action == "validate":
-                review = await prepare_batch(paths, recipe, dry_run=True, recipe_source=source)
-                if review["status"] == "prepared":
-                    review["status"] = "valid"
-                return review
             return {
                 "status": "valid",
                 "path": str(source),
                 "recipe": recipe.model_dump(mode="json"),
             }
-        result = await prepare_batch(
-            paths,
-            recipe,
-            recipe_source=source,
-            dry_run=dry,
-            http=context.settings.http,
-            supervised_validation=True,
-            lifecycle=progress,
-        )
-        if action in {"run", "execute"} and not dry and result.get("status") == "prepared":
-            checkpoint(result)
-            return await normalize.execute_async(
+        try:
+            result = await prepare_batch(
                 paths,
-                Path(str(result["batch_path"])),
-                tui=engine_tui,
-                allow_partial=bool(v.get("allow_partial")),
-                recipe=reference,
+                recipe,
+                recipe_source=source,
+                dry_run=dry,
+                http=context.settings.http,
+                supervised_validation=True,
                 lifecycle=progress,
             )
+        except RankingPreparationError as error:
+            result = {"status": "failed", "ranking_resolution": error.details, "error": str(error)}
+        if action in {"run", "execute"} and not dry:
+            if result.get("status") == "prepared":
+                checkpoint(result)
+                return await normalize.execute_async(
+                    paths,
+                    Path(str(result["batch_path"])),
+                    tui=engine_tui,
+                    allow_partial=bool(v.get("allow_partial")),
+                    recipe=reference,
+                    lifecycle=progress,
+                )
+            if "execution_id" not in result:
+                return blocked_execution(result, recipe=reference)
         return result
     if family == "merge":
         if action == "register":

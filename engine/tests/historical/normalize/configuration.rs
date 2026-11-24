@@ -128,19 +128,15 @@ fn one_profile_fixture(temp: &Temp) -> (PathBuf, PathBuf) {
     (path.clone(), path)
 }
 #[test]
-fn duplicate_profile_and_physical_definitions_are_rejected() {
-    for which in ["profile.toml", "physical.toml"] {
-        let t = Temp::new();
-        let (profile, raw) = one_profile_fixture(&t);
-        let original = if which == "profile.toml" {
-            profile
-        } else {
-            raw
-        };
-        fs::copy(&original, original.with_file_name("duplicate.toml")).unwrap();
-        let e = FormatCatalog::load(&t.0).unwrap_err().to_string();
-        assert!(e.contains("duplicate") || e.contains("ambiguous"), "{e}");
-    }
+fn conflicting_profile_identity_is_rejected() {
+    let t = Temp::new();
+    let (profile, _) = one_profile_fixture(&t);
+    // A conflicting definition must use a discoverable filename. Unrelated
+    // TOML files are ignored rather than treated as profiles.
+    let duplicate = profile.with_file_name("bybit.perpetual.linear.trades.toml");
+    fs::copy(profile, duplicate).unwrap();
+    let e = FormatCatalog::load(&t.0).unwrap_err().to_string();
+    assert!(e.contains("profile filename must match ID"), "{e}");
 }
 #[test]
 fn unsupported_transform_unknown_rule_and_missing_source_fail_at_load() {

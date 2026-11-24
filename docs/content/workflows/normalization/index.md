@@ -115,6 +115,10 @@ Use [manual batch submission](../../reference/data-formats/prepared-normalizatio
 | Rust validation or execution failed | Preparation diagnostics or retained execution report. |
 | Output committed but registration failed | Retained execution intent and [registration recovery](../../reference/cli/normalize.md#registration-and-recovery). |
 
+A recipe can validate and match complete raw archives while preparation is blocked. Acquiring newer dates does not extend the applicability of previously retained instrument specifications. For testing archives that fall outside the retained evidence window, use the existing initialization workflow (`mf init --testing`, or **Workspace tools → init** in the TUI) to refresh catalogue enrichment from retained observations, or register applicable historical evidence through [catalogue specifications](../catalogue/specifications.md). Prepare again and check the resulting evidence before running.
+
+If **Run** is blocked at preparation, open the retained report in **Runs**. It shows the matched and selected inputs, prepared job counts, and the archive-specific diagnostic. An Engine batch validation failure has its own stage.
+
 ## Next steps
 
 Use registered primary files in [dataset inspection](../inspection/datasets.md) or [merge](../merge.md). See [runtime configuration](../../reference/configuration/normalization-runtime.md) for resource and integrity settings. See the [publication reference](../../reference/data-formats/publication-normalized.md) for manifests and integrity evidence.

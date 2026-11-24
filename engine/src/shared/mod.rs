@@ -10,3 +10,5 @@ pub mod persistence;
 #[cfg(feature = "monitor-tui")]
 pub mod terminal;
 pub mod validation;
+#[cfg(any(feature = "historical", feature = "live"))]
+pub mod workspace;

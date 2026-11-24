@@ -213,14 +213,41 @@ select internal reference streams. **Browse external trade references**
 checks the source mode and lists reference publications and their trade
 streams. Preparation validates the resulting bindings and routes.
 
-From a Markets or Catalog instrument, choose **Add to acquisition…** or
-**Add to pipeline…**. Select an existing recipe or supply a name and explicit
-UTC interval for a new one, then choose trades, depth, or both. The review
-identifies the exact file and interval. Apply writes the supported TOML
-requests while preserving unrelated settings and comments. An exact duplicate
-is a no-op. Forge coordinates its writers and editor sessions, and changes
-observed after review require a reload. Pipeline requests are embedded in the
-selected pipeline TOML.
+In **Markets → Instruments**, right-click a row or press **F2**. Eligible
+instruments offer **Add to Acquisition**, **Add to Pipeline**, and **Inspect**
+in that order. Use Markets search and filters to browse the registry.
+**Refresh Market Observations** and **Synchronize Market Instruments** remain
+available in the command palette with their existing environment and
+confirmation checks. Rankings show snapshots and offer **View Ranking Results**.
+Policies offer inspection, TOML editing, and validation.
+
+Both Add actions open the same dialog with the exact market identity already
+filled in. Search for an existing recipe by name and select it to see its path,
+current request count, compatibility, and half-open UTC interval. Create a
+recipe in **Workflows** first if the library is empty.
+
+![Add to Acquisition dialog previewing separate Bybit BTCUSDT Trades and Depth requests](../assets/images/add-to-acquisition.png)
+
+Under **Data Types**, select **Trades** (market executions), **Depth** (order
+book data), or both. Each kind becomes a separate instrument-scoped request.
+The dialog shows source-adapter support. Archive availability for the
+selected interval is verified later during discovery or preparation.
+Binance historical archives support Trades only. OKX derivatives and Bybit
+options require broader scopes and can be configured separately in Workflows.
+
+Opening the menu on a marked row uses the basket in selection order. An
+unmarked row targets that row alone. If a data type is unsupported for any
+selected instrument, the checkbox is disabled and the dialog names the
+affected instruments. To add that kind to a compatible subset, adjust the
+Markets selection.
+
+**Request Preview** shows the validated additions and marks exact requests
+already included. **Add to Recipe** is enabled when there is at least one new
+request. Saving appends only those requests and preserves the interval, comments,
+and existing settings, including Pipeline normalization, merge, conversion,
+and reference options. If another editor changes the file, clear and reselect
+the destination to review the updated recipe. Saving only updates the recipe
+file.
 
 Acquisition recipes can seed normalization and conversion. Normalization
 recipes can seed merge or conversion, or replace the single source of a
@@ -230,14 +257,11 @@ inputs during preparation. Creating or editing a recipe does not execute it.
 
 ## Data and maintenance
 
-Merged and Normalized each list registered publications once. It retains the
-engine publication ID, registry publication ID, full published stream
-membership, and a separate page of primary-file identities. Open registered
-files to inspect lineage, schema, or a bounded Parquet sample. The publication
-view provides publication lineage and complete stream membership. File
-verification checks the named primary file and shared manifest checksum.
-Its result explicitly identifies the scope and whether the whole publication
-was verified.
+Merged lists registered publications. Normalized lists streams within
+registered publications. Inspect a publication to see registry and Engine IDs,
+stream membership, and paged primary-file identities. A primary-file
+verification checks the named file and shared manifest checksum. The result
+states its verification scope.
 Execution and verification evidence retain original timestamps and units.
 Observed event endpoints are inclusive and do not establish continuity for
 the requested half-open interval.
@@ -286,39 +310,19 @@ classes, service boundaries, and verification coverage.
 
 Use Space on a focused result table or click its leftmost marker to add a row
 to the selection. The Actions button shows the number selected. F2 opens the
-menu, where you can review or clear the selection. Each view keeps its own
-selection across searches and pages.
+row menu. Use **Clear selection** from the command palette to empty the
+basket. Each view keeps its selection across searches and pages.
 
 - In **Markets → Instruments**, search for BTCUSDT, filter to Bybit perpetual
   instruments, and select the linear contract. Choose **Add to acquisition**,
-  choose feeds and a UTC interval, then review the exact instrument identities.
+  select an existing recipe and supported data kinds, then review the exact
+  instrument identities and the destination recipe’s interval.
   The saved recipe offers **Validate** and **Plan**. The archive plan describes
   retained discovery evidence. Use **Map** for remote discovery when the cache
   lacks coverage.
-- In **Data → Raw**, filter to complete archives and select the exact local
-  archive IDs. **Normalize selected archives** checks the registered revision,
-  checksum, interval, scope, feed and resolved instrument evidence. Trades and
-  depth can share one recipe and prepare separate Engine jobs. A family archive
-  uses its persisted concrete membership evidence. A family-scoped search
-  recipe discovers inputs by scope. Choose automatic resolution or pin the
-  compatible compiled profile for each archive. Missing, conflicting or stale
-  evidence blocks preparation.
-- In **Data → Normalized**, choose exact publications and select **Create
-  merge from selection**. Forge resolves registered primary-file membership
-  and verifies source and file fingerprints. Review the interval, streams and
-  ordering, including optional ranks. Overlapping generations of the same
-  stream require a revised selection. Observed bounds cannot establish
-  continuous coverage. To discover sources from a producing normalization
-  recipe, start with **Create merge recipe** on that recipe.
-- In **Data → Merged**, choose **Convert publication**. Select a quote from
-  the searchable catalogue control or type a supported currency code. The
-  recipe preserves the committed source and interval. Identity conversion can
-  run without reference trades. **Edit policy and reference trades** selects
-  internal trades and sets price source, maximum age in nanoseconds, hop limit
-  and path policy. For depth or combined sources, **Browse external trade
-  references** lists eligible trade-only publications. Search by ID, exchange
-  or instrument, then select observed trade streams. Reference prices can be
-  missing or stale at individual historical events.
+- Use **Add to Recipe** on Raw, Normalized, or Merged data to select an
+  existing destination. Review the exact sources, validate the draft, and save.
+  See [Add to Recipe](#add-to-recipe) for the supported source contracts.
 - Use **Validate**, **Prepare** and **Run** from the saved recipe. Conversion
   reports separate execution, verification and indexing outcomes. Open a
   durable output reference in **Data → Converted**, verify files or open the
@@ -418,24 +422,61 @@ preview. A physical file and a logical partition have separate identities.
 A converted output reference belongs to the conversion index. Open the output
 for its source publication, target quote, source streams, physical files, and
 conversion evidence. F2 links to partitions, lineage, verification, and the
-producing run when recorded. Choose **Copy exact ID** from the Data row actions,
-or use the copy actions in an inspector for the corresponding full identifier.
+producing run when recorded.
 
-## Copy and environment
+### Add to Recipe
 
-Press y on a workspace table to open the full row in a text dialog. Use F2
-for specific columns, identifiers and paths. The dialog's **Copy value**
-button or Ctrl+Y copies the selected text, or the complete dialog text when
-there is no selection. Clipboard transfers are capped at 74,000 bytes. In
-Ghostty you can use Shift with terminal mouse selection, subject to its mouse
-configuration. Ghostty also offers a mouse-reporting toggle.
+Right-click a Data row or press **F2**. **Add to Recipe** comes first, followed
+by **Inspect**, **Copy Selected Text**, **Copy Row**, **Copy Identifier**, and
+**More Actions**. The last menu holds relevant actions such as browsing
+normalization profiles, reviewing deduplication, inspecting partitions or
+lineage, and verifying indexed outputs.
+
+Select rows with **Space** or the left selection column. The selection stays
+with the Data tab across pages. Open the menu on a marked row to use the
+selection, or on an unmarked row to act on that row alone. The menu shows the
+count for a multi-row selection.
+
+Choose **Create New Recipe** or **Add to Existing Recipe**. The existing recipe
+picker searches the managed library for the destination workflow and shows
+source information and known blockers. Review registered sources, edit the
+draft, validate, and confirm **Save recipe**. Existing settings and supported
+TOML comments are preserved. Duplicate sources leave the recipe unchanged.
+Preparation, execution, and publication registration each require a separate
+action.
+
+| Data tab | Destination and scope |
+| --- | --- |
+| Raw | Exact-archive **Normalization** in testing. Grouped rows offer a checklist of archive IDs. Forge checks registered revisions and compatible compiled profile fingerprints. |
+| Normalized | **Merge**. Forge pins the chosen stream's registered primary-file IDs and exact publication generations. Files with ambiguous stream scope are blocked. |
+| Merged | **Conversion**. Forge binds one committed source publication. A replacement requires explicit review, a matching committed interval, and compatible reference streams. |
+| Converted | No current recipe consumes an indexed Conversion output. **Add to Recipe** explains the blocker and offers inspection and reference copying. Use **More Actions** for sampling, lineage, and verification. |
+
+### Copy text
+
+Drag along one line in a Data table, then press **Ctrl+Y** or right-click and
+choose **Copy Selected Text**. A drag copies the visible passage, including
+substrings and any displayed ellipsis. **Copy Identifier** retrieves the full
+registered publication ID, archive IDs, or indexed output reference.
+**Copy Row** copies the row evidence. Press **y** to open it in a text dialog.
+
+In inspectors, drag to select text in a records table or across lines of a
+text summary. Use **Ctrl+Y** or **Copy selection**. In a full-value dialog,
+**Copy value** and **Ctrl+Y** copy the highlighted passage or the whole value
+when there is no selection. Changing Data tabs, pages, registry environments,
+or scrolling a table clears its highlight. Refreshing records or opening
+another screen also clears the Data table highlight.
+
+Forge tries the desktop clipboard tools available to the session, then tmux
+clipboard forwarding and terminal OSC 52. Transfers are capped at 74,000
+bytes. OSC 52 notification confirms that Forge sent a request. The terminal
+controls delivery. For terminal-native selection, Ghostty offers a mouse
+override, subject to its configuration. In tmux, clipboard forwarding depends
+on the server's `set-clipboard` option, the client's `Ms` capability and
+terminal clipboard permissions. **Ctrl+C** remains the interrupt shortcut.
 See the [Ghostty mouse settings](https://ghostty.org/docs/config/reference#mouse-shift-capture).
 
-Forge tries the desktop clipboard tools available to the session, followed
-by tmux clipboard forwarding and terminal OSC 52. If pasting fails in tmux,
-check the server's set-clipboard option and the client's Ms capability in
-tmux info. Ghostty must allow clipboard writes. Forge keeps the text dialog
-available when forwarding is blocked.
+## Environment
 
 Press **Ctrl+E** or choose **Switch environment** in the command palette to reconnect
 with an empty selection basket. The header shows the selected registry environment.
@@ -452,3 +493,189 @@ Publication or indexed conversion deletion from the Data actions menu saves a te
 plan. Forge offers apply only for plans whose targets pass the ownership and
 dependency checks. Run deletion under **Runs → Indexed** offers a
 history-only mode that preserves physical evidence.
+
+## Emergency Stop
+
+The red **STOP ALL** control is at the top left. **Ctrl+Shift+X** also opens
+its confirmation, including while a form or inspector is open. **Cancel** is
+focused first, and Escape returns to the workspace. **STOP ALL & EXIT** stops
+new dispatches, requests cancellation through the session's operation controller,
+and exits Forge. The confirmation counts active operations and directly
+observed managed processes. A stage window's worker and its Engine may be
+supervised through the window's private stage connection.
+
+Use **Ctrl+C** for ordinary operation cancellation when Forge can wait for
+normal cleanup. Emergency Stop shortens the grace period before escalating.
+Only work managed by this Forge session is in scope. An independent Forge
+process, an existing terminal or tmux session, and PostgreSQL are outside that
+scope.
+
+After an emergency, reopen Forge in the same environment and inspect the run,
+its logs, and its retained execution evidence. A forced stop may leave a
+partially completed attempt or unconfirmed registration. Use the workflow's
+supported resume or registration recovery action once the retained evidence
+has been checked. Committed datasets and retained staging are kept.
+
+## Recipe drafts and inspection
+
+When a recipe accepts a historical interval, enter the **Start date**,
+**Start time**, **End date**, and **End time** in UTC. Dates use `YYYY-MM-DD`
+and both times start at midnight `00:00:00`. Seconds can include fractional
+digits if the stored interval has that precision. Start is inclusive and
+end is exclusive. Forge checks ordering with the workflow's recipe model.
+Some bound publications supply their own read-only interval.
+
+Create or edit a recipe from **Workflows**. The form marks required values
+with an asterisk and labels optional settings. Use the stage toggles and
+**Advanced Options** for supported policy overrides and resource requests.
+Blank optional fields use the recipe or runtime defaults where applicable.
+**Validate** checks the draft. **Review recipe** or **Review changes** opens
+the confirmation before **Save recipe**.
+
+Use **Add Request** to add ordered acquisition requests in Acquisition,
+Normalization, or Pipeline. Select the exchange, instrument type, market,
+and scope first. **Find** on an instrument identifier searches the registered
+catalogue within that identity. Select the data kind separately. Use the
+entry checkboxes to omit requests from the draft.
+
+Right-click a saved recipe or press **F2** for actions such as **Inspect**,
+**Edit**, **Validate**, **Plan**, **Prepare**, or **Run**, according to the
+workflow. Source actions open a draft. Acquisition offers **Add Instrument**,
+Pipeline offers **Add Acquisition Request**, Normalization offers **Select
+Sources**, Merge offers **Select Normalized Sources**, Conversion offers
+**Select Source Publication** and **Add Reference Streams**, and Import
+offers **Add Source Files**. Exact-archive and publication bindings preserve
+registry IDs. Import files are selected beneath the recipe's source root.
+Save the reviewed draft to apply source changes.
+
+The inspector's **Summary** displays saved recipe state and the main inputs.
+**Configuration** displays the complete saved settings, including nested
+requests, stage policies, and advanced settings. **Source evidence** displays
+available metadata for explicitly configured registry IDs. For a recipe that
+refers to an upstream recipe, its current resolved publications require
+preparation evidence. **F3 Advanced details** opens the saved configuration
+and its evidence, and **Edit TOML** opens a private editable draft. Inspection
+uses read-only service calls and displays missing evidence explicitly.
+
+## Inspect evidence in Neovim
+
+In **Runs**, open a run or its report and click **Open** beside the primary
+retained file. Select **Artifacts** to choose another report, prepared job,
+event log, plan, receipt, or configuration snapshot. From the keyboard, focus the
+same button with **Tab** and press **Enter**. The artifact list uses the
+references recorded by the run and its attempts. A pointer to a missing
+or inaccessible file produces an error in Forge.
+
+For a structured section, click **Open JSON** to read its complete value
+as indented JSON. **F3 Evidence** opens the full evidence view, which also
+has an editor action when the evidence is structured. Integer identifiers
+and nanosecond timestamps keep their exact values, Unicode stays readable,
+and typed decimals keep their precision as JSON strings. Arrays, nulls,
+and empty collections are included. Forge reports an error if a value
+contains protected content or cannot be represented safely as JSON.
+
+**Artifacts** also appears for supported recipe TOML and publication
+manifests. The same JSON action is available for structured dataset metadata,
+lineage, workflow reports, catalogue records, and normalization profiles.
+In **Configs**, use **Open effective** for available validated values.
+
+Forge supports referenced JSON, JSONL, TOML, and retained text logs.
+Neovim reads a private byte-for-byte copy of each file. JSON, JSONL, and
+TOML use the corresponding syntax highlighting. Large inspection files
+prompt before Neovim opens. Binary archives and Parquet remain available
+through their dedicated inspection views.
+
+Forge opens read-only Neovim in a separate Ghostty window. The original
+Forge screen stays interactive. Closing Neovim removes the private copy.
+Use **Edit TOML** to edit a current recipe or configuration.
+
+## Edit TOML in a separate window
+
+In **Workflows**, choose **Edit TOML** from the recipe's actions.
+In **Catalogue**, use **Edit in Neovim** on a profile or declaration draft.
+In **Configs**, choose **More → Edit TOML draft** for General, Normalize,
+Merge, Convert, or Pipeline settings. Forge opens a private draft in a new
+Ghostty window with the workspace as its working directory. It uses the
+configured editor, then `VISUAL` or `EDITOR`, with `nvim` as the default.
+The Forge window remains usable while you edit, including from inside tmux.
+
+Save and quit the editor to validate the draft. Forge reports whether it
+found changes and whether validation passed. Use **F9** or
+**Editor sessions** in the command palette to see the result. Review the
+diff and use **Apply reviewed changes** to accept it. In **Configs** this
+loads the validated file into the existing settings form. Use **Review &
+apply** there to save settings and acknowledge integrity risks when required.
+Catalogue registration and profile installation retain their own review.
+
+An unchanged draft is removed. Invalid drafts stay available to reopen,
+copy, or discard. If the authoritative file changes during editing, Forge
+blocks the apply and keeps the draft. Use **Compare with current file**
+to inspect the conflict before starting again. Different files can have separate windows. Each target has
+one active draft per Forge session, including drafts awaiting review.
+
+A supported Linux Ghostty build and an active Wayland or X11 display are
+required. If Ghostty is missing or cannot connect to the display, the
+session shows the error and offers reopening, copying the draft path, or
+discarding the draft. In a restored tmux session, launch Forge with the
+current desktop's Wayland or X11 environment. Headless or unsupported
+sessions leave Forge running and keep the draft for recovery.
+
+Emergency Stop stops owned processing and exits Forge. Editable windows
+that are already open stay open. To recover a draft after Forge exits,
+use its buffer path in the editor or the copied draft path. The private
+`marketforge-edit-*` directory in the system temporary directory contains
+the draft and a `.session.json` file with its target and original checksum.
+Recovery lasts while the temporary directory exists.
+
+## Recipe lifecycle
+
+A **recipe definition** is reusable TOML listed in Workflows. An **execution
+snapshot** records the configuration and source bindings for one run or attempt.
+Edit and save a recipe to change future submissions. Inspect a run to see the
+configuration associated with that execution.
+
+### Remove configured inputs
+
+Open the recipe inspector or context menu and choose **Remove from Recipe**.
+Pick a configured entry, review the draft, then validate and save. Cancel before
+saving to keep the current recipe. Use source selection and instrument handoffs
+to add entries.
+
+| Workflow | Removal scope |
+| --- | --- |
+| Acquisition | One request, including its data kind, or all requests for the same exchange, instrument type, market category and instrument. |
+| Normalization | Exact archive pins, manual inputs or configured requests. A dynamic request has no per-archive exclusion list. Edit the request or use an exact archive recipe. |
+| Merge | Whole normalized publications, primary files in an explicitly pinned subset, or direct primary-file IDs. Whole-publication removal removes that publication's selected streams from the recipe. |
+| Conversion | Explicit reference streams or the external reference publication. Use **Replace Source Publication** for the required merged source. Reference compatibility is checked during review. |
+| Pipeline | Acquisition requests and optional Conversion selections. Normalization and Merge are required. |
+| Import and Registration | Source files, patterns and Registration input groups. |
+
+Recipe changes apply to shared workspace configuration. Registry-bound source
+selections use the selected registry. Recipe edits leave market data and
+catalogue records in place.
+
+### Archive and restore recipes
+
+Choose **Delete Recipe** to review the managed path and identified dependencies.
+Confirm to archive the original file and remove it from active discovery.
+Testing and Production share the workspace recipe. Resolve dependent recipes
+or executions listed in the preview before retrying. Workspace ownership
+protects files in use by another cooperating Forge process.
+
+Open the Workflows context menu for the recipe family and choose
+**Restore Archived Recipe**. Forge restores the original contents and name.
+If that name is occupied, both the active recipe and archived copy are preserved.
+
+### Inspect historical configuration
+
+In **Runs**, use the artifact controls to open the original recipe, effective
+settings, prepared job or report in the read-only Neovim inspector. Pipeline
+retains the submitted TOML and resolved plan at the run root. Stage references
+lead to its selected inputs, jobs, Engine receipts and acquisition run.
+Pipeline resume verifies and uses retained configuration and stage fingerprints.
+
+Legacy runs may have a submitted job or report but no original recipe snapshot.
+Runs displays **Original recipe snapshot unavailable** when this evidence is
+missing. Credentials and private environment files are outside the snapshot
+contract. Replay also requires the referenced market data and compatible Engine
+dependencies.

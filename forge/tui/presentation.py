@@ -7,13 +7,13 @@ from typing import Literal, cast
 from rich.text import Text
 from textual import events
 from textual.message import Message
-from textual.widgets import DataTable
 
 from forge.orchestration.run_summary import when
-from forge.shared.terminal.palette import CYAN, FG, GREEN, RED, YELLOW
+from forge.shared.terminal.palette import CYAN, FG, MUTED
 from forge.tui.actions import Action, Values
 from forge.tui.controller import document
-from forge.tui.design import SECONDARY
+from forge.tui.design import STATUS_COLORS
+from forge.tui.text_selection import SelectableTable
 
 Kind = Literal["publication", "file", "stream", "archive", "instrument", "recipe", "run", "other"]
 
@@ -100,33 +100,7 @@ def membership(rows: list[Mapping[str, object]], key: str) -> str:
 def status(value: object) -> Text:
     label = display(value)
     state = label.removeprefix("Last recorded ").lower()
-    color = (
-        GREEN
-        if state
-        in {
-            "complete",
-            "completed",
-            "valid",
-            "validated",
-            "verified",
-            "reused",
-            "published",
-            "registered",
-            "installed",
-            "ready",
-            "rust validated",
-        }
-        else RED
-        if state in {"failed", "corrupt", "missing", "error", "invalid"}
-        else YELLOW
-        if state in {"blocked", "partial", "stale", "interrupted", "stopped", "pending"}
-        else CYAN
-        if state in {"running", "executing", "interrupting"}
-        else SECONDARY
-        if state in {"waiting", "skipped", "unknown", "unavailable", "—"}
-        else FG
-    )
-    return Text(label, style=color, no_wrap=True, overflow="ellipsis")
+    return Text(label, style=STATUS_COLORS.get(state, FG), no_wrap=True, overflow="ellipsis")
 
 
 @dataclass(frozen=True, slots=True)
@@ -355,7 +329,7 @@ def visible(cells: tuple[Cell, ...], width: int) -> tuple[Cell, ...]:
     return tuple(chosen)
 
 
-class Results(DataTable[Text]):
+class Results(SelectableTable):
     """Single-line resource table with keyboard and pointer selection."""
 
     def on_mount(self) -> None:
@@ -363,11 +337,13 @@ class Results(DataTable[Text]):
         self.cursor_foreground_priority = "renderable"
 
     recipe_links = False
+    text_selection_enabled = False
 
     class ContextRequested(Message):
-        def __init__(self, identity: str) -> None:
+        def __init__(self, identity: str, anchor: tuple[int, int]) -> None:
             super().__init__()
             self.identity = identity
+            self.anchor = anchor
 
     class BasketRequested(Message):
         def __init__(self, identity: str) -> None:
@@ -375,13 +351,15 @@ class Results(DataTable[Text]):
             self.identity = identity
 
     async def _on_click(self, event: events.Click) -> None:
+        if self.consume_drag_click(event):
+            return
         metadata = event.style.meta
         row, column = metadata.get("row"), metadata.get("column")
         if isinstance(row, int) and isinstance(column, int) and 0 <= row < self.row_count:
             key = self.ordered_rows[row].key
             if event.button == 3 and key.value is not None:
-                self.move_cursor(row=row)
-                self.post_message(self.ContextRequested(key.value))
+                self.move_cursor(row=row, scroll=False)
+                self.post_message(self.ContextRequested(key.value, event.screen_offset))
                 event.stop()
                 event.prevent_default()
                 return
@@ -407,11 +385,27 @@ class Results(DataTable[Text]):
                 )
 
 
+IMPORTANT_COLUMNS = {
+    "Symbol",
+    "Instrument",
+    "Instruments",
+    "Turnover 24h",
+    "Recorded size",
+    "Events",
+}
+
+
 def cell_text(cell: Cell) -> Text:
     if cell.state:
         return status(cell.value)
+    value = compact(cell.value) if cell.number else display(cell.value)
     return Text(
-        compact(cell.value) if cell.number else display(cell.value),
+        value,
+        style=MUTED
+        if value in {"—", "Unknown"}
+        else CYAN
+        if cell.label in IMPORTANT_COLUMNS
+        else "",
         justify="right" if cell.number else "left",
         no_wrap=True,
         overflow="ellipsis",
