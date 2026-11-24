@@ -14,6 +14,15 @@ class RunOperation(StrEnum):
     PIPELINE = "pipeline"
 
 
+PIPELINE_STAGE_LABELS = {
+    "acquire": "Acquisition",
+    "normalize": "Normalization",
+    "merge": "Merge",
+    "convert": "Conversion",
+}
+PIPELINE_STAGES = tuple(PIPELINE_STAGE_LABELS)
+
+
 @dataclass(frozen=True, slots=True)
 class RunId:
     uuid: UUID

@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from forge.historical.normalization.config import NormalizationRecipe, PreparationRequest
+from forge.historical.normalization.config import (
+    ExactRecipe,
+    NormalizationRecipe,
+    PreparationRequest,
+)
 from forge.markets.models import array
 from forge.orchestration.registry import rows, status_of
 from forge.orchestration.run_summary import mapping
@@ -20,13 +24,15 @@ Fields = tuple[tuple[str, str], ...]
 class RecipeView:
     name: str
     source: Path
-    configuration: NormalizationRecipe | PreparationRequest | None = None
+    configuration: NormalizationRecipe | PreparationRequest | ExactRecipe | None = None
     error: str = ""
 
     @property
     def count(self) -> int | None:
         if isinstance(self.configuration, NormalizationRecipe):
             return len(self.configuration.requests)
+        if isinstance(self.configuration, ExactRecipe):
+            return len(self.configuration.archive_pins)
         if self.configuration is not None:
             return len(self.configuration.inputs)
         return None
@@ -54,6 +60,8 @@ class RecipeView:
         details = (("Type", self.kind), ("Ranking", config.ranking_policy))
         if isinstance(config, NormalizationRecipe):
             return (*details, ("Requests", str(len(config.requests))), ("Period", self.period()))
+        if isinstance(config, ExactRecipe):
+            return (*details, ("Registry", str(config.registry_id)), ("Archives", str(self.count)))
         details = (
             *details,
             ("Inputs", str(len(config.inputs))),
@@ -88,6 +96,15 @@ class RecipeView:
                         row.source_key or "—",
                     )
                     for row in config.requests[:LIMIT]
+                ),
+            )
+        if isinstance(config, ExactRecipe):
+            return (
+                "Exact archive selection",
+                ("Archive ID", "Profile", "Archive evidence SHA-256"),
+                tuple(
+                    (str(pin.archive_id), pin.profile_id or "Automatic", pin.selection_sha256)
+                    for pin in config.archive_pins[:LIMIT]
                 ),
             )
         if config is not None:

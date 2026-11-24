@@ -69,17 +69,23 @@ def read_report(root: Path, run_id: str) -> dict[str, object]:
         return {"run_id": run_id, "status": "report_incomplete_or_invalid"}
 
 
-def read_logs(root: Path, run_id: str, limit: int = 100) -> dict[str, object]:
-    return read_events(run_root(root, run_id) / "events.jsonl", run_id, limit)
+def read_logs(
+    root: Path, run_id: str, limit: int = 100, *, sources: dict[str, Path] | None = None
+) -> dict[str, object]:
+    return read_events(run_root(root, run_id) / "events.jsonl", run_id, limit, sources=sources)
 
 
-def read_events(path: Path, run_id: str, limit: int) -> dict[str, object]:
+def read_events(
+    path: Path, run_id: str, limit: int, *, sources: dict[str, Path] | None = None
+) -> dict[str, object]:
     if not 1 <= limit <= 1000:
         raise MarketForgeError("Log limit must be 1..1000.")
     if path.is_symlink():
         raise MarketForgeError("Unsafe retained event location.")
     if not path.is_file():
         return {"run_id": run_id, "events": [], "status": "events_missing"}
+    if sources is not None:
+        sources[path.name] = path
     with path.open("rb") as source:
         data = source.read(1024 * 1024 + 1)
     lines = data[: 1024 * 1024].decode("utf-8", errors="replace").splitlines()
@@ -256,6 +262,7 @@ def read_managed_logs(
     *,
     truncated: set[str] | None = None,
     supplemental: dict[str, str] | None = None,
+    sources: dict[str, Path] | None = None,
 ) -> dict[str, object]:
     """Read a bounded tail from the fixed engine log names."""
     if not MANAGED_RUN.fullmatch(run_id):
@@ -274,6 +281,8 @@ def read_managed_logs(
     for name in names:
         path = directory / name
         if path.is_file() and not path.is_symlink():
+            if sources is not None:
+                sources[name] = path
             with path.open("rb") as handle:
                 end = handle.seek(0, os.SEEK_END)
                 if truncated is not None and end > 12288:

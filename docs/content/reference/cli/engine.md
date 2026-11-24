@@ -717,7 +717,7 @@ Inspect the normalization result and the relevant Engine diagnostics.
 
 Possible causes include invalid profiles, missing instrument specifications, unsupported source formats, or data-integrity failures.
 
-See [Historical Normalization](../../workflows/normalize.md).
+See [Historical Normalization](../../workflows/normalization/index.md).
 
 ### The merger is installed but rejects a dataset
 

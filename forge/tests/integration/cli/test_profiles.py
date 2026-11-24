@@ -330,7 +330,7 @@ def test_generator_detects_rust_drift(
             "engine/specs/normalization-profile.toml",
             "engine/scripts/generate_profile_schema.py",
             "forge/historical/profiles/schema.json",
-            "docs/content/reference/profile-fields.md",
+            "docs/content/reference/configuration/profile-fields.md",
         )
     )
     for source in sources:

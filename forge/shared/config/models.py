@@ -20,7 +20,11 @@ class SettingsModel(BaseModel, frozen=True):
 class StorageSettings(SettingsModel, frozen=True):
     """Storage settings resolved relative to the workspace."""
 
-    data_root: str = Field(default="data", min_length=1)
+    data_root: str = Field(
+        default="data",
+        min_length=1,
+        description="Root for managed raw data, publications and runs. Relative paths resolve from the workspace.",
+    )
 
     @field_validator("data_root")
     @classmethod
@@ -35,12 +39,17 @@ class StorageSettings(SettingsModel, frozen=True):
 class PresentationSettings(SettingsModel, frozen=True):
     """Default execution presentation."""
 
-    mode: Literal["progress", "silent"] = "progress"
-    color: Literal["auto", "always", "never"] = "auto"
+    mode: Literal["progress", "silent"] = Field(
+        default="progress", description="Default terminal progress presentation."
+    )
+    color: Literal["auto", "always", "never"] = Field(
+        default="auto", description="Terminal color policy for Forge output."
+    )
     editor: str | None = Field(
         default=None,
         min_length=1,
         pattern=r"\S",
+        description="Editor executable for interactive draft editing. When omitted, Forge resolves the editor from the environment or platform fallback.",
     )
 
 
@@ -51,20 +60,34 @@ class HttpSettings(SettingsModel, frozen=True):
         default=2.0,
         gt=0,
         allow_inf_nan=False,
+        description="Default request budget per second for each upstream service, subject to provider limits.",
     )
-    max_concurrent: int = Field(default=4, ge=1, le=64)
+    max_concurrent: int = Field(
+        default=4, ge=1, le=64, description="Maximum concurrent HTTP requests per upstream service."
+    )
     timeout_seconds: float = Field(
         default=30.0,
         gt=0,
         allow_inf_nan=False,
+        description="Default timeout for an upstream HTTP request, in seconds.",
     )
-    max_attempts: int = Field(default=3, ge=1, le=10)
+    max_attempts: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum attempts for a retriable HTTP request, including the initial attempt.",
+    )
 
 
 class AppSettings(SettingsModel, frozen=True):
     """Versioned application settings."""
 
-    version: int = Field(default=1, ge=1, le=1)
+    version: int = Field(
+        default=1,
+        ge=1,
+        le=1,
+        description="Immutable version of the Forge application settings format.",
+    )
     storage: StorageSettings = Field(default_factory=StorageSettings)
     presentation: PresentationSettings = Field(
         default_factory=PresentationSettings,

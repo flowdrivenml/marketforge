@@ -41,8 +41,10 @@ def table(console: Console, headings: tuple[str, ...], rows: tuple[tuple[str, ..
         )
 
 
-def render_inventory(console: Console, items: list[RecipeView]) -> None:
+def render_inventory(console: Console, items: list[RecipeView], *, ordering: str = "") -> None:
     header(console, "Merge · Recipes")
+    if ordering:
+        console.print(Text(ordering, style="mf.secondary"))
     if not items:
         empty_state(console, "No managed merge recipes. Create one with mf merge new NAME.")
         return

@@ -129,4 +129,6 @@ On a retained run for this recipe, the script matched 400 initial levels to the 
 - If preparation is blocked, follow the selected archive’s diagnostics for missing inputs, profiles, or applicable specifications.
 - If the Engine committed output but registration failed, retain the execution intent and retry [registration only](../reference/cli/normalize.md) against the original registry.
 
-Continue with [normalize historical data](../workflows/normalize.md) to adapt this workflow or [inspect datasets](../workflows/datasets.md) to work with the output.
+Continue with [normalize historical data](../workflows/normalization/index.md) to adapt this workflow or [inspect datasets](../workflows/inspection/datasets.md) to work with the output.
+
+To value a verified merged output in a target quote, continue with [Convert historical data](../workflows/conversion.md).

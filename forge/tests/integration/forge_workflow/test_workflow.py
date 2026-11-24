@@ -316,6 +316,24 @@ def test_trade_depth_registration_prepare_edit_execute_retry(
     assert first["status"] == "registered"
     second = asyncio.run(registration.apply(paths, recipe))
     assert all(item["status"] == "reused" for item in second["copies"])
+    from forge.historical.normalization.batch import inspect_exact_archives
+    from forge.historical.normalization.config import ExactRecipe
+
+    local_ids = tuple(int(copy["local_archive_id"]) for copy in first["copies"])
+    registry, pinned_archives = asyncio.run(inspect_exact_archives(paths, local_ids))
+    exact = ExactRecipe.model_validate(
+        {
+            "registry_id": registry,
+            "archive_pins": [
+                {name: value for name, value in item.items() if name != "source"}
+                for item in pinned_archives
+            ],
+        }
+    )
+    exact_report = asyncio.run(prepare_batch(paths, exact, dry_run=True))
+    assert exact_report["status"] == "prepared", exact_report
+    assert {item[0] for item in exact_report["exact_raw_inputs"].values()} == set(local_ids)
+    assert exact_report["prepared_job_count"] == 2
     request = NormalizationRecipe.model_validate(
         {
             "version": 1,

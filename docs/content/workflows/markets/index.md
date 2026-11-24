@@ -17,4 +17,4 @@ Use Markets to collect current instrument metadata, refresh retained observation
 
 Database commands default to production. Pass `--testing` for the testing registry. Sync, refresh and standard update make public exchange requests. Build reads retained inputs and writes a snapshot. List and show read stored records.
 
-Start with [instrument discovery](instrument-discovery.md), [statistics refresh](market-statistics.md), or [ranking workflows](rankings.md). See the [CLI reference](../../reference/cli/markets.md) and [TOML reference](../../configuration/markets.md) for exact syntax and defaults.
+Start with [instrument discovery](instrument-discovery.md), [statistics refresh](market-statistics.md), or [ranking workflows](rankings.md). See the [CLI reference](../../reference/cli/markets.md) and [TOML reference](../../reference/configuration/markets.md) for exact syntax and defaults.

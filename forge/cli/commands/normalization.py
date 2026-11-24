@@ -12,8 +12,9 @@ from forge.cli.commands.normalization_runtime import configure as configure_runt
 from forge.cli.commands.profiles import configure as configure_profiles
 from forge.cli.commands.recipe_deletion import configure_delete
 from forge.cli.environment import add_database_options
+from forge.cli.sorting import add_sorting
 from forge.historical.normalization.batch import prepare_batch
-from forge.historical.normalization.config import NormalizationRecipe
+from forge.historical.normalization.config import ExactRecipe, NormalizationRecipe
 from forge.historical.normalization.datasets import register
 from forge.historical.normalization.execution import execute, recover
 from forge.historical.normalization.ranking import RankingPreparationError
@@ -41,6 +42,7 @@ from forge.shared.presentation.normalization import (
     PreparationView,
     RecipeView,
 )
+from forge.shared.sorting import NAMES
 from forge.shared.terminal.editor import edit_file
 from forge.shared.terminal.normalization import (
     render_batch,
@@ -87,9 +89,9 @@ def configure(parser: argparse.ArgumentParser) -> None:
     configure_delete(
         actions.add_parser("delete", help="Preview or delete a managed normalization recipe.")
     )
-    actions.add_parser(
-        "list", help="List managed recipes and their structural status."
-    ).set_defaults(service_handler=run)
+    listing = actions.add_parser("list", help="List managed recipes and their structural status.")
+    listing.set_defaults(service_handler=run)
+    add_sorting(listing, NAMES)
     for action, description in (
         ("show", "Inspect a managed recipe."),
         ("edit", "Edit and structurally validate a managed recipe."),
@@ -165,7 +167,7 @@ def local_recipe(arguments: argparse.Namespace, context: ApplicationContext, act
     directory = paths.normalization_recipe_dir
     if action == "list":
         items: list[RecipeView] = []
-        for name in list_config_names(directory):
+        for name in list_config_names(directory, sort=arguments.sort, order=arguments.order):
             source = directory / f"{name}.toml"
             try:
                 source = resolve_config_file(directory, name)
@@ -201,7 +203,11 @@ def local_recipe(arguments: argparse.Namespace, context: ApplicationContext, act
                 )
             )
         else:
-            render_inventory(context.console, tuple(items))
+            render_inventory(
+                context.console,
+                tuple(items),
+                ordering=NAMES.resolve(arguments.sort, arguments.order).description,
+            )
         return 0
 
     name: str = arguments.configuration_name
@@ -360,7 +366,7 @@ def run_operation(
     result: dict[str, object]
     try:
         with WorkspaceOwnership(context.paths):
-            if isinstance(request, NormalizationRecipe):
+            if isinstance(request, (NormalizationRecipe, ExactRecipe)):
                 result = asyncio.run(
                     prepare_batch(
                         context.paths,

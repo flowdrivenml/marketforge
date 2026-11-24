@@ -118,6 +118,16 @@ async def test_grouped_volume_freezes_evidence_and_prior_publication(
     assert estimated["volume_estimated"] is True
     assert "reference_price" in str(obj(estimated["volume_evidence"])["formula"])
     assert rows[-1]["position"] is None and "missing" in str(rows[-1]["exclusion_reason"])
+    descending = [
+        obj(row)
+        for row in array((await show(database, snapshot, sort="rank", order="desc"))["entries"])
+    ]
+    assert [r["group_rank"] for r in descending[:5]] == [1, 4, 3, 2, 1]
+    assert [r["base_asset"] for r in descending[:5]] == ["BTC", "ETH", "ETH", "ETH", "ETH"]
+    assert descending[-1]["position"] is None
+    assert {r["instrument_id"]: r["position"] for r in descending} == {
+        r["instrument_id"]: r["position"] for r in rows
+    }
     assert obj(original["snapshot"])["comparison_currency"] is None
     assert obj(original["snapshot"])["partial_universe"] is True
     filtered = await show(database, snapshot, base_asset="ETH", instrument_type="future")

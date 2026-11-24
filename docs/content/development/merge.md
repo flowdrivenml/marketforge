@@ -829,5 +829,5 @@ The most useful integration test follows one event through the complete lifecycl
 ## Related development paths
 
 - [System architecture](architecture.md) and [operation lifecycles](operations.md) place Merge Engine in the historical workflow.
-- [Prepared contract](../reference/prepared-merge.md) and [user workflow](../workflows/merge.md) describe the public handoff.
+- [Prepared contract](../reference/data-formats/prepared-merge.md) and [user workflow](../workflows/merge.md) describe the public handoff.
 - [Test selection](testing.md) and [diagnostics](debugging.md) cover verification and inspection.

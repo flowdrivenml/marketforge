@@ -19,14 +19,21 @@ Validation requires the previously registered catalogue identity, one applicable
 
 Repeating registration can reuse an existing managed copy after checksum verification. Provider, product, source root, and source key describe acquisition provenance. Supply the real execution venue separately. Native publisher and instrument identifiers can be recorded as provenance when available and remain scoped to the source.
 
+In the Forge TUI, choose **Workflows → Import** for a raw-only recipe or
+**Workflows → Registration** for a verified declaration. Enter the file root
+and explicit relative paths or bounded patterns. Keep source provider and
+product information separate from the trading venue and instrument.
+Use the registered instrument and profile selectors for a registration
+input, then review the declaration before planning or running it.
+
 ## Raw-only preservation
 
-Use `mf acquisition import` to preserve local bytes whose interpretation is still incomplete. For example, create a draft with `mf acquisition import new recorder --from ./recordings/trades.csv`, edit its explicit venue and source identity, and run `mf acquisition import run recorder --testing`. The [legacy import configuration](../../configuration/acquisition.md#external-import-configuration) describes its fields. Raw-only import can retain declarations and reuse managed copies. Use `acquisition register` to bind a source to a verified catalogue and profile interpretation.
+Use `mf acquisition import` to preserve local bytes whose interpretation is still incomplete. For example, create a draft with `mf acquisition import new recorder --from ./recordings/trades.csv`, edit its explicit venue and source identity, and run `mf acquisition import run recorder --testing`. The [legacy import configuration](../../reference/configuration/acquisition.md#external-import-configuration) describes its fields. Raw-only import can retain declarations and reuse managed copies. Use `acquisition register` to bind a source to a verified catalogue and profile interpretation.
 
 
 ## Creating Historical Normalization Profiles
 
-Use `mf normalize profiles list` to find an installed interpretation for the raw layout. To author a missing interpretation, run `mf normalize profiles guide trades` or `mf normalize profiles guide depth`. Follow the [profile workflow](../catalogue/profiles.md) and use the [schema reference](../../reference/profiles.md) when choosing field types and transformations. After registration, [prepare normalization](../normalize.md).
+Use `mf normalize profiles list` to find an installed interpretation for the raw layout. To author a missing interpretation, run `mf normalize profiles guide trades` or `mf normalize profiles guide depth`. Follow the [profile workflow](../normalization/author-profile.md) and use the [schema reference](../normalization/author-profile.md) when choosing field types and transformations. After registration, [prepare normalization](../normalization/index.md).
 
 For types, defaults and native identity fields, see the [registration recipe reference](../../reference/registration.md).
 

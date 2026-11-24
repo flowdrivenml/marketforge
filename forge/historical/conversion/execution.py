@@ -18,14 +18,24 @@ from forge.datasets.parquet import footer
 from forge.historical.conversion.contract import Conversion, Job
 from forge.historical.conversion.evidence import (
     check_source_environment,
-    registered_files,
     resolve_binding,
 )
 from forge.historical.conversion.planning import output_available
-from forge.historical.conversion.recipes import PublicationSource
-from forge.historical.conversion.service import file_pin, retained_collection, validate_prepared_job
+from forge.historical.conversion.service import (
+    collection_publication_source,
+    file_pin,
+    retained_collection,
+    validate_prepared_job,
+)
 from forge.historical.engine.managed import checksum, inventory, resolve
-from forge.historical.engine.process import Lifecycle, check, joined_io, supervise
+from forge.historical.engine.process import (
+    EngineOutcomeUnknown,
+    EngineRunner,
+    Lifecycle,
+    check,
+    joined_io,
+    supervise,
+)
 from forge.historical.engine.work import READY_MESSAGE, WorkIndex, convert_key, output_present
 from forge.historical.normalization.execution import run_process, sync_submission
 from forge.historical.normalization.service import write_job
@@ -202,13 +212,14 @@ async def execute(
     *,
     tui: bool = False,
     embedded: bool = False,
+    executable: Path | None = None,
+    engine_runner: EngineRunner | None = None,
     lifecycle: Lifecycle = lambda _: None,
 ) -> dict[str, Any]:
     collection, document, report = await joined_io(lambda: retained_collection(source))
     pins = document["pins"]
-    direct = None
-    if "publication_source" in pins:
-        direct = PublicationSource.model_validate(pins["publication_source"])
+    direct = collection_publication_source(document)
+    if direct is not None:
         check_source_environment(direct)
     require_registry(document, await selected_registry_id(paths.root))
     result = {
@@ -221,6 +232,8 @@ async def execute(
         "compatibility": "not_validated",
         "blockers": document["compatibility_blockers"],
     }
+    if direct is not None:
+        result["publication_source"] = direct.model_dump(mode="json")
     entries: list[dict[str, Any]] = document["jobs"]
     if source != collection:
         entries = [entry for entry in entries if entry["path"] == str(source)]
@@ -255,7 +268,6 @@ async def execute(
     input_ids = {pinned["registry_publication_id"] for _, _, pinned in prepared}
     if external:
         input_ids.add(external["registry_publication_id"])
-    await require_live_prepared_inputs(paths, document["registry_id"], input_ids)
     if direct is not None:
         with pinned_registry(document["registry_id"]):
             async with (
@@ -265,23 +277,24 @@ async def execute(
                 await connection.execute(
                     "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
                 )
-                publication = await resolve_binding(connection, direct)
-                await registered_files(connection, publication)
+                publication = await resolve_binding(connection, direct, check_files=True)
         if len(prepared) != 1 or any(
             pinned["registry_publication_id"] != publication.id
+            or job.input_merge != str(publication.root)
             or job.source.merge_job_id != int(publication.engine_id)
             or job.source.manifest_sha256 != direct.manifest_sha256
             or job.source.publication_checksums_sha256 != direct.publication_checksums_sha256
             for job, _, pinned in prepared
         ):
             raise MarketForgeError("Prepared job disagrees with the bound registry publication.")
+    await require_live_prepared_inputs(paths, document["registry_id"], input_ids)
 
-    if tui and not all(os.isatty(fd) for fd in (0, 1, 2)):
+    if tui and engine_runner is None and not all(os.isatty(fd) for fd in (0, 1, 2)):
         raise MarketForgeError("--tui requires an interactive terminal.")
-    binary = resolve(paths, "convert")
+    binary = executable or resolve(paths, "convert")
     if pins["executable"] != {"path": str(binary), "sha256": checksum(binary)}:
         raise MarketForgeError("Managed converter changed since preparation. Prepare again.")
-    if tui:
+    if tui and executable is None:
         installation = next(
             row for row in inventory(paths)["targets"] if row["target"] == "convert"
         )
@@ -289,6 +302,7 @@ async def execute(
             raise MarketForgeError(
                 "This managed converter was built without monitor-tui. Run mf engine build convert."
             )
+    if tui:
         help_result = await joined_io(
             lambda: subprocess.run(
                 [str(binary), "--help"], capture_output=True, text=True, timeout=10
@@ -417,13 +431,15 @@ async def execute(
             "registration": "not_available",
             "result_path": str(directory / "execution-result.json"),
         }
+        if direct is not None:
+            receipt["publication_source"] = direct.model_dump(mode="json")
         write_job(directory / "execution-intent.json", receipt)
         try:
             output_available(Path(job.output.dataset_path))
             if checksum(submission) != receipt["submission"]["sha256"]:
                 raise MarketForgeError("Local submitted job changed before execution.")
             lifecycle("validate")
-            if embedded:
+            if embedded or engine_runner is not None:
                 validation = await check(
                     [str(executable), "--job", str(submission), "--validate"],
                     paths.root,
@@ -440,11 +456,12 @@ async def execute(
             receipt["compatibility"] = "validated"
             receipt.update(status="failed", execution="running")
             lifecycle("execute")
-            code, interrupted = (
-                await supervise(argv, paths.root, directory)
-                if embedded
-                else run_process(argv, paths.root, directory, tui=tui)
-            )
+            if engine_runner is not None:
+                code, interrupted = await engine_runner(argv, paths.root, directory, tui)
+            elif embedded:
+                code, interrupted = await supervise(argv, paths.root, directory)
+            else:
+                code, interrupted = run_process(argv, paths.root, directory, tui=tui)
             receipt.update(
                 exit_code=code,
                 execution="interrupted" if interrupted else "failed" if code else "complete",
@@ -454,11 +471,13 @@ async def execute(
             elif not code:
                 lifecycle("verify")
                 publication = await joined_io(verify_output, job, pinned)
-                receipt.update(status="complete", publication=publication)
+                receipt.update(status="complete", verification="verified", publication=publication)
             else:
                 receipt["error"] = (
                     "Converter returned a nonzero exit code. Inspect retained engine logs."
                 )
+        except EngineOutcomeUnknown:
+            raise
         except (KeyboardInterrupt, asyncio.CancelledError):
             receipt.update(status="interrupted", execution="interrupted")
         except (
@@ -473,12 +492,13 @@ async def execute(
         write_job(directory / "execution-result.json", receipt)
         if receipt["status"] == "complete":
             try:
-                await index.complete(key, receipt)
+                await index.complete(key, {**receipt, "indexing": "complete"})
             except (MarketForgeError, OSError) as error:
                 receipt.update(status="failed", indexing="failed", error=str(error))
-                write_job(directory / "execution-result.json", receipt)
+                write_job(directory / "execution-result.json", receipt, replace_existing=True)
             else:
                 receipt["indexing"] = "complete"
+                write_job(directory / "execution-result.json", receipt, replace_existing=True)
         elif not await joined_io(output_present, Path(job.output.dataset_path)):
             await index.release([key])
         completed.append(receipt)

@@ -8,10 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from forge.cli.environment import add_database_options
 from forge.cli.market_filters import configure_identity_filters
+from forge.cli.sorting import add_sorting
 from forge.markets.capabilities import EXCHANGES, MARKETS
 from forge.markets.models import Exchange, Market, MarketDataError
 from forge.markets.repository import browse
 from forge.markets.service import collect
+from forge.markets.sorting import MARKETS as MARKET_SORT
 from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.terminal.markets import MarketCollectionDisplay, render_market_result
@@ -31,7 +33,8 @@ class Options(BaseModel):
     match: str | None = None
     silent: bool = False
     limit: int = Field(default=50, ge=1, le=10000)
-    sort: str = "identity"
+    sort: str | None = None
+    order: str | None = None
 
 
 def emit(context: ApplicationContext, value: object, as_json: bool) -> None:
@@ -92,14 +95,16 @@ def configure(parser: argparse.ArgumentParser) -> None:
             if action == "list"
             else argparse.SUPPRESS,
         )
-        child.add_argument(
-            "--sort",
-            choices=("identity", "turnover", "freshness"),
-            default="identity",
-            help="Turnover sorts within native denomination groups, never across currencies."
-            if action == "list"
-            else argparse.SUPPRESS,
-        )
+        if action == "list":
+            add_sorting(
+                child,
+                MARKET_SORT,
+                notes="time means retained source observation time; freshness uses the recorded metric window end. Turnover sorts within native denominations.",
+            )
+        else:
+            child.add_argument(
+                "--sort", choices=("identity", "turnover", "freshness"), help=argparse.SUPPRESS
+            )
 
     from forge.cli.commands.rankings import configure as configure_rankings
 
@@ -110,6 +115,11 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     options = Options.model_validate(vars(arguments))
+    ordering = (
+        MARKET_SORT.resolve(options.sort, options.order)
+        if options.market_action == "list"
+        else None
+    )
     dsn = database_dsn(context.paths.root)
 
     display = MarketCollectionDisplay(
@@ -135,6 +145,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
                 symbol=options.instrument,
                 limit=2 if options.market_action == "show" else options.limit + 1,
                 sort=options.sort,
+                order=options.order,
                 reference=options.reference,
                 base_asset=options.base_asset,
                 quote_asset=options.quote_asset,
@@ -173,6 +184,14 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             filters=filters,
             exchange_filtered=len(options.exchanges or []) == 1,
             market_filtered=len(options.markets or []) == 1,
+            ordering=ordering.description if ordering else "",
+            time_field={
+                "measured": "measured_at",
+                "observed": "source_observed_at",
+                "fetched": "fetched_at",
+            }.get(ordering.field)
+            if ordering
+            else None,
         )
     return (
         130 if value.get("status") == "cancelled" else 1 if value.get("status") == "partial" else 0

@@ -24,7 +24,7 @@ from forge.markets.ranking.workflow import refresh_and_publish
 from forge.markets.repository import browse as market_browse
 from forge.markets.service import collect
 from forge.orchestration.registry import list_index
-from forge.orchestration.runs import inspect_run
+from forge.orchestration.runs import inspect_run_evidence
 from forge.shared.config.library import resolve_config_file
 from forge.shared.database import backup, migrations, status
 from forge.shared.database.connection import database_connection, database_dsn, database_environment
@@ -35,6 +35,7 @@ from forge.storage import browsing, cleanup, cleanup_plans
 from forge.storage.models import StorageFilters
 from forge.storage.service import maintain
 from forge.tui.actions import Values
+from forge.tui.run_views import project as run_view
 from forge.tui.workflows import Edit, Progress, file, value, workflow
 
 
@@ -296,13 +297,16 @@ async def ranks(
 async def catalogue(model: str, action: str, v: Values, context: ApplicationContext) -> object:
     declaration = (
         await disk(catalog_models.load, model, file(v, "source", context))
-        if action in {"validate", "add"}
+        if action in {"validate", "preview", "add"}
         else None
     )
     if action == "validate":
         assert declaration is not None
         return {"valid": True, "declaration": declaration.model_dump(mode="json")}
     async with database_connection(database_dsn(context.paths.root)) as connection:
+        if action == "preview":
+            assert declaration is not None
+            return await catalog.preview_add(connection, declaration)
         return (
             await catalog.add(connection, declaration)
             if declaration
@@ -370,7 +374,10 @@ async def system(key: str, v: Values, context: ApplicationContext, progress: Pro
         limit = int(v.get("limit", 50))
         if action == "list":
             return await list_index(paths, limit=limit)
-        return await inspect_run(paths, reference, action=action, limit=limit)
+        evidence = await inspect_run_evidence(
+            paths, reference, action=action, limit=limit, human=True
+        )
+        return run_view(evidence, context, action)
     if key == "doctor":
         report = await disk(
             doctor,

@@ -79,6 +79,12 @@ class WorkspaceOwnership:
             self.release()
             raise
 
+    def descriptors(self) -> tuple[int, ...]:
+        """Held open-file descriptions for a cooperating local worker."""
+        if len(self._handles) != len(self._lock_paths):
+            raise OwnershipError("Workspace ownership must be acquired before delegation.")
+        return tuple(handle.fileno() for handle in self._handles)
+
     def release(self) -> None:
         """Release ownership by closing its file handles."""
         while self._handles:

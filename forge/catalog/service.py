@@ -9,6 +9,7 @@ from psycopg.rows import TupleRow, dict_row
 from psycopg.types.json import Jsonb
 
 from forge.catalog.models import Exchange, Instrument, Specification, reference
+from forge.catalog.sorting import CATALOG, SPEC_SHOW
 from forge.historical.imports.models import HistoricalSpecs, ImportIdentity
 from forge.historical.metadata.policy import NAMESPACE, economic_signature, fingerprint
 from forge.shared.errors import MarketForgeError
@@ -17,14 +18,17 @@ Connection = AsyncConnection[TupleRow]
 IDENTITIES: LiteralString = """
  SELECT i.id, e.code AS exchange, i.instrument_type, i.market_category, i.symbol,
         i.base_asset, i.quote_asset, i.settlement_asset, i.status,
-        a.instrument_id AS historical_instrument_id, a.namespace, a.definition AS authority
+        a.instrument_id AS historical_instrument_id, a.namespace, a.definition AS authority,
+        EXISTS (SELECT 1 FROM catalog.instrument_specs cs WHERE cs.instrument_id=i.id)
+        OR EXISTS (SELECT 1 FROM historical.specification_evidence se
+            WHERE (se.namespace,se.instrument_id)=(a.namespace,a.instrument_id)) AS has_specifications
  FROM catalog.instruments i JOIN catalog.exchanges e ON e.id=i.exchange_id
  LEFT JOIN historical.instrument_authority a ON a.namespace=%s AND
  a.identity_key=e.code||'/'||i.instrument_type||'/'||i.market_category||'/'||i.symbol
 """
 SPECS: LiteralString = """
- SELECT id, fingerprint, evidence_kind, source_observed_at, definition
- FROM historical.specification_evidence WHERE namespace=%s AND instrument_id=%s ORDER BY id
+ SELECT s.id, s.fingerprint, s.evidence_kind, s.source_observed_at, s.definition
+ FROM historical.specification_evidence s WHERE s.namespace=%s AND s.instrument_id=%s ORDER BY
 """
 COLUMNS = (
     "quantity_type",
@@ -125,6 +129,44 @@ async def add(c: Connection, declaration: Exchange | Instrument | Specification)
         return await add_specification(c, declaration)
 
 
+async def preview_add(
+    c: Connection, declaration: Exchange | Instrument | Specification
+) -> dict[str, Any]:
+    """Check a declaration against the selected registry without changing it."""
+    if isinstance(declaration, Specification):
+        return await add_specification(c, declaration, preview=True)
+    if isinstance(declaration, Exchange):
+        existing = await rows(
+            c, "SELECT id,name FROM catalog.exchanges WHERE code=%s", (declaration.code,)
+        )
+        if existing and existing[0]["name"] != declaration.name:
+            raise MarketForgeError("Exchange declaration conflicts with the existing name.")
+    else:
+        await exchange(c, declaration.exchange)
+        existing = await rows(
+            c,
+            IDENTITIES
+            + " WHERE (e.code,i.instrument_type,i.market_category,i.symbol)=(%s,%s,%s,%s)",
+            (
+                NAMESPACE,
+                declaration.exchange,
+                declaration.instrument_type,
+                declaration.market_category,
+                declaration.symbol,
+            ),
+        )
+        if existing:
+            entry = await instrument(c, declaration)
+            if any(entry[key] != value for key, value in declaration.model_dump().items()):
+                raise MarketForgeError(
+                    "Instrument declaration conflicts with existing catalogue metadata."
+                )
+    return {
+        "operation": "Reuse identical registration" if existing else "Register new identity",
+        "existing_catalogue_id": existing[0]["id"] if existing else None,
+    }
+
+
 def bounds(definition: dict[str, Any]) -> tuple[datetime, datetime] | None:
     start, end = definition.get("valid_from"), definition.get("valid_to")
     return (datetime.fromisoformat(start), datetime.fromisoformat(end)) if start and end else None
@@ -137,9 +179,11 @@ def signature(definition: dict[str, Any]) -> tuple[str, Any]:
     )
 
 
-async def add_specification(c: Connection, declaration: Specification) -> dict[str, Any]:
+async def add_specification(
+    c: Connection, declaration: Specification, *, preview: bool = False
+) -> dict[str, Any]:
     # Serialize specification checks and writes for this catalogue instrument.
-    entry = await instrument(c, reference(declaration.instrument), lock=True)
+    entry = await instrument(c, reference(declaration.instrument), lock=not preview)
     values = declaration.model_dump(exclude={"instrument"})
     assets = ("base_asset", "quote_asset", "settlement_asset")
     for key in assets:
@@ -154,9 +198,13 @@ async def add_specification(c: Connection, declaration: Specification) -> dict[s
     definition["historically_verified"] = False
     definition["record_kind"] = "historical_declaration" if revision else "current_observation"
     key = fingerprint(definition)
-    for prior in await rows(c, SPECS, identity):
+    for prior in await rows(c, SPECS + "s.id", identity):
         if prior["fingerprint"] == key:
-            return prior
+            return (
+                {**prior, "operation": "Reuse identical specification evidence"}
+                if preview
+                else prior
+            )
         old = prior["definition"]
         if (
             revision is None
@@ -182,7 +230,8 @@ async def add_specification(c: Connection, declaration: Specification) -> dict[s
     if revision is None:
         previous = await rows(
             c,
-            "SELECT * FROM catalog.instrument_specs WHERE instrument_id=%s FOR UPDATE",
+            "SELECT * FROM catalog.instrument_specs WHERE instrument_id=%s"
+            + ("" if preview else " FOR UPDATE"),
             (entry["id"],),
         )
         observation = declaration.fetched_at
@@ -201,6 +250,12 @@ async def add_specification(c: Connection, declaration: Specification) -> dict[s
             raise MarketForgeError(
                 "Current specification conflicts with the existing observation at that timestamp."
             )
+        if preview:
+            return {
+                "operation": "Record observation; refresh current specification only if newer",
+                "current_observed_at": previous[0]["fetched_at"] if previous else None,
+                "historical_instrument_id": entry["historical_instrument_id"],
+            }
         await c.execute(
             """INSERT INTO catalog.instrument_specs(instrument_id,quantity_type,contract_value,
             contract_value_asset,tick_size,qty_step,min_qty,max_qty,min_notional,fetched_at)
@@ -212,6 +267,11 @@ async def add_specification(c: Connection, declaration: Specification) -> dict[s
             WHERE catalog.instrument_specs.fetched_at<excluded.fetched_at""",
             (entry["id"], *(values[key] for key in COLUMNS), observation),
         )
+    if preview:
+        return {
+            "operation": "Append historical declaration",
+            "historical_instrument_id": entry["historical_instrument_id"],
+        }
     return (
         await rows(
             c,
@@ -232,20 +292,21 @@ async def browse(
     offset: int = 0,
     search: str = "",
     filters: dict[str, str] | None = None,
-    sort: str = "",
-    descending: bool = False,
+    sort: str | None = None,
+    descending: bool | None = None,
+    order: str | None = None,
 ) -> dict[str, Any]:
     if limit is not None and (not 1 <= limit <= 1000 or offset < 0):
         raise MarketForgeError("Invalid catalogue page.")
     pattern = f"%{search}%"
-    direction: LiteralString = " DESC" if descending else " ASC"
+    spec = SPEC_SHOW if kind == "specs" and key is not None else CATALOG[kind]
+    ordering = spec.resolve(
+        sort,
+        order
+        if order is not None
+        else (None if descending is None else "desc" if descending else "asc"),
+    )
     options = filters or {}
-    orders: dict[str, LiteralString] = {
-        "Declaration": "i.symbol",
-        "Exchange": "e.code",
-        "Type": "i.instrument_type",
-        "State": "i.status",
-    }
 
     if kind == "exchange":
         return (
@@ -254,7 +315,9 @@ async def browse(
             else {
                 "exchanges": await rows(
                     c,
-                    "SELECT id,code,name FROM catalog.exchanges WHERE (code || name) ILIKE %s ORDER BY code LIMIT %s OFFSET %s",
+                    "SELECT id,code,name FROM catalog.exchanges WHERE concat_ws(' ',code,name) ILIKE %s ORDER BY "
+                    + ordering.sql()
+                    + " LIMIT %s OFFSET %s",
                     (pattern, limit, offset),
                 )
             }
@@ -281,11 +344,13 @@ async def browse(
                 ),
                 None,
             ),
-            "evidence": await rows(c, SPECS, (NAMESPACE, entry["historical_instrument_id"])),
+            "evidence": await rows(
+                c, SPECS + ordering.sql(), (NAMESPACE, entry["historical_instrument_id"])
+            ),
         }
     if kind == "instrument":
-        order = orders.get(sort)
-        where: LiteralString = """ WHERE (e.code || i.symbol) ILIKE %s
+        where: LiteralString = """ WHERE concat_ws(' ',e.code,i.symbol,i.instrument_type,i.market_category,
+                         e.code||'.'||i.instrument_type||'.'||i.market_category||'.'||i.symbol) ILIKE %s
           AND (%s::text IS NULL OR e.code=%s) AND (%s::text IS NULL OR i.instrument_type=%s)
           AND (%s::text IS NULL OR i.market_category=%s) AND (%s::text IS NULL OR i.symbol=%s)
           AND (%s::text IS NULL OR lower(i.base_asset)=lower(%s))
@@ -306,12 +371,9 @@ async def browse(
             )
             for _ in range(2)
         )
-        ordering: LiteralString = (
-            order + direction + " NULLS LAST," if order else ""
-        ) + "e.code,i.instrument_type,i.market_category,i.symbol,i.id"
         entries = await rows(
             c,
-            IDENTITIES + where + ordering + " LIMIT %s OFFSET %s",
+            IDENTITIES + where + ordering.sql() + " LIMIT %s OFFSET %s",
             (NAMESPACE, pattern, *filters_values, limit, offset),
         )
         for entry in entries:
@@ -323,16 +385,32 @@ async def browse(
             """SELECT e.code AS exchange,i.instrument_type,i.market_category,i.symbol,s.*
             FROM catalog.instrument_specs s JOIN catalog.instruments i ON i.id=s.instrument_id
             JOIN catalog.exchanges e ON e.id=i.exchange_id
-            WHERE (e.code || i.symbol) ILIKE %s
-            ORDER BY e.code,i.instrument_type,i.market_category,i.symbol LIMIT %s OFFSET %s""",
+            WHERE concat_ws(' ',e.code,i.symbol,i.instrument_type,i.market_category,s.fetched_at,
+                concat_ws('.',e.code,i.instrument_type,i.market_category,i.symbol)) ILIKE %s
+            ORDER BY e.code,i.instrument_type,i.market_category,i.symbol,i.id LIMIT %s OFFSET %s""",
             (pattern, limit, offset),
         ),
         "specifications": await rows(
             c,
-            """SELECT a.identity_key,s.id,s.fingerprint,s.evidence_kind,s.definition
+            """SELECT a.identity_key,s.id,s.fingerprint,s.evidence_kind,s.source_observed_at,s.definition
         FROM historical.specification_evidence s JOIN historical.instrument_authority a
         ON (a.namespace,a.instrument_id)=(s.namespace,s.instrument_id)
-        WHERE s.namespace=%s AND a.identity_key ILIKE %s ORDER BY a.identity_key,s.id LIMIT %s OFFSET %s""",
+        WHERE s.namespace=%s AND concat_ws(' ',a.identity_key,
+            regexp_replace(a.identity_key,'^([^/]+)/([^/]+)/([^/]+)/','\\1.\\2.\\3.'),
+            s.id,s.fingerprint,s.source_observed_at,s.definition->>'valid_from',s.definition->>'valid_to') ILIKE %s ORDER BY """
+            + ordering.sql()
+            + " LIMIT %s OFFSET %s",
             (NAMESPACE, pattern, limit, offset),
         ),
     }
+
+
+async def currency_codes(connection: Connection) -> tuple[str, ...]:
+    """List currency codes declared by the instrument catalogue."""
+    cursor = await connection.execute(
+        """SELECT DISTINCT asset
+           FROM catalog.instruments i
+           CROSS JOIN LATERAL (VALUES (i.base_asset), (i.quote_asset), (i.settlement_asset)) a(asset)
+           WHERE asset ~ '^[A-Z0-9]+$' ORDER BY asset LIMIT 2000"""
+    )
+    return tuple(str(row[0]) for row in await cursor.fetchall())

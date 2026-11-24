@@ -2,6 +2,9 @@
 
 from argparse import Namespace
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
+from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -9,11 +12,13 @@ from forge.cli.commands.normalization_runtime import inspection
 from forge.historical.archives.config import load_acquisition
 from forge.historical.archives.operation import run_acquisition
 from forge.historical.archives.planning import plan as acquisition_plan
+from forge.historical.archives.sources.capabilities import source_capabilities
 from forge.historical.archives.storage.files import disk
 from forge.historical.archives.templates import write_acquisition_template
-from forge.historical.authoring import create_pipeline
+from forge.historical.authoring import create_pipeline, publish_new
 from forge.historical.conversion import recipes as conversion_recipes
 from forge.historical.conversion import service as conversion
+from forge.historical.conversion.evidence import inspect_publication_source
 from forge.historical.conversion.execution import execute as execute_conversion
 from forge.historical.drafts import create_import, create_registration, write_new
 from forge.historical.engine.runtime_config import RuntimeConfiguration
@@ -21,20 +26,22 @@ from forge.historical.imports import models as imports
 from forge.historical.imports.formats import sample
 from forge.historical.imports.service import run_import
 from forge.historical.merge import service as merge
-from forge.historical.merge.config import DerivedRecipe, Selection, normalization_source
+from forge.historical.merge.config import DerivedRecipe, normalization_source
 from forge.historical.normalization import execution as normalize
 from forge.historical.normalization.batch import prepare_batch
+from forge.historical.normalization.config import ExactRecipe
 from forge.historical.normalization.recipes import create_recipe, load_configuration, recipe_path
 from forge.historical.pipelines import service as pipeline
 from forge.historical.pipelines.config import load_recipe_file
 from forge.historical.pipelines.planning import plan as pipeline_plan
+from forge.historical.pipelines.terminal import Ghostty, StageWindows, WindowUnavailable
 from forge.historical.profiles import service as profiles
 from forge.historical.registration import models as registration
 from forge.historical.registration import service as raw_registration
 from forge.orchestration.registry import begin_operation, checkpoint, complete_call
 from forge.shared.config.library import list_config_names, resolve_config_file, run_reference
 from forge.shared.config.toml import dumps
-from forge.shared.database.connection import database_connection, database_dsn
+from forge.shared.database.connection import database_connection, database_dsn, selected_registry_id
 from forge.shared.errors import MarketForgeError
 from forge.shared.identity import RunOperation
 from forge.shared.presentation.conversion import inspect_recipe
@@ -43,6 +50,9 @@ from forge.tui.actions import Values
 
 Edit = Callable[[Path], Awaitable[None]]
 Progress = Callable[[object], None]
+PIPELINE_DESCRIPTORS: ContextVar[tuple[int, ...]] = ContextVar(
+    "forge_tui_pipeline_descriptors", default=()
+)
 
 
 def value(values: Values, key: str) -> str:
@@ -66,6 +76,7 @@ async def workflow(
         execution = await begin_operation(context.paths, RunOperation(family), action, reference)
 
         async def call() -> dict[str, Any]:
+            progress(f"{action} · managed execution")
             result = await workflow_operation(key, v, context, progress, edit)
             from typing import cast
 
@@ -83,12 +94,31 @@ async def workflow_operation(
     family, *parts = key.split()
     action = parts[-1]
     dry = bool(v.get("dry_run"))
+    engine_tui = bool(v.get("engine_tui"))
+    if action == "list" and family in {"pipeline", "normalize", "merge"}:
+        directory = {
+            "pipeline": paths.pipeline_config_dir,
+            "normalize": paths.normalization_recipe_dir,
+            "merge": paths.workflow_dir("merge"),
+        }[family]
+        return {"configurations": await disk(list_config_names, directory)}
     if family == "pipeline":
         if action == "new":
             path = await disk(create_pipeline, paths.pipeline_config_dir, reference)
             return {"status": "draft_created", "path": str(path)}
         if action == "status":
             return await disk(pipeline.status, paths, reference)
+        windows = None
+        if v.get("stage_terminal") == "window":
+            descriptors = PIPELINE_DESCRIPTORS.get()
+            if not descriptors:
+                raise MarketForgeError("Pipeline windows require owned workspace execution.")
+            try:
+                launcher = await disk(Ghostty.detect)
+            except WindowUnavailable as error:
+                progress(f"Stage windows unavailable. Continuing inline. {error}")
+            else:
+                windows = StageWindows(launcher, descriptors, True, progress)
         if action == "resume":
             run = await disk(pipeline.resume, context, reference)
         else:
@@ -100,12 +130,18 @@ async def workflow_operation(
             if action == "plan":
                 return await pipeline_plan(paths, recipe, source)
             run = pipeline.new(context, reference, submitted, source=source)
+        run.windows = windows
         progress(run.snapshot)
         return await run.run(stop=value(v, "stop_after") == "normalize.prepare")
     if family == "acquisition" and len(parts) == 1:
         directory = paths.acquisition_config_dir
         if action == "list":
             return {"configurations": await disk(list_config_names, directory)}
+        if action == "sources":
+            return {
+                "Availability": "Use acquisition Map for archive discovery.",
+                "sources": [asdict(entry) for entry in await disk(source_capabilities)],
+            }
         source = resolve_config_file(directory, reference)
         if action == "new":
             await disk(write_acquisition_template, source)
@@ -173,6 +209,9 @@ async def workflow_operation(
                     lambda: profiles.discover(paths, **{k: str(val) for k, val in v.items() if val})
                 )
             }
+        if action == "new":
+            draft = await disk(profiles.new_draft, paths, reference)
+            return {"status": "draft_created", "path": str(draft), "profile_id": reference}
         if action == "sample":
             header = value(v, "header")
             return await disk(
@@ -208,10 +247,19 @@ async def workflow_operation(
             source, submitted = await disk(run_reference, reference, source)
             if submitted:
                 return await normalize.execute_async(
-                    paths, source, allow_partial=bool(v.get("allow_partial")), lifecycle=progress
+                    paths,
+                    source,
+                    tui=engine_tui,
+                    allow_partial=bool(v.get("allow_partial")),
+                    lifecycle=progress,
                 )
         recipe = await disk(load_configuration, source)
-        if action in {"new", "validate"}:
+        if action in {"new", "validate", "show"}:
+            if isinstance(recipe, ExactRecipe) and action == "validate":
+                review = await prepare_batch(paths, recipe, dry_run=True, recipe_source=source)
+                if review["status"] == "prepared":
+                    review["status"] = "valid"
+                return review
             return {
                 "status": "valid",
                 "path": str(source),
@@ -231,6 +279,7 @@ async def workflow_operation(
             return await normalize.execute_async(
                 paths,
                 Path(str(result["batch_path"])),
+                tui=engine_tui,
                 allow_partial=bool(v.get("allow_partial")),
                 recipe=reference,
                 lifecycle=progress,
@@ -241,26 +290,55 @@ async def workflow_operation(
             return await merge.register(paths, file(v, "reference", context), lifecycle=progress)
         directory = paths.workflow_dir("merge")
         if action == "new":
-            return await disk(new_merge, context, reference, value(v, "from_normalize"))
+            if v.get("publication_ids") and not v.get("from_normalize"):
+                publication_ids = [int(item) for item in value(v, "publication_ids").split(",")]
+                recipe, evidence = await merge.publication_recipe(
+                    paths,
+                    publication_ids,
+                    start_ns=int(bound) if (bound := v.get("start_ns")) not in (None, "") else None,
+                    end_ns=int(bound) if (bound := v.get("end_ns")) not in (None, "") else None,
+                    timeline_ordering=value(v, "timeline_ordering") or None,
+                    stream_ranks=stream_ranks(v),
+                )
+                path = resolve_config_file(directory, reference)
+                recipe_data = recipe.model_dump(mode="json", exclude_none=True)
+                if v.get("preview_only"):
+                    return {**evidence, "recipe": recipe_data, "path": str(path)}
+                if v.get("selection_sha256") != recipe.selection_sha256:
+                    raise MarketForgeError(
+                        "Reviewed publication selection changed. Review it again."
+                    )
+                await disk(publish_new, path, dumps(recipe_data))
+                return {**evidence, "status": "recipe_saved", "path": str(path)}
+            return await disk(new_merge, context, reference, value(v, "from_normalize"), v)
         source, submitted = await disk(resolve_submission, directory, reference)
         if submitted:
             if action != "run":
                 raise MarketForgeError("Choose a merge recipe TOML for this action.")
-            return await merge.execute_async(paths, source, lifecycle=progress)
+            return await merge.execute_async(paths, source, tui=engine_tui, lifecycle=progress)
         recipe = await disk(merge.load_recipe, source)
+        if action == "show":
+            return {"path": str(source), "recipe": recipe.model_dump(mode="json")}
         if action == "validate":
             await disk(merge.validate_recipe, paths, recipe)
+            if isinstance(recipe, merge.Recipe) and recipe.registry_id is not None:
+                registry = await selected_registry_id(paths.root)
+                await merge.reviewed_inputs(paths, recipe, recipe.dataset_ids, registry)
             return {
                 "status": "valid",
                 "path": str(source),
                 "recipe": recipe.model_dump(mode="json"),
             }
+        if dry:
+            return await disk(merge.prepare, paths, recipe, reference, dry_run=True)
         progress("prepare")
         result = await merge.prepare_async(paths, recipe, reference, lifecycle=progress)
         if action == "run" and result["status"] == "prepared":
             checkpoint(result)
         return (
-            await merge.execute_async(paths, Path(result["job_path"]), lifecycle=progress)
+            await merge.execute_async(
+                paths, Path(result["job_path"]), tui=engine_tui, lifecycle=progress
+            )
             if action == "run" and result["status"] == "prepared"
             else result
         )
@@ -285,6 +363,26 @@ async def workflow_operation(
             }
         if action == "new":
             route = value(v, "route")
+            if route == "publication":
+                from pydantic import TypeAdapter
+
+                from forge.historical.merge.config import DatabaseID
+
+                reference_id = value(v, "source")
+                if not reference_id.isascii() or not reference_id.isdecimal():
+                    raise MarketForgeError(
+                        "Use the decimal registry publication ID for the merged source."
+                    )
+                source_id = TypeAdapter(DatabaseID).validate_python(int(reference_id))
+                binding = await inspect_publication_source(paths, source_id)
+                return await disk(
+                    conversion_recipes.create_bound,
+                    paths,
+                    reference,
+                    binding,
+                    binding.interval,
+                    value(v, "quote"),
+                )
             if route not in {"merge", "normalize", "acquisition"}:
                 raise MarketForgeError("Choose a conversion source route.")
             from typing import cast
@@ -306,14 +404,21 @@ async def workflow_operation(
             return await disk(lambda: inspect_recipe(paths, source).document())
         if submitted:
             if action == "run":
-                return await execute_conversion(paths, source, embedded=True, lifecycle=progress)
+                return await execute_conversion(
+                    paths, source, tui=engine_tui, embedded=not engine_tui, lifecycle=progress
+                )
             if action == "validate":
                 return await disk(conversion.validate_reference, paths, source)
             raise MarketForgeError("Choose a conversion recipe TOML for preparation.")
         if action == "validate":
-            recipe, _, _ = await disk(
+            recipe, upstream, _ = await disk(
                 lambda: conversion_recipes.load_recipe(paths, source, retain=False)
             )
+            if isinstance(upstream, conversion_recipes.PublicationSource):
+                review = await conversion.prepare(paths, source, dry_run=True, embedded=True)
+                if review["status"] == "generated":
+                    review["status"] = "valid"
+                return review
             return {
                 "status": "valid",
                 "path": str(source),
@@ -327,7 +432,11 @@ async def workflow_operation(
             checkpoint(result)
         return (
             await execute_conversion(
-                paths, Path(result["job_path"]), embedded=True, lifecycle=progress
+                paths,
+                Path(result["job_path"]),
+                tui=engine_tui,
+                embedded=not engine_tui,
+                lifecycle=progress,
             )
             if action == "run" and result["status"] == "generated"
             else result
@@ -361,23 +470,46 @@ def inspect_import(config: imports.ImportConfig, action: str) -> object:
     }
 
 
-def new_merge(context: ApplicationContext, name: str, upstream: str) -> object:
+def new_merge(
+    context: ApplicationContext, name: str, upstream: str, values: Values | None = None
+) -> object:
     paths = context.paths
     path = resolve_config_file(paths.workflow_dir("merge"), name)
     document = merge.TEMPLATE
     evidence: dict[str, Any] = {}
     if upstream:
         _, config, fingerprint = normalization_source(paths, upstream)
-        recipe = DerivedRecipe(
-            version=1, interval=config.interval, selection=Selection(source=upstream)
+        fields = values or {}
+        interval = config.interval.model_dump()
+        for bound in ("start", "end"):
+            if fields.get(bound):
+                interval[bound] = datetime.fromisoformat(str(fields[bound]))
+        recipe = DerivedRecipe.model_validate(
+            {
+                "version": 1,
+                "interval": interval,
+                "selection": {
+                    "source": upstream,
+                    "publication_ids": [
+                        int(item) for item in value(fields, "publication_ids").split(",") if item
+                    ]
+                    or None,
+                },
+                "timeline_ordering": fields.get("timeline_ordering") or None,
+                "stream_ranks": stream_ranks(fields),
+            }
         )
         evidence = merge.source_selection(paths, recipe)
         if evidence["source"]["sha256"] != fingerprint:
             raise MarketForgeError("Normalization configuration changed during recipe creation.")
-        document = (
-            "version = 1\n\n[interval]\n"
-            + dumps(recipe.interval.model_dump())
-            + "\n[selection]\n"
-            + dumps(recipe.selection.model_dump(exclude_none=True))
-        )
+        document = dumps(recipe.model_dump(exclude_none=True))
     return {**evidence, "status": "template_created", "path": str(write_new(path, document))}
+
+
+def stream_ranks(values: Values) -> dict[str, int]:
+    return {
+        stream.strip(): int(rank)
+        for entry in value(values, "stream_ranks").split(",")
+        if entry.strip()
+        for stream, rank in [entry.rsplit("=", 1)]
+    }

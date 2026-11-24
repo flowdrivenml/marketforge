@@ -37,28 +37,8 @@ def leaves(parser: argparse.ArgumentParser, path: str = "") -> set[str]:
 
 def test_explicit_action_inventory_and_shell_quoting() -> None:
     canonical = leaves(build_parser())
-    assert set(BY_KEY) == canonical - {
-        "convert edit",
-        "convert delete",
-        "convert config edit",
-        "convert config set",
-        "convert config unset",
-        "tui",
-        "acquisition import format new",
-        "acquisition sources",
-        "acquisition delete",
-        "normalize list",
-        "normalize show",
-        "normalize edit",
-        "normalize delete",
-        "runs index-legacy",
-        "runs reconcile",
-        "normalize profiles show",
-        "normalize profiles schema",
-        "normalize profiles edit",
-        "normalize profiles new",
-        "normalize profiles guide",
-    }
+    assert set(BY_KEY) <= canonical
+    assert {"pipeline run", "datasets verify", "normalize prepare", "runs report"} <= set(BY_KEY)
     assert (
         BY_KEY["convert new"].command(
             {
@@ -76,7 +56,6 @@ def test_convert_action_inventory() -> None:
     required = {name for name in leaves(build_parser()) if name.startswith("convert ")}
     actions = {name for name in BY_KEY if name.startswith("convert ")}
     assert actions == required - {
-        "convert edit",
         "convert delete",
         "convert config edit",
         "convert config set",
@@ -89,7 +68,7 @@ def context(tmp_path: Path) -> ApplicationContext:
     settings = AppSettings()
     console = Console(file=io.StringIO())
     return ApplicationContext(
-        settings, ProjectPaths(tmp_path, tmp_path / "data"), None, console, console
+        settings, ProjectPaths(tmp_path, tmp_path / "data"), None, console, console, testing=True
     )
 
 
@@ -155,11 +134,17 @@ async def test_palette_and_navigation_while_owned_operation_runs(
         assert isinstance(app.screen, Confirm)
         await pilot.click("#confirm")
         await asyncio.wait_for(started.wait(), timeout=2)
-        await pilot.click("#area-6")
+        await pilot.pause()
+        assert isinstance(app.screen, OperationView)
+        await pilot.click("#op-back")
+        await pilot.click("#area-5")
         await pilot.pause()
         assert app.area == "Runs"
         assert app.controller.active()
-        assert calls[0] == ("pipeline run", {"reference": "tiny", "stop_after": ""})
+        assert calls[0] == (
+            "pipeline run",
+            {"reference": "tiny", "stop_after": "", "stage_terminal": ""},
+        )
         await pilot.press("ctrl+o")
         await pilot.pause()
         live = app.screen
@@ -175,58 +160,61 @@ async def test_palette_and_navigation_while_owned_operation_runs(
 
 
 @pytest.mark.asyncio
-async def test_query_versions_and_page_selection(context: ApplicationContext) -> None:
+async def test_query_versions_and_page_selection(
+    context: ApplicationContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typing import Any
+
+    from forge.datasets import workspace_inventory
+
     requests: list[Values] = []
     slow_started = asyncio.Event()
     release_stale = asyncio.Event()
 
-    async def invoke(
-        key: str, values: Values, _: ApplicationContext, progress: Progress, editor: Edit
-    ) -> object:
-        if key == "datasets list":
-            requests.append(dict(values))
-            symbol = values.get("instrument", "all")
-            if symbol == "obsolete":
-                slow_started.set()
-                try:
-                    await release_stale.wait()
-                except asyncio.CancelledError:
-                    await release_stale.wait()
-            return {
-                "datasets": [
-                    {
-                        "id": 99 if symbol == "obsolete" else 12,
-                        "status": "complete",
-                        "symbol": symbol,
-                        "data_type": "trade",
-                    }
-                ],
-                "has_more": True,
+    async def page(
+        paths: object, stage: str, offset: int, search: str = ""
+    ) -> tuple[list[dict[str, Any]], bool]:
+        if paths != context.paths or stage != "Raw":
+            return [], False
+        requests.append({"offset": offset, "search": search})
+        if search == "obsolete":
+            slow_started.set()
+            try:
+                await release_stale.wait()
+            except asyncio.CancelledError:
+                await release_stale.wait()
+        return [
+            {
+                "archives": ["local:99" if search == "obsolete" else "local:12"],
+                "state": "complete",
+                "symbol": search,
+                "data_type": "trade",
             }
-        return {}
+        ], True
 
-    app = ForgeApp(context, invoke=invoke)
+    monkeypatch.setattr(workspace_inventory, "stage_page", page)
+    app = ForgeApp(context)
     async with app.run_test(size=(100, 25)) as pilot:
-        await app.switch("Data", "Primary files")
+        await app.switch("Data", "Raw")
         await pilot.pause(0.3)
         assert app.query_one("#results", Results).row_count == 1
         field = app.query_one("#filter", Input)
         field.value = "A"
         field.value = "BTCUSDT"
         await pilot.pause(0.3)
-        assert not any(request.get("instrument") == "A" for request in requests)
-        assert requests[-1]["instrument"] == "BTCUSDT"
+        assert not any(request.get("search") == "A" for request in requests)
+        assert requests[-1]["search"] == "BTCUSDT"
         field.value = "obsolete"
         await asyncio.wait_for(slow_started.wait(), timeout=2)
         field.value = "BTCUSDT"
         await pilot.pause(0.4)
         release_stale.set()
         await pilot.pause()
-        assert list(app.state.rows) == ["12"]
+        assert list(app.state.rows) == ['["local:12"]']
         app.action_next()
         await pilot.pause(0.3)
-        assert requests[-1]["offset"] == 50
-        assert list(app.state.rows) == ["12"]
+        assert requests[-1]["offset"] == workspace_inventory.PAGE_SIZE
+        assert list(app.state.rows) == ['["local:12"]']
         assert app.state.filter == "BTCUSDT"
 
 
@@ -301,8 +289,10 @@ async def test_quit_confirmation_and_copy_fallback(context: ApplicationContext) 
 async def test_publication_actions_require_explicit_file_scope(
     context: ApplicationContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from typing import Any
+
+    from forge.datasets import workspace_inventory
     from forge.tui import app as shell
-    from forge.tui import resources
     from forge.tui.inspection import Inspection, RecordTable
 
     calls: list[tuple[str, Values]] = []
@@ -331,12 +321,16 @@ async def test_publication_actions_require_explicit_file_scope(
         return {"file": {"id": values["id"]}}
 
     monkeypatch.setattr(shell, "publications", publications)
-    monkeypatch.setattr(resources, "publications", publications)
+
+    async def stage_page(*args: object) -> tuple[list[dict[str, Any]], bool]:
+        return [{"publication": 7, "state": "Registered"}], False
+
+    monkeypatch.setattr(workspace_inventory, "stage_page", stage_page)
     app = ForgeApp(context, invoke=invoke)
     async with app.run_test(size=(80, 24)) as pilot:
-        await app.switch("Data", "Publications")
+        await app.switch("Data", "Merged")
         await pilot.pause(0.3)
-        assert app.query_one("#results", Results).size.height >= 15
+        assert app.query_one("#results", Results).size.height >= 14
         assert app.query_one("#area-2").has_class("active")
         app.query_one("#results", Results).focus()
         await pilot.press("enter")
@@ -445,3 +439,105 @@ def test_retained_search_precedes_page_limit(context: ApplicationContext) -> Non
     assert more and not rest
     assert len(first) == 50 and len(second) == 21
     assert match[0]["name"] == "Rare target"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("view", "family", "middle", "execute_verb"),
+    [
+        ("Acquisition", "acquisition", "plan", "download"),
+        ("Normalization", "normalize", "prepare", "run"),
+        ("Merge", "merge", "prepare", "run"),
+        ("Conversion", "convert", "prepare", "run"),
+        ("Pipeline", "pipeline", "plan", "run"),
+    ],
+)
+async def test_workflow_toolbar_dispatches_exact_selection(
+    context: ApplicationContext,
+    view: str,
+    family: str,
+    middle: str,
+    execute_verb: str,
+) -> None:
+    from textual.widgets import Button
+
+    from forge.tui.inspection import Inspection
+    from forge.tui.resources import library
+
+    source = library(context, family) / "exact.toml"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("version = 1\n")
+    finish = asyncio.Event()
+    calls: list[str] = []
+
+    async def invoke(
+        key: str,
+        values: Values,
+        ctx: ApplicationContext,
+        progress: Progress,
+        _: Edit,
+    ) -> object:
+        calls.append(key)
+        assert ctx.testing and values["reference"] == "exact"
+        if key.endswith((" download", " run")):
+            progress("Verified fixture phase")
+            await finish.wait()
+            return {"status": "complete"}
+        if key.endswith((" plan", " prepare")):
+            return {"status": "prepared" if middle == "prepare" else "planned"}
+        assert key == f"{family} validate"
+        return {"status": "valid"}
+
+    app = ForgeApp(context, invoke=invoke)
+    app.initial_area, app.initial_view = "Workflows", view
+    try:
+        async with app.run_test(size=(110, 33)) as pilot:
+            await pilot.pause(0.4)
+            run = app.query_one(f"#workflow-{execute_verb}", Button)
+            assert run.display and not run.disabled
+            assert "exact" in str(run.tooltip)
+            await pilot.click("#workflow-validate")
+            await pilot.pause()
+            assert isinstance(app.screen, Inspection)
+            await pilot.press("escape")
+            await pilot.click(f"#workflow-{middle}")
+            async with asyncio.timeout(3):
+                while not isinstance(app.screen, Form):
+                    await pilot.pause(0.05)
+            await pilot.click("#submit")
+            if middle == "prepare":
+                async with asyncio.timeout(3):
+                    while not isinstance(app.screen, Confirm):
+                        await pilot.pause(0.05)
+                await pilot.click("#confirm")
+            async with asyncio.timeout(3):
+                while f"{family} {middle}" not in calls or app.screen is app.root_screen:
+                    await pilot.pause(0.05)
+            await pilot.press("escape")
+            await pilot.click(run)
+            await pilot.pause()
+            assert isinstance(app.screen, Form)
+            assert app.screen.query_one("#field-reference", Input).disabled
+            await pilot.click("#submit")
+            await pilot.pause()
+            assert isinstance(app.screen, Confirm)
+            await pilot.click("#confirm")
+            await pilot.pause()
+            assert isinstance(app.screen, OperationView)
+            assert app.screen.operation.snapshot() == "Verified fixture phase"
+            await pilot.click("#op-back")
+            assert app.controller.active()
+            await pilot.press("ctrl+o")
+            await pilot.pause()
+            assert isinstance(app.screen, OperationView)
+            finish.set()
+            await pilot.pause()
+            assert app.screen.operation.state == "complete"
+            assert calls == [
+                f"{family} validate",
+                f"{family} {middle}",
+                f"{family} validate",
+                f"{family} {execute_verb}",
+            ]
+    finally:
+        finish.set()

@@ -11,7 +11,13 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from forge.orchestration.inspection import MANAGED_RUN, read_managed_report
-from forge.orchestration.registry import bounded_summary, connection_for, finalize, status_of
+from forge.orchestration.registry import (
+    bounded_summary,
+    connection_for,
+    finalize,
+    resource_refs,
+    status_of,
+)
 from forge.orchestration.run_summary import when
 from forge.orchestration.run_visibility import hidden_names, marker
 from forge.shared.database.connection import database_purpose
@@ -189,6 +195,35 @@ def valid_report(reference: object, root: Path, digest: object) -> bool:
     return True
 
 
+def validate_report(outcome: dict[str, Any], root: Path) -> None:
+    report = outcome.get("report_path")
+    if report is not None and not valid_report(report, root, outcome.get("report_sha256")):
+        raise MarketForgeError("Missing or unsafe retained report.")
+
+
+def pipeline_report_resources(outcome: dict[str, Any]) -> list[tuple[str, str, str]]:
+    """Recover newer resource identities from an already fingerprinted pipeline snapshot."""
+    if outcome.get("operation") != RunOperation.PIPELINE or not outcome.get("report_sha256"):
+        return []
+    reference = outcome.get("report_path")
+    if not isinstance(reference, str):
+        return []
+    with Path(reference).open("rb") as stream:
+        data = stream.read(4 * 1024 * 1024 + 1)
+    if len(data) > 4 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != outcome["report_sha256"]:
+        raise MarketForgeError("Retained pipeline report changed during reconciliation.")
+    report: dict[str, Any] = json.loads(data)
+    if any(report.get(key) != outcome.get(key) for key in ("run_id", "registry_id", "environment")):
+        raise MarketForgeError("Retained pipeline report conflicts with the outcome identity.")
+    if status_of(report, "run") != outcome["status"]:
+        raise MarketForgeError("Retained pipeline report conflicts with the outcome status.")
+    return [
+        ref
+        for ref in resource_refs(report)
+        if ref[1] in {"conversion_output_ref", "prepared_batch"}
+    ]
+
+
 async def reconcile(
     paths: ProjectPaths,
     *,
@@ -196,9 +231,17 @@ async def reconcile(
     offset: int,
     apply: bool,
     evidence: MaintenanceEvidence | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     if not 1 <= limit <= 1000 or not 0 <= offset <= 100000:
         raise MarketForgeError("Invalid reconciliation page.")
+    if run_id is not None:
+        try:
+            run_id = str(parse_run_id(run_id))
+        except ValueError as error:
+            raise MarketForgeError("Expected an exact run ID.") from error
+        if offset:
+            raise MarketForgeError("Exact-run reconciliation does not accept an offset.")
     items: list[dict[str, object]] = []
     prefix = str(paths.runs_dir) + "/"
     async with connection_for(paths) as (connection, registry):
@@ -213,22 +256,41 @@ async def reconcile(
                       SELECT 1 FROM historical.execution_run_deletions d
                       WHERE d.database_id=r.database_id AND d.run_id=r.run_id AND d.mode='full'
                    )
-                   AND (a.status='running' OR (
+                   AND (%s::text IS NULL OR r.run_id=%s)
+                   AND ((%s::text IS NOT NULL AND
+                       a.number=(SELECT max(last.number) FROM historical.execution_attempts last
+                                 WHERE last.run_id=r.run_id)) OR
+                       (%s::text IS NULL AND (a.status='running' OR (
                        r.report_path IS NULL AND a.report_path IS NOT NULL AND
                        a.number=(SELECT max(last.number) FROM historical.execution_attempts last
-                                 WHERE last.run_id=r.run_id)))
+                                 WHERE last.run_id=r.run_id)))))
                    ORDER BY a.started_at,a.attempt_id LIMIT %s OFFSET %s""",
-                (registry, database_purpose(), prefix, prefix, limit, offset),
+                (
+                    registry,
+                    database_purpose(),
+                    prefix,
+                    prefix,
+                    run_id,
+                    run_id,
+                    run_id,
+                    run_id,
+                    limit,
+                    offset,
+                ),
             )
             attempts = await cursor.fetchall()
+        if run_id is not None and not attempts:
+            raise MarketForgeError(
+                "No eligible attempt for this run in the selected registry and workspace."
+            )
         for attempt in attempts:
-            run_id = attempt["run_id"]
+            identity = attempt["run_id"]
             attempt_id = str(attempt["attempt_id"])
-            item: dict[str, object] = {"run_id": run_id, "attempt_id": attempt_id}
+            item: dict[str, object] = {"run_id": identity, "attempt_id": attempt_id}
             items.append(item)
             if evidence is not None:
                 evidence.attempts[attempt_id] = (attempt["number"], attempt["status"])
-            root = paths.runs_dir / run_id
+            root = paths.runs_dir / identity
             source = root / "attempts" / str(attempt["attempt_id"]) / "outcome.json"
             if (
                 root.is_symlink()
@@ -247,7 +309,7 @@ async def reconcile(
             try:
                 outcome = bounded_json(source, root)
                 expected = {
-                    "run_id": run_id,
+                    "run_id": identity,
                     "attempt_id": str(attempt["attempt_id"]),
                     "number": attempt["number"],
                     "operation": attempt["operation"],
@@ -262,18 +324,36 @@ async def reconcile(
                 ):
                     item["status"] = "missing_or_unsafe_report"
                     continue
-                if apply:
-                    await finalize(connection, outcome, source)
-                    if report:
-                        await connection.execute(
-                            """UPDATE historical.execution_runs r SET report_path=%s,updated_at=clock_timestamp()
+                pending = await finalize(connection, outcome, source, apply=False)
+                restore_pointer = bool(
+                    report and not attempt["run_report"] and attempt["report_path"]
+                )
+                if pending:
+                    extra = [
+                        list(ref)
+                        for ref in pipeline_report_resources(outcome)
+                        if list(ref) not in outcome["resources"]
+                    ]
+                    outcome = {**outcome, "resources": [*outcome["resources"], *extra]}
+                    await finalize(connection, outcome, source, apply=apply)
+                if apply and restore_pointer:
+                    await connection.execute(
+                        """UPDATE historical.execution_runs r SET report_path=%s,updated_at=clock_timestamp()
                                WHERE run_id=%s AND report_path IS NULL AND
                                %s=(SELECT max(number) FROM historical.execution_attempts WHERE run_id=r.run_id)""",
-                            (report, run_id, attempt["number"]),
-                        )
-                item["status"] = "reconciled" if apply else "retained_outcome"
-            except (OSError, ValueError, KeyError, MarketForgeError):
+                        (report, identity, attempt["number"]),
+                    )
+                item["status"] = (
+                    ("reconciled" if apply else "retained_outcome")
+                    if pending or restore_pointer
+                    else "already_reconciled"
+                )
+            except (OSError, ValueError, KeyError, MarketForgeError) as error:
                 item["status"] = "invalid_or_conflicting_outcome"
+                if run_id is not None:
+                    item["reason"] = str(error)
+        if run_id is not None:
+            return {"dry_run": not apply, "offset": offset, "outcomes": items}
         hidden = hidden_names(paths.runs_dir)
         for path in candidates(paths.runs_dir, limit, offset):
             if path.name in hidden or await marker(

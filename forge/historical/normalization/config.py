@@ -2,7 +2,8 @@
 
 import tomllib
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
+from uuid import UUID
 
 from pydantic import Field, model_validator
 
@@ -41,6 +42,32 @@ class InputSelection(SettingsModel, frozen=True):
     archive_member: str | None = Field(default=None, min_length=1)
     source_compression: Literal["plain", "gzip", "zip", "tar_gzip"] | None = None
     stream_rank: int | None = Field(default=None, ge=0, le=2**32 - 1)
+
+
+class ExactArchive(SettingsModel, frozen=True):
+    archive_id: int = Field(gt=0, lt=2**63)
+    selection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    profile_id: str | None = None
+    profile_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def profile_pin(self) -> Self:
+        if (self.profile_id is None) != (self.profile_sha256 is None):
+            raise ValueError("An explicit profile requires its compiled fingerprint.")
+        return self
+
+
+class ExactRecipe(SettingsModel, frozen=True):
+    version: Literal[1] = 1
+    registry_id: Annotated[UUID, Field(strict=False)]
+    archive_pins: list[ExactArchive] = Field(min_length=1)
+    ranking_policy: str = Field(default="turnover", pattern=r"^[a-zA-Z0-9_-]+$")
+
+    @model_validator(mode="after")
+    def unique_archives(self) -> Self:
+        if len({pin.archive_id for pin in self.archive_pins}) != len(self.archive_pins):
+            raise ValueError("Select each registered archive once.")
+        return self
 
 
 class OutputSelection(SettingsModel, frozen=True):

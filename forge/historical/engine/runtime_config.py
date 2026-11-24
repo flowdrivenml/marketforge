@@ -66,7 +66,7 @@ def native(value: Any) -> Any:
 
 def typed_value(field: Mapping[str, Any], raw: str) -> str | bool | int | float:
     kind = field["kind"]
-    if kind == "string":
+    if kind in {"string", "path"}:
         return raw
     if kind == "enum":
         if raw in field["choices"]:
@@ -143,24 +143,26 @@ class Snapshot:
     directory: os.stat_result
 
 
-def read_entry(fd: int, name: str) -> Snapshot:
+def read_entry(fd: int, name: str, *, limit: int | None = None) -> Snapshot:
     entry = os.stat(name, dir_fd=fd, follow_symlinks=False)
     if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
         raise MarketForgeError(f"Expected a regular runtime file with one link: {name}")
+    if limit is not None and entry.st_size > limit:
+        raise MarketForgeError(f"Configuration exceeds inspection limit: {name}")
     handle = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
     with os.fdopen(handle, "rb") as stream:
         if identity(os.fstat(stream.fileno())) != identity(entry):
             raise MarketForgeError("Runtime configuration changed while it was being read.")
-        data = stream.read()
+        data = stream.read() if limit is None else stream.read(limit + 1)
         if identity(os.fstat(stream.fileno())) != identity(entry):
             raise MarketForgeError("Runtime configuration changed while it was being read.")
     return Snapshot(data, entry, os.fstat(fd))
 
 
-def read_snapshot(path: Path) -> Snapshot:
+def read_snapshot(path: Path, *, limit: int | None = None) -> Snapshot:
     try:
         with directory_fd(path.parent) as fd:
-            return read_entry(fd, path.name)
+            return read_entry(fd, path.name, limit=limit)
     except OSError as error:
         raise MarketForgeError(
             f"Cannot safely read runtime configuration {path}: {error}"
@@ -212,6 +214,32 @@ def replace_entry(path: Path, original: Snapshot, data: bytes) -> None:
                 pass
 
 
+def create_entry(path: Path, data: bytes) -> None:
+    """Publish bytes atomically without replacing an externally created file."""
+    temporary = f".{path.name}.{uuid4().hex}.tmp"
+    with directory_fd(path.parent, create=True) as fd:
+        handle = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=fd)
+        try:
+            with os.fdopen(handle, "wb") as output:
+                output.write(data)
+                output.flush()
+                os.fsync(output.fileno())
+            with directory_fd(path.parent) as current_fd:
+                if not os.path.samestat(os.fstat(current_fd), os.fstat(fd)):
+                    raise MarketForgeError("Configuration directory changed. Reload the file.")
+                try:
+                    os.link(temporary, path.name, src_dir_fd=fd, dst_dir_fd=current_fd)
+                except FileExistsError:
+                    raise MarketForgeError(
+                        "Configuration was created externally. Reload the file."
+                    ) from None
+            os.unlink(temporary, dir_fd=fd)
+            os.fsync(fd)
+        finally:
+            with suppress(FileNotFoundError):
+                os.unlink(temporary, dir_fd=fd)
+
+
 @dataclass(frozen=True)
 class Change:
     original: Snapshot
@@ -219,6 +247,7 @@ class Change:
     fields: tuple[dict[str, Any], ...]
     schema_version: int
     requires_acknowledgement: bool
+    engine_identity: tuple[int, ...] | None = None
 
     def report(self, *, status: str) -> dict[str, Any]:
         return {
@@ -247,9 +276,9 @@ class RuntimeConfiguration:
         self._schema_engine: tuple[int, ...] | None = None
 
     def schema(self) -> dict[str, Any]:
-        if self._schema is None:
-            binary = resolve(self.paths, self.operation)
-            installed = identity(binary.stat())
+        binary = resolve(self.paths, self.operation)
+        installed = identity(binary.stat())
+        if self._schema is None or self._schema_engine != installed:
             result = supervised([str(binary), "--runtime-schema"], cwd=self.paths.root)
             if result.returncode:
                 raise MarketForgeError(
@@ -352,37 +381,57 @@ class RuntimeConfiguration:
         path: str,
         raw: str | None,
     ) -> Change:
+        return self.propose(original, self.patch(original.data, path, raw))
+
+    def patch(self, data: bytes, path: str, raw: str | None, *, stage: str | None = None) -> bytes:
+        """Update one draft field without validating an intermediate configuration."""
         field = self.field(path)
         if not field["mutable"]:
             raise MarketForgeError(f"{path}: runtime schema identity is immutable.")
-        if raw is None and field["required"]:
+        if raw is None and field["required"] and stage is None:
             raise MarketForgeError(f"{path}: a required field cannot be unset.")
-        configured = parse_document(original.data)
-        current, source = configured_at(configured, path)
+        configured = parse_document(data)
+        current, source = configured_at(configured.get(stage, {}) if stage else configured, path)
         if raw is None and current is MISSING:
-            return self.propose(original, original.data)
+            return data
         try:
-            document = tomlkit.parse(original.data.decode("utf-8"))
+            document = tomlkit.parse(data.decode("utf-8"))
         except ParseError as error:
             raise MarketForgeError(f"Cannot round-trip runtime TOML: {error}") from error
         node: Container | Table | InlineTable | OutOfOrderTableProxy = document
-        for part in path.split(".")[:-1]:
+        parts = path.split(".")
+        if stage:
+            parts.insert(0, stage)
+        parents: list[tuple[Container | Table | InlineTable | OutOfOrderTableProxy, str]] = []
+        for part in parts[:-1]:
             if part not in node:
                 node[part] = tomlkit.table()
             member = node[part]
             if not isinstance(member, (Table, InlineTable, OutOfOrderTableProxy)):
                 raise MarketForgeError(f"{path}: expected a TOML table at {part}.")
+            parents.append((node, part))
             node = member
-        key = path.rsplit(".", 1)[-1]
+        key = parts[-1]
         old_key = source.rsplit(".", 1)[-1] if source else key
         if raw is None:
             del node[old_key]
-            if field.get("omit_empty_parent") and not node:
-                del document[path.split(".", 1)[0]]
+            if stage:
+                if not node:
+                    for parent, part in reversed(parents):
+                        child = parent[part]
+                        if (
+                            not isinstance(child, (Table, InlineTable))
+                            or child
+                            or "#" in child.as_string()
+                        ):
+                            break
+                        del parent[part]
+            elif field.get("omit_empty_parent") and not node:
+                del document[parts[0]]
         else:
             value = typed_value(field, raw)
             if old_key == key and type(value) is type(current) and value == current:
-                return self.propose(original, original.data)
+                return data
             previous: object = node[old_key] if old_key in node else None
             if old_key != key:
                 # A legacy string profile spelling must not coexist with enabled.
@@ -400,9 +449,11 @@ class RuntimeConfiguration:
                 )
             else:
                 node[key] = value
-        return self.propose(original, document.as_string().encode("utf-8"))
+        return document.as_string().encode("utf-8")
 
     def propose(self, original: Snapshot, candidate: bytes) -> Change:
+        schema = self.schema()
+        schema_engine = self._schema_engine
         before = parse_document(original.data)
         effective = self.validate(candidate)
         after = parse_document(candidate)
@@ -411,7 +462,6 @@ class RuntimeConfiguration:
             or before["schema_version"] != after["schema_version"]
         ):
             raise MarketForgeError("Runtime schema identity is immutable.")
-        schema = self.schema()
         try:
             current = effective if candidate == original.data else self.validate(original.data)
         except MarketForgeError:
@@ -458,12 +508,15 @@ class RuntimeConfiguration:
                         },
                     }
                 )
+        if identity(resolve(self.paths, self.operation).stat()) != schema_engine:
+            raise MarketForgeError(f"Managed {self.label} Engine changed. Preview again.")
         return Change(
             original,
             candidate,
             tuple(changes),
             schema["runtime_schema_version"],
             any(field["risk"] == "integrity-critical" for field in changes),
+            schema_engine,
         )
 
     def apply(self, change: Change, *, acknowledge_risk: bool = False) -> None:
@@ -478,7 +531,7 @@ class RuntimeConfiguration:
             acquire_file_lock(self.paths.root / ".marketforge-engine.lock"),
         ):
             binary = resolve(self.paths, self.operation)
-            if identity(binary.stat()) != self._schema_engine:
+            if identity(binary.stat()) != change.engine_identity:
                 raise MarketForgeError(f"Managed {self.label} Engine changed. Preview again.")
             # Verify the exact candidate again against the currently installed Engine.
             self.validate(change.candidate, binary)

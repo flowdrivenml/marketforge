@@ -21,15 +21,7 @@ An archive's source identity includes its provider-native object key and revisio
 
 Download verifies matching completed local files by size and SHA-256 before reuse. If a matching copy is missing or corrupt, the registry records that condition. A needed download can renew an expired or missing source location. Forge checks supported container integrity and publishes verified bytes as immutable managed raw files, then finalizes their local archive registration.
 
-Storage lists registered copies and their states. Nominal intervals describe the published archive boundaries. Even gap-free nominal intervals leave record integrity and market-event completeness unknown.
-
-```bash
-mf storage list --testing --exchange bybit --instrument BTCUSDT --wide | cpout
-mf storage show LOCAL_ID --testing | cpout
-mf storage coverage --testing --exchange bybit --instrument BTCUSDT --data-type trades --gaps | cpout
-```
-
-Use the local archive ID returned by the list command. See [storage commands](../../reference/cli/storage.md) for inspection, verification and cleanup options.
+Use [Browse raw data](../storage.md) to inspect managed copies and nominal coverage.
 
 ## Inspect runs and reports
 

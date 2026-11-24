@@ -21,7 +21,7 @@ from typing import Any, cast
 from uuid import uuid4
 
 from forge.historical.engine.managed import checksum, resolve, supervised
-from forge.historical.engine.process import Lifecycle, check, joined_io, supervise
+from forge.historical.engine.process import EngineRunner, Lifecycle, check, joined_io, supervise
 from forge.historical.engine.runtime import inspect_runtime
 from forge.historical.engine.work import READY_MESSAGE, WorkIndex, normalize_key
 from forge.historical.normalization.datasets import pin_raw_inputs, register_verified, verify
@@ -81,6 +81,7 @@ async def execute_async(
     allow_partial: bool = False,
     recipe: str | None = None,
     standalone: bool = False,
+    engine_runner: EngineRunner | None = None,
     directory: Path | None = None,
     historical_root: Path | None = None,
     executable: Path | None = None,
@@ -88,7 +89,7 @@ async def execute_async(
     expected_raw: dict[str, tuple[int, str]] | None = None,
 ) -> dict[str, Any]:
     binary = executable or resolve(paths)
-    if tui and not (os.isatty(0) and os.isatty(1) and os.isatty(2)):
+    if tui and engine_runner is None and not (os.isatty(0) and os.isatty(1) and os.isatty(2)):
         raise MarketForgeError("--tui requires an interactive terminal.")
     operation = directory or paths.runs_dir / f"normalize-execute-{uuid4().hex}"
     operation.mkdir(parents=True, exist_ok=False)
@@ -112,6 +113,8 @@ async def execute_async(
         raise MarketForgeError(
             "Run mf engine build normalize to install the managed result protocol."
         )
+    if tui and not capabilities.get("managed_output") and engine_runner is not None:
+        tui = False
     if tui and not capabilities.get("managed_output"):
         raise MarketForgeError(
             "Run mf engine build normalize to install managed TUI output support."
@@ -192,6 +195,13 @@ async def execute_async(
     )
     if validation.returncode:
         raise MarketForgeError(f"Production batch validation failed: {validation.stdout}")
+    if "exact_raw_inputs" in evidence:
+        retained_raw = {
+            path: (entry[0], entry[1]) for path, entry in evidence["exact_raw_inputs"].items()
+        }
+        if expected_raw is not None and expected_raw != retained_raw:
+            raise MarketForgeError("Conflicting exact archive selections in prepared evidence.")
+        expected_raw = retained_raw
     with pinned_registry(registry):
         pinned_raw = await pin_raw_inputs(paths, document["jobs"], expected=expected_raw)
     runtime_settings = await joined_io(inspect_runtime, paths, "normalize", config, binary)
@@ -299,11 +309,12 @@ async def execute_async(
     try:
         lifecycle("execute")
         engine_started = time.monotonic_ns()
-        code, interrupted = (
-            run_process(argv, paths.root, operation, tui=tui)
-            if standalone
-            else await supervise(argv, paths.root, operation)
-        )
+        if engine_runner is not None:
+            code, interrupted = await engine_runner(argv, paths.root, operation, tui)
+        elif standalone:
+            code, interrupted = run_process(argv, paths.root, operation, tui=tui)
+        else:
+            code, interrupted = await supervise(argv, paths.root, operation)
     except OSError as error:
         receipt.update(status="failed", normalization="failed", error=str(error))
         write_job(operation / "execution-result.json", receipt)
@@ -806,10 +817,11 @@ async def preview_reuse(
     *,
     binary: Path,
     historical: Path | None,
+    expected_raw: dict[str, tuple[int, str]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     """Use the same key and readiness checks before materializing a prepared batch."""
     with pinned_registry(registry):
-        raw = await pin_raw_inputs(paths, document["jobs"])
+        raw = await pin_raw_inputs(paths, document["jobs"], expected=expected_raw)
     config = paths.runtime_config("normalize", historical)
     settings = await joined_io(inspect_runtime, paths, "normalize", config, binary)
     profiles = [

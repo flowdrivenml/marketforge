@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -518,11 +520,46 @@ def _merge_definitions(
     return definitions
 
 
+def converted_definitions(root: Path, manifest: Mapping[str, Any]) -> dict[int, Mapping[str, Any]]:
+    runtime = root / "conversion-runtime.json"
+    if not runtime.is_file():
+        return {}
+    job = read_object(runtime)["job"]
+    if (
+        job["job_id"] != manifest["job_id"]
+        or job["source"]["merge_job_id"] != manifest["input"]["merge_job_id"]
+    ):
+        raise ValueError("Converted runtime identity disagrees with its manifest.")
+    definitions: dict[int, Mapping[str, Any]] = {}
+    for stream in job["source"]["streams"]:
+        identity = stream["identity"]
+        definition = {
+            **_declared_identity(
+                {
+                    **stream,
+                    **identity,
+                    "instrument_type": identity.get("instrument_kind"),
+                    "market_category": identity.get("contract_kind")
+                    or identity.get("instrument_kind"),
+                    "base_asset": stream.get("base_currency"),
+                    "quote_asset": stream.get("quote_currency"),
+                }
+            ),
+            "kind": content(stream["kind"]),
+        }
+        rank = stream["stream_rank"]
+        if rank in definitions and definitions[rank] != definition:
+            raise ValueError("Converted source has conflicting rank identities.")
+        definitions[rank] = definition
+    return definitions
+
+
 def inventory(
     root: Path,
     *,
     registry: Mapping[Path, Mapping[str, Any]] | None = None,
     only: Path | None = None,
+    metadata_only: bool = False,
 ) -> tuple[list[Dataset], list[Diagnostic]]:
     """Open each primary footer once and retain per-file diagnostics."""
     diagnostics: list[Diagnostic] = []
@@ -530,9 +567,15 @@ def inventory(
     registry = registry or {}
     path = root / "manifest.json"
     try:
-        manifest = read_object(path)
+        raw = path.read_bytes()
+        document = json.loads(raw)
+        if not isinstance(document, dict):
+            raise ValueError("Expected a manifest object.")
+        manifest = cast(dict[str, Any], document)
+        manifest_sha256 = hashlib.sha256(raw).hexdigest()
         normalized = "content_type" in manifest and "dataset_id" in manifest
         merge = "mode" in manifest and "job_id" in manifest
+        converted = "conversion_schema_version" in manifest and "output" in manifest
         version = manifest["protocol_version"]
         physical = manifest.get("physical_schema_version", 1)
         timeline = manifest.get("timeline_schema_version")
@@ -546,7 +589,10 @@ def inventory(
             and "timeline_schema_version" not in manifest
         )
         supported = type(version) is int and (
-            normalized
+            converted
+            and version == 1
+            and manifest["conversion_schema_version"] == 1
+            or normalized
             and version in {3, 4, 5}
             or merge
             and (
@@ -561,7 +607,7 @@ def inventory(
             )
         )
         if not supported:
-            if normalized or merge:
+            if normalized or merge or converted:
                 fields = {
                     "protocol_version": version,
                     "physical_schema_version": manifest.get("physical_schema_version"),
@@ -574,8 +620,14 @@ def inventory(
                     "unsupported_version", f"Unsupported manifest or schema: {values}."
                 )
             raise ValueError("Manifest has no recognizable normalization or merge contract.")
-        kind = content(manifest["content_type" if normalized else "mode"])
+        kind = content(
+            manifest["output"]["content_type"]
+            if converted
+            else manifest["content_type" if normalized else "mode"]
+        )
         definitions = _merge_definitions(root, manifest, kind, causal=causal) if merge else {}
+        if converted:
+            definitions = converted_definitions(root, manifest)
         directories = {
             stream["directory"]: stream
             for stream in manifest.get("streams", [])
@@ -585,12 +637,23 @@ def inventory(
             entry["instrument"]["instrument_id"]: entry["instrument"]
             for entry in manifest.get("resolved_instruments", [])
         }
-        raw_entries = manifest["files"]
+        raw_entries = manifest["output"]["files"] if converted else manifest["files"]
         if not isinstance(raw_entries, list) or any(
             not isinstance(entry, dict) for entry in cast(list[Any], raw_entries)
         ):
             raise ValueError("Expected primary file entries.")
-        entries = cast(list[dict[str, Any]], raw_entries)
+        entries: list[dict[str, Any]] = cast(list[dict[str, Any]], raw_entries)
+        if converted:
+            if len(entries) != manifest["output"]["files_written"]:
+                raise ValueError("Converted file count disagrees with its inventory.")
+            entries = [
+                {**entry, "partition_id": int(match[1])}
+                if (
+                    match := re.fullmatch(r"partition-(\d+)", Path(entry["path"]).parent.as_posix())
+                )
+                else entry
+                for entry in entries
+            ]
         names = [entry["path"] for entry in entries]
         if any(not isinstance(name, str) or not name for name in names):
             raise ValueError("Primary file paths must be nonempty strings.")
@@ -659,9 +722,9 @@ def inventory(
         from_footer = _footer_extent(item)
         if from_footer[0] is not None and declared[0] is not None and from_footer != declared:
             conflicts.append("Manifest and footer event-time envelopes disagree.")
-        if (entry.get("rows") is not None and entry["rows"] != item.metadata.num_rows) or entry.get(
-            "size_bytes"
-        ) != item.size:
+        if (entry.get("rows") is not None and entry["rows"] != item.metadata.num_rows) or (
+            entry.get("size_bytes") is not None and entry["size_bytes"] != item.size
+        ):
             conflicts.append("Manifest and footer row count or file size disagree.")
         if row is not None and (
             row.get("primary_file") != entry["path"]
@@ -682,21 +745,25 @@ def inventory(
                     entry, item, manifest, job, recorded, kind, directories, instruments
                 )
                 complete = bool(streams)
-            elif causal:
+            elif causal and not metadata_only:
                 streams = (
                     _causal_streams(item, definitions, recorded, kind, observed, requested)
                     if not conflicts and requested is not None
                     else ()
                 )
                 complete = bool(streams)
-            else:
+            elif definitions:
                 streams, complete = _merged_streams(item, definitions, recorded, kind, observed)
+            else:
+                streams, complete = (), False
         except OSError as error:
             diagnostics.append(Diagnostic(file, "unreadable_file", str(error)))
             continue
         except (ValueError, KeyError, TypeError) as error:
             streams, complete = (), False
             conflicts.append(str(error))
+        if converted and entry["row_groups"] != item.metadata.num_row_groups:
+            conflicts.append("Converted manifest row-group count disagrees with the footer.")
         if conflicts:
             diagnostics.append(Diagnostic(file, "conflicting_metadata", " ".join(conflicts)))
             streams, complete, observed = (), False, from_footer
@@ -727,18 +794,23 @@ def inventory(
                 (item,),
                 root,
                 entry["path"],
-                row.get("id") if row else None,
+                row.get("id") if row and not converted else None,
                 row.get("registry_context") if row else None,
-                row.get("publication_id") if row else None,
+                row.get("publication_id") if row and not converted else None,
                 manifest["dataset_id" if normalized else "job_id"],
                 manifest.get("instrument_namespace")
                 if normalized
                 else row.get("instrument_namespace")
                 if row
                 else None,
-                "normalize" if normalized else "merge",
+                "normalize" if normalized else "convert" if converted else "merge",
                 kind,
-                recorded.get("integrity", manifest.get("integrity_status")),
+                recorded.get(
+                    "integrity",
+                    manifest["integrity"]["status"]
+                    if converted
+                    else manifest.get("integrity_status"),
+                ),
                 recorded.get(
                     "integrity_scope", "publication" if manifest.get("integrity_status") else None
                 ),
@@ -746,7 +818,11 @@ def inventory(
                 if conflicts
                 else "registry file summary"
                 if row and complete
-                else ("manifest / physical provenance" if causal else "manifest / footer")
+                else (
+                    "manifest / physical provenance"
+                    if causal and not metadata_only
+                    else "manifest / footer"
+                )
                 if complete
                 else "partial membership"
                 if streams
@@ -758,7 +834,10 @@ def inventory(
                 if from_footer[0] is not None
                 else "manifest",
                 requested,
-                partition_id=entry.get("partition_id") if merge else None,
+                partition_id=entry.get("partition_id") if merge or converted else None,
+                output_ref=row.get("output_ref") if row else None,
+                target_quote=manifest["conversion"]["target_quote"] if converted else None,
+                manifest_sha256=manifest_sha256,
             )
         )
     return datasets, diagnostics
@@ -830,16 +909,32 @@ def group(root: Path, files: list[Dataset]) -> Dataset:
         path=root,
         primary_file=None,
         partition_id=None,
+        file_partitions=tuple(item.partition_id for item in files for _ in item.footers),
         dataset_id=None,
         streams_by_key=tuple(groups.values()),
         footers=all_footers,
-        metadata_scope="publication grouping" if seed.publication_path else "directory grouping",
+        metadata_scope=(
+            "directory grouping"
+            if seed.publication_path is None
+            else "publication grouping / incomplete membership"
+            if any(
+                item.metadata_scope in {"partial membership", "unknown membership", "conflicting"}
+                for item in files
+            )
+            else "publication grouping"
+        ),
         observed=observed,
         timestamp_evidence="known file envelopes" if observed[0] is not None else "unknown",
     )
 
 
-def open_dataset(path: str | Path, *, allow_staging: bool = False) -> Dataset:
+def open_dataset(
+    path: str | Path,
+    *,
+    allow_staging: bool = False,
+    metadata_only: bool = False,
+    strict: bool = False,
+) -> Dataset:
     source = Path(path).expanduser().resolve()
     if not source.exists():
         raise FileNotFoundError(source)
@@ -850,7 +945,13 @@ def open_dataset(path: str | Path, *, allow_staging: bool = False) -> Dataset:
     candidates = (source, *source.parents) if source.is_dir() else source.parents
     for root in candidates:
         if (root / "manifest.json").is_file():
-            files, diagnostics = inventory(root, only=source if source.is_file() else None)
+            files, diagnostics = inventory(
+                root, only=source if source.is_file() else None, metadata_only=metadata_only
+            )
+            if strict:
+                for issue in diagnostics:
+                    if issue.code != "missing_identity":
+                        raise DiscoveryError(issue.code, f"{issue.path}: {issue.message}")
             if source == root and files:
                 return group(root, files)
             if found := next((item for item in files if item.path == source), None):

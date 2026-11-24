@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -128,26 +129,26 @@ def bind_publication(pub: Publication, registry: str) -> PublicationSource:
         check_merge_metadata(pub)
         evidence = pub.evidence
         metadata = {
-            "manifest.json": evidence["manifest_sha256"],
-            "merge-job.json": evidence["processing_job_sha256"],
+            "manifest.json": (evidence["manifest_sha256"], pub.manifest),
+            "merge-job.json": (evidence["processing_job_sha256"], evidence["resolved_job"]),
         }
         index = pub.root / "publication-checksums.json"
         files = {entry["path"] for entry in pub.manifest["files"]}
-        if (
-            not files
-            or index.resolve() != index
-            or read_object(index) != evidence["inventory_sha256"]
-            or not files <= evidence["inventory_sha256"].keys()
-            or any(
-                (pub.root / name).resolve() != pub.root / name
-                or evidence["inventory_sha256"].get(name) != digest
-                or checksum(pub.root / name) != digest
-                for name, digest in metadata.items()
-            )
-            or read_object(pub.manifest_path) != pub.manifest
-            or read_object(pub.root / "merge-job.json") != evidence["resolved_job"]
-        ):
-            raise MarketForgeError("Committed metadata differs from registry evidence.")
+        if not files or index.resolve() != index or not index.is_file():
+            raise MarketForgeError("Missing or unsafe committed publication metadata.")
+        index_data = index.read_bytes()
+        inventory_pins = evidence["inventory_sha256"]
+        if json.loads(index_data) != inventory_pins or not files <= inventory_pins.keys():
+            raise MarketForgeError("Committed checksum index differs from registry evidence.")
+        for name, (digest, declared) in metadata.items():
+            path = pub.root / name
+            if path.resolve() != path or not path.is_file() or inventory_pins.get(name) != digest:
+                raise MarketForgeError(f"Missing or unsafe committed metadata: {name}.")
+            data = path.read_bytes()
+            if hashlib.sha256(data).hexdigest() != digest or json.loads(data) != declared:
+                raise MarketForgeError(
+                    f"Committed metadata differs from registry evidence: {name}."
+                )
         job = evidence["resolved_job"]
         if (
             str(job["job_id"]) != pub.engine_id
@@ -164,9 +165,9 @@ def bind_publication(pub: Publication, registry: str) -> PublicationSource:
                 "registry_id": registry,
                 "environment": cast(Literal["testing", "production"], database_purpose()),
                 "engine_publication_id": pub.engine_id,
-                "manifest_sha256": metadata["manifest.json"],
-                "processing_job_sha256": metadata["merge-job.json"],
-                "publication_checksums_sha256": checksum(index),
+                "manifest_sha256": evidence["manifest_sha256"],
+                "processing_job_sha256": evidence["processing_job_sha256"],
+                "publication_checksums_sha256": hashlib.sha256(index_data).hexdigest(),
                 "interval": pub.manifest["time_range"],
             }
         )
@@ -183,7 +184,12 @@ def check_source_environment(source: PublicationSource) -> None:
         )
 
 
-async def resolve_binding(connection: Connection, source: PublicationSource) -> Publication:
+async def resolve_binding(
+    connection: Connection,
+    source: PublicationSource,
+    *,
+    check_files: bool = False,
+) -> Publication:
     check_source_environment(source)
     registry = await registry_id(connection)
     if str(source.registry_id) != registry:
@@ -192,7 +198,12 @@ async def resolve_binding(connection: Connection, source: PublicationSource) -> 
             "Select the original registry or create a new recipe for this registry."
         )
     pub = await selectable_publication(connection, source.registry_publication_id)
-    if await asyncio.to_thread(bind_publication, pub, registry) != source:
+    current = (
+        await checked_binding(connection, pub, registry)
+        if check_files
+        else await asyncio.to_thread(bind_publication, pub, registry)
+    )
+    if current != source:
         raise MarketForgeError(
             f"Committed source binding changed for registry publication {pub.id}. "
             "Inspect that publication before creating a new binding."

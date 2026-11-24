@@ -1,6 +1,6 @@
 # Configuration and maintenance commands
 
-Inspect configuration, initialize workspace services, migrate and back up or restore registry state. [Workflow and prerequisites](../../workflows/operations.md) · [Shared CLI behavior](index.md)
+Inspect configuration, initialize workspace services, migrate and back up or restore registry state. [Workflow and prerequisites](../../maintenance/index.md) · [Shared CLI behavior](index.md)
 
 
 ## Synopsis and arguments
@@ -67,7 +67,7 @@ individual `checks` with stable IDs and status values. Unavailable storage
 observations use null. Use the individual database checks to interpret an
 empty migration list when inspection was blocked.
 
-Review [Forge application settings](../../configuration/application.md),
+Review [Forge application settings](../configuration/application.md),
 [database prerequisites](../../getting-started/installation.md#postgresql-credentials),
 and [managed Engine setup](engine.md) as directed by the report.
 

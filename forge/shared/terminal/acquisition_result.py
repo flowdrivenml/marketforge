@@ -32,8 +32,12 @@ from forge.shared.terminal.presentation import (
 )
 
 
-def render_sources(console: Console, capabilities: tuple[SourceCapability, ...]) -> None:
+def render_sources(
+    console: Console, capabilities: tuple[SourceCapability, ...], *, ordering: str = ""
+) -> None:
     header(console, "Historical Sources")
+    if ordering:
+        console.print(Text(ordering, style="mf.secondary"))
     table = data_table()
     for heading in ("Exchange", "Instrument", "Market", "Scope", "Trades", "L2 Depth"):
         table.add_column(heading)
@@ -55,8 +59,12 @@ def render_sources(console: Console, capabilities: tuple[SourceCapability, ...])
     reference(console, "Source reference", ACQUISITION_SOURCES)
 
 
-def render_inventory(console: Console, items: tuple[ConfigurationResult, ...]) -> None:
+def render_inventory(
+    console: Console, items: tuple[ConfigurationResult, ...], *, ordering: str = ""
+) -> None:
     header(console, "Acquisition Configurations")
+    if ordering:
+        console.print(Text(ordering, style="mf.secondary"))
     if not items:
         empty_state(console, "No acquisition configurations found.")
         return

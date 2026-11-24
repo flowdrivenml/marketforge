@@ -1,6 +1,6 @@
 # Markets and ranking commands
 
-Use the [command-selection guide](../../workflows/markets/index.md) for a workflow and the [policy reference](../../configuration/markets.md) for TOML. Put global options before `markets`, as in `mf --json --project-root . markets list --testing`. Global `--config` selects application settings. Ranking TOMLs live separately under `data/.config/markets/rankings/`.
+Use the [command-selection guide](../../workflows/markets/index.md) for a workflow and the [policy reference](../configuration/markets.md) for TOML. Put global options before `markets`, as in `mf --json --project-root . markets list --testing`. Global `--config` selects application settings. Ranking TOMLs live separately under `data/.config/markets/rankings/`.
 
 ## Command reference
 
@@ -39,7 +39,7 @@ The parser also accepts `--silent` outside collection and standard update, where
 
 Different filter categories intersect. With collection filters omitted, sync/refresh visit all 14 supported combinations. A supplied symbol filters matching metadata or statistics within each selected scope. See the [collector matrix](../../workflows/markets/instrument-discovery.md#synchronize-the-catalogue).
 
-Market `show` accepts `exchange.market.symbol` or `exchange.market.instrument_type.symbol`. Use the qualified form for collisions and copy native punctuation exactly. The separate [manual catalogue](catalog.md) uses `exchange.instrument_type.market_category.symbol`. Market list sorts by exchange/category/symbol by default, by native denomination then descending turnover with `--sort turnover`, or descending stored `measured_at` with `--sort freshness`. The stale label uses a separate fetch-time test. Filters precede the limit. Market list and rank list default to 50 rows with bounds 1–10000 and return `truncated` in JSON. These commands expose no offset or cursor.
+Market `show` accepts `exchange.market.symbol` or `exchange.market.instrument_type.symbol`. Use the qualified form for collisions and copy native punctuation exactly. The separate [manual catalogue](catalog.md) uses `exchange.instrument_type.market_category.symbol`. Market list defaults to ascending identity. `--sort time` uses the retained source observation timestamp. `--sort freshness` uses the stored metric window end. `--sort turnover` orders within native denominations. `--order asc|desc` changes the direction of the selected field. The stale label uses a separate fetch-time test. [Sorting fields and ranking groups](sorting.md). Filters precede the limit. Market list and rank list default to 50 rows with bounds 1–10000 and return `truncated` in JSON. These commands expose no offset or cursor.
 
 ## Ranking inspection
 

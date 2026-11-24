@@ -4,7 +4,7 @@ Measure one workload and one processing boundary at a time. Separate correctness
 
 ## Inspect before benchmarking
 
-Use normalization's runtime diagnostics and processing counters to identify phases, tasks, resource admission and integrity observations. Use dataset metadata for rows, row groups and physical bytes. Source compressed bytes, decoded rows, canonical rows and logical events measure different work. A preview limit constrains the returned rows, while Parquet page and batch reads can decode more. [Runtime policy](../reference/runtime.md) · [Python dataset API](../reference/python-datasets.md)
+Use normalization's runtime diagnostics and processing counters to identify phases, tasks, resource admission and integrity observations. Use dataset metadata for rows, row groups and physical bytes. Source compressed bytes, decoded rows, canonical rows and logical events measure different work. A preview limit constrains the returned rows, while Parquet page and batch reads can decode more. [Runtime policy](../reference/runtime.md) · [Python dataset API](../research/python-api.md)
 
 When comparing an apparent regression, establish whether the difference came from download, source decoding, processing, publish validation or registry work. A timer spanning the entire Forge command includes costs outside the Engine. A profile of one process can miss worker admission, storage or other processes. Keep the measured window explicit.
 

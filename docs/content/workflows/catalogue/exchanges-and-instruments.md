@@ -1,5 +1,11 @@
 # Exchanges and instruments
 
+In the Forge TUI, open **Catalogue → Exchanges** or **Catalogue → Instruments**
+and choose **New**. Use **Find** to select a registered exchange before
+declaring an instrument. **Validate** checks the declaration and **Review
+declaration** shows the registry preview. **Register** writes to the named
+environment.
+
 Declare the execution venue in [exchange.toml](../../examples/catalogue/exchange.toml). The exchange code is the stable key and uses lowercase letters, digits, and underscores. Exact re-registration returns the same ID. A different name under the same code is rejected.
 
 ```toml

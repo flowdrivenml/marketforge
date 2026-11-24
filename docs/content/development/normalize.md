@@ -958,5 +958,5 @@ The test-only reference reconciler provides an oracle for relevant comparisons. 
 ## Related development paths
 
 - [System architecture](architecture.md) and [operation lifecycles](operations.md) place Normalization Engine in the historical workflow.
-- [Prepared contract](../reference/prepared-normalization.md) and [user workflow](../workflows/normalize.md) describe the public handoff.
+- [Prepared contract](../reference/data-formats/prepared-normalization.md) and [user workflow](../workflows/normalization/index.md) describe the public handoff.
 - [Test selection](testing.md) and [diagnostics](debugging.md) cover verification and inspection.

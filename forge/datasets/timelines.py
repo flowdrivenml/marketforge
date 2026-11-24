@@ -5,7 +5,7 @@ import binascii
 import json
 import re
 from dataclasses import asdict, dataclass
-from typing import Any, LiteralString, Self, cast
+from typing import Any, Self, cast
 from uuid import UUID
 
 from forge.shared.errors import MarketForgeError
@@ -94,16 +94,6 @@ SEGMENTS = """
     SELECT DISTINCT i.operation,c.ref FROM inventory i JOIN contributors c USING(identity,segment)
 )
 """
-
-SORTS: dict[str, LiteralString] = {
-    "id": "CASE operation WHEN 'normalize' THEN 0 WHEN 'merge' THEN 1 ELSE 2 END,exchange,symbol",
-    "instrument": "symbol,exchange",
-    "exchange": "exchange,symbol",
-    "start": "start_timestamp_ns ASC NULLS LAST",
-    "end": "end_timestamp_ns ASC NULLS LAST",
-    "observed": "start_timestamp_ns DESC NULLS LAST",
-    "stage": "CASE operation WHEN 'normalize' THEN 0 WHEN 'merge' THEN 1 ELSE 2 END",
-}
 
 IDENTITY_FIELDS = (
     "operation",

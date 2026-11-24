@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
@@ -20,6 +21,7 @@ from psycopg.types.json import Jsonb
 from forge.historical.normalization.service import write_job
 from forge.orchestration.run_summary import mapping, when
 from forge.orchestration.run_visibility import marker
+from forge.orchestration.sorting import RUNS
 from forge.shared.database.connection import (
     DatabaseError,
     database_connection,
@@ -30,7 +32,14 @@ from forge.shared.database.connection import (
     require_registry,
 )
 from forge.shared.errors import MarketForgeError
-from forge.shared.identity import RunId, RunOperation, new_attempt_id, new_run_id, parse_run_id
+from forge.shared.identity import (
+    PIPELINE_STAGES,
+    RunId,
+    RunOperation,
+    new_attempt_id,
+    new_run_id,
+    parse_run_id,
+)
 from forge.shared.paths import ProjectPaths
 
 MAX_RESOURCES = 2048
@@ -58,6 +67,7 @@ RESOURCE_TYPES = frozenset(
         "prepared_batch",
         "prepared_job",
         "conversion_output",
+        "conversion_output_ref",
         "report",
         "child_run",
         "source_publication",
@@ -80,6 +90,8 @@ NUMERIC_RESOURCES = frozenset(
 def valid_resource(kind: str, reference: str) -> bool:
     if kind in NUMERIC_RESOURCES:
         return reference.isascii() and reference.isdecimal() and not reference.startswith("0")
+    if kind == "conversion_output_ref":
+        return re.fullmatch(r"[a-f0-9]{64}", reference) is not None
     if kind == "child_run":
         try:
             return parse_run_id(reference).operation is not None
@@ -228,6 +240,8 @@ def resource_refs(result: Mapping[str, object]) -> list[tuple[str, str, str]]:
                 add("report", result_path)
             publication = mapping(job.get("publication"))
             if publication:
+                if job.get("status") == "complete" and job.get("indexing") == "complete":
+                    add("conversion_output_ref", job.get("work_key"))
                 manifest = publication.get("manifest")
                 if isinstance(manifest, str):
                     add("conversion_output", str(Path(manifest).parent))
@@ -237,12 +251,16 @@ def resource_refs(result: Mapping[str, object]) -> list[tuple[str, str, str]]:
         for copy in rows(document.get("copies")):
             add("local_archive", copy.get("local_archive_id"))
         add("child_run", document.get("child_run_id"))
+        add("report", document.get("terminal_outcome"))
         add("report", mapping(document.get("prepared")).get("report"))
-        add("prepared_job", mapping(document.get("prepared")).get("job"))
+        add(
+            "prepared_batch" if stage == "normalize" else "prepared_job",
+            mapping(document.get("prepared")).get("job"),
+        )
 
     collect(result)
     for stage, evidence in mapping(result.get("stages")).items():
-        if stage in {"acquire", "normalize", "merge"}:
+        if stage in PIPELINE_STAGES:
             item = mapping(evidence)
             collect(item, stage)
             collect(mapping(item.get("result")), stage)
@@ -273,13 +291,11 @@ def bounded_summary(result: Mapping[str, object]) -> dict[str, object]:
         result_summary["target_quote"] = quote[:64]
     stages = mapping(result.get("stages"))
     if stages:
-        result_summary["stage_order"] = [
-            stage for stage in ("acquire", "normalize", "merge") if stage in stages
-        ]
+        result_summary["stage_order"] = [stage for stage in PIPELINE_STAGES if stage in stages]
         result_summary["stages"] = {
             name: {key: str(mapping(stage).get(key, ""))[:64] for key in ("state", "phase")}
             for name, stage in stages.items()
-            if name in {"acquire", "normalize", "merge"}
+            if name in PIPELINE_STAGES
         }
     return result_summary
 
@@ -378,8 +394,35 @@ class Execution:
             public["logical_run_id"] = self.id
         try:
             if self.outcome.is_file():
-                return public
-            self.retain_outcome(outcome, report_path)
+                from forge.orchestration.registry_maintenance import bounded_json, validate_report
+
+                saved = bounded_json(self.outcome, self.root)
+                if any(
+                    saved.get(key) != outcome[key]
+                    for key in (
+                        "run_id",
+                        "attempt_id",
+                        "number",
+                        "operation",
+                        "environment",
+                        "registry_id",
+                        "status",
+                    )
+                ):
+                    raise MarketForgeError(
+                        "Retained outcome conflicts with this execution attempt."
+                    )
+                if json.dumps(saved.get("summary"), sort_keys=True) != json.dumps(
+                    outcome["summary"], sort_keys=True
+                ) or saved.get("resources") != [list(ref) for ref in outcome["resources"]]:
+                    raise MarketForgeError("Retained execution resources or summary conflict.")
+                validate_report(saved, self.paths.runs_dir)
+                outcome = saved
+            else:
+                self.retain_outcome(outcome, report_path)
+        except MarketForgeError as error:
+            public["execution_registry_warning"] = f"Could not finalize {self.id}. {error}"
+            return public
         except (OSError, ValueError):
             public["execution_registry_warning"] = (
                 f"Could not retain the registry outcome for {self.id}."
@@ -389,6 +432,8 @@ class Execution:
             with pinned_registry(self.registry):
                 async with database_connection(self.dsn) as connection:
                     await finalize(connection, outcome, self.outcome)
+            if self.operation == RunOperation.PIPELINE:
+                public["execution_registry_status"] = "finalized"
         except (DatabaseError, MarketForgeError):
             public["execution_registry_warning"] = (
                 f"Outcome retained for {self.id}. Reconcile the execution index without replaying processing."
@@ -549,10 +594,18 @@ async def begin(
 
 
 async def finalize(
-    connection: AsyncConnection[TupleRow], outcome: Mapping[str, Any], path: Path
-) -> None:
+    connection: AsyncConnection[TupleRow],
+    outcome: Mapping[str, Any],
+    path: Path,
+    *,
+    apply: bool = True,
+) -> bool:
+    """Validate the retained outcome and, when requested, finalize its original attempt."""
+
     identity = await registry_id(connection)
     require_registry(outcome, identity)
+    if outcome.get("environment") != database_purpose():
+        raise MarketForgeError("Outcome belongs to a different database environment.")
     status = outcome["status"]
     finished = when(outcome["finished_at"])
     if status not in TERMINAL or finished is None:
@@ -573,9 +626,11 @@ async def finalize(
         stage, kind, reference = values
         if (
             not isinstance(stage, str)
-            or stage not in ("", "acquire", "normalize", "merge")
+            or stage not in ("", *PIPELINE_STAGES)
             or not isinstance(kind, str)
             or kind not in RESOURCE_TYPES
+            or kind == "conversion_output_ref"
+            and stage not in ("", "convert")
             or not isinstance(reference, str)
             or not 1 <= len(reference) <= 4096
             or not valid_resource(kind, reference)
@@ -592,7 +647,8 @@ async def finalize(
                      SELECT 1 FROM historical.execution_run_deletions d
                      WHERE d.database_id=r.database_id AND d.run_id=r.run_id AND d.mode='full'
                  )
-               FOR UPDATE OF a,r""",
+               """
+            + (" FOR UPDATE OF a,r" if apply else ""),
             (outcome["run_id"], outcome["attempt_id"], outcome["number"]),
         )
         row = await cursor.fetchone()
@@ -607,7 +663,15 @@ async def finalize(
         if row[0] != "running":
             if row[0] != status or row[5:] != evidence:
                 raise MarketForgeError("Conflicting terminal outcome for an execution attempt.")
-            return
+            cursor = await connection.execute(
+                "SELECT stage,kind,reference FROM historical.execution_resources WHERE attempt_id=%s",
+                (outcome["attempt_id"],),
+            )
+            if not set(refs).issubset(await cursor.fetchall()):
+                raise MarketForgeError("Conflicting resources for a finalized execution attempt.")
+            return False
+        if not apply:
+            return True
         await connection.execute(
             """UPDATE historical.execution_attempts SET status=%s, finished_at=%s,
                report_path=%s,error_summary=%s WHERE attempt_id=%s""",
@@ -626,6 +690,8 @@ async def finalize(
                WHERE r.run_id=%s AND %s=(SELECT max(number) FROM historical.execution_attempts WHERE run_id=r.run_id)""",
             (status, *evidence, Jsonb(outcome["summary"]), outcome["run_id"], outcome["number"]),
         )
+
+    return True
 
 
 @contextmanager
@@ -649,9 +715,13 @@ async def list_index(
     recipe: str | None = None,
     start: str | None = None,
     end: str | None = None,
+    sort: str | None = None,
+    order: str | None = None,
+    search: str | None = None,
 ) -> dict[str, Any]:
     if not 1 <= limit <= 1000 or not 0 <= offset <= 100000:
         raise MarketForgeError("Run pages require limit 1..1000 and offset 0..100000.")
+    ordering = RUNS.resolve(sort, order)
     clauses: list[LiteralString] = [
         "database_id=%s",
         "database_purpose=%s",
@@ -676,6 +746,11 @@ async def list_index(
                 )
             clauses.append(cast(LiteralString, clause))
             values.append(parsed)
+    if search and (term := search.strip()):
+        clauses.append(
+            "position(lower(%s) in lower(concat_ws(' ', run_id, operation, action, recipe, status))) > 0"
+        )
+        values.append(term)
     async with (
         connection_for(paths) as (connection, registry),
         connection.cursor(row_factory=dict_row) as cursor,
@@ -683,7 +758,9 @@ async def list_index(
         await cursor.execute(
             "SELECT * FROM historical.execution_runs WHERE "
             + " AND ".join(clauses)
-            + " ORDER BY started_at DESC, run_id LIMIT %s OFFSET %s",
+            + " ORDER BY "
+            + ordering.sql()
+            + " LIMIT %s OFFSET %s",
             (registry, database_purpose(), *values, limit + 1, offset),
         )
         records = await cursor.fetchall()
@@ -693,6 +770,37 @@ async def list_index(
         "offset": offset,
         "more": len(records) > limit,
     }
+
+
+async def workspace_runs(paths: ProjectPaths) -> list[dict[str, Any]]:
+    """Recent indexed runs plus the latest recorded activity per operation."""
+    async with (
+        connection_for(paths) as (connection, registry),
+        connection.cursor(row_factory=dict_row) as cursor,
+    ):
+        await connection.execute("SET statement_timeout = '5s'")
+        await cursor.execute(
+            """
+            WITH eligible AS NOT MATERIALIZED (
+                SELECT r.* FROM historical.execution_runs r
+                WHERE r.database_id=%s AND r.database_purpose=%s AND NOT EXISTS (
+                    SELECT 1 FROM historical.execution_run_deletions d
+                    WHERE d.database_id=r.database_id AND d.run_id=r.run_id
+                )
+            ), recent AS (
+                SELECT * FROM eligible ORDER BY started_at DESC,run_id LIMIT 8
+            ), latest AS (
+                SELECT DISTINCT ON (operation) * FROM eligible
+                ORDER BY operation,coalesce(finished_at,started_at) DESC,run_id
+            )
+            SELECT * FROM recent UNION ALL
+                SELECT * FROM latest WHERE NOT EXISTS (
+                    SELECT 1 FROM recent WHERE recent.run_id=latest.run_id
+                )
+            """,
+            (registry, database_purpose()),
+        )
+        return [display_record(row) for row in await cursor.fetchall()]
 
 
 def display_record(record: dict[str, Any]) -> dict[str, Any]:

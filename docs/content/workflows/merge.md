@@ -10,7 +10,7 @@ Merge builds one ordered timeline from registered normalized trade and order-boo
 mf datasets list --operation normalize --status complete --testing | cpout
 ```
 
-Start with the Bybit trades normalization recipe named `my_dataset` from the [normalization guide](normalize.md). Complete that workflow and use the same testing registry here. Production is the default for registry-backed commands. This example explicitly uses testing throughout. Install the [managed merge Engine](../reference/cli/engine.md) if needed, then validate its base runtime.
+Start with the Bybit trades normalization recipe named `my_dataset` from the [normalization guide](normalization/index.md). Complete that workflow and use the same testing registry here. Production is the default for registry-backed commands. This example explicitly uses testing throughout. Install the [managed merge Engine](../reference/cli/engine.md) if needed, then validate its base runtime.
 
 ```bash
 mf merge config validate | cpout
@@ -23,6 +23,12 @@ Look for registered primary-file IDs in the dataset list or normalization result
 <a id="start-from-a-normalization-recipe"></a><a id="select-file-dataset-ids-explicitly"></a>
 
 ## 2. Create and edit the recipe
+
+In **Workflows → Merge**, choose registered normalized publications, a
+normalization recipe, or physical files. The publication selector shows
+registry and engine IDs, generation, integrity and observed bounds. Review
+the verified membership and adjust stream order before saving. **Prepare**
+remains a separate step that resolves the Engine input.
 
 ```bash
 mf merge new first_merge --from-normalize my_dataset --testing
@@ -65,7 +71,7 @@ mf datasets show --publication-id PUBLICATION_ID --testing | cpout
 mf runs report NORMALIZATION_RUN_ID --testing | cpout
 ```
 
-In `mf merge edit first_merge`, add or replace `publication_ids = [101]` **inside the existing** `[selection]` table. Replace the illustrative ID with the intended trades publication. For multiple requested streams, list all publications needed from the intended generation. Keep only one `[selection]` table. Preview preparation again and check both the selected publication IDs and the selected file count. See [selection rules](../configuration/merge.md#selection-and-ambiguity).
+In `mf merge edit first_merge`, add or replace `publication_ids = [101]` **inside the existing** `[selection]` table. Replace the illustrative ID with the intended trades publication. For multiple requested streams, list all publications needed from the intended generation. Keep only one `[selection]` table. Preview preparation again and check both the selected publication IDs and the selected file count. See [selection rules](../reference/configuration/merge.md#selection-and-ambiguity).
 
 ## 5. Run the merge
 
@@ -81,7 +87,7 @@ mf merge run first_merge --testing --tui
 
 ### Submit a prepared job separately
 
-Use `mf merge prepare first_merge --testing` when you need to inspect the exact job before execution. Check that the result is `prepared` with compatibility `validated`. Pass the reported JSON path to `mf merge run ./PATH_TO_MERGE_JOB.json --testing`. Keep the job, preparation report, and pinned runtime together. See [prepared merge jobs](../reference/prepared-merge.md).
+Use `mf merge prepare first_merge --testing` when you need to inspect the exact job before execution. Check that the result is `prepared` with compatibility `validated`. Pass the reported JSON path to `mf merge run ./PATH_TO_MERGE_JOB.json --testing`. Keep the job, preparation report, and pinned runtime together. See [prepared merge jobs](../reference/data-formats/prepared-merge.md).
 
 For scripting, use global JSON and check the exit status together with the execution, verification and registration fields.
 
@@ -104,7 +110,7 @@ mf datasets show FILE_ID --testing | cpout
 mf datasets verify FILE_ID --testing | cpout
 ```
 
-Replace the uppercase placeholders with identities from your result or run history. The publication view shows its manifest and primary-file inventory. Each partition can contain several physical files. See the [identity table](../reference/cli/merge.md#identifiers). For causal output, read in timeline order and keep reconstruction context when replaying book state. See [merged publications](../reference/publication-merge.md).
+Replace the uppercase placeholders with identities from your result or run history. The publication view shows its manifest and primary-file inventory. Each partition can contain several physical files. See the [identity table](../reference/cli/merge.md#identifiers). For causal output, read in timeline order and keep reconstruction context when replaying book state. See [merged publications](../reference/data-formats/publication-merge.md).
 
 <a id="supported-layouts"></a>
 <a id="merge-tests"></a><a id="optional-recording-compatibility"></a>
@@ -112,7 +118,7 @@ Replace the uppercase placeholders with identities from your result or run histo
 
 ## Supported inputs and ordering
 
-Trades and depth can share one merge when their layouts and instrument namespace are compatible. Segmented depth requires causal ordering and all primary parts of each selected depth stream. See [merge Engine tests](../development/merge.md#testing-merge-changes) for fixture coverage. See [layout compatibility](../reference/prepared-merge.md#merge-compatibility) and [recipe ordering](../configuration/merge.md#timeline-ordering).
+Trades and depth can share one merge when their layouts and instrument namespace are compatible. Segmented depth requires causal ordering and all primary parts of each selected depth stream. See [merge Engine tests](../development/merge.md#testing-merge-changes) for fixture coverage. See [layout compatibility](../reference/data-formats/prepared-merge.md#merge-compatibility) and [recipe ordering](../reference/configuration/merge.md#timeline-ordering).
 
 <a id="publication-and-recovery"></a>
 
@@ -122,9 +128,9 @@ Trades and depth can share one merge when their layouts and instrument namespace
 | --- | --- |
 | No eligible inputs | Confirm selection, interval, normalized input stage, and testing registry. |
 | Input or provenance check fails | Read the specific preparation blocker and inspect the selected file or publication. |
-| Rust validation unavailable | Check [managed Engine compatibility](../configuration/merge-runtime.md#managed-engine-troubleshooting) and the retained runtime. |
+| Rust validation unavailable | Check [managed Engine compatibility](../reference/configuration/merge-runtime.md#managed-engine-troubleshooting) and the retained runtime. |
 | Engine fails | Inspect the retained execution result and Engine diagnostics. |
 | Output committed but registration failed | Run `mf merge register PATH_TO_EXECUTION_INTENT --testing` with the retained `execution-intent.json`. |
 | Interrupted | Inspect retained evidence for committed output before deciding between registration recovery and a new run. |
 
-Continue with [dataset inspection](datasets.md), or use [conversion](conversion.md) for supported chronological output. See the [CLI reference](../reference/cli/merge.md) and [merge runtime settings](../configuration/merge-runtime.md).
+Continue with [dataset inspection](inspection/datasets.md), or use [conversion](conversion.md) for supported chronological or causal publications. See the [CLI reference](../reference/cli/merge.md) and [merge runtime settings](../reference/configuration/merge-runtime.md).

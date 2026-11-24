@@ -1,5 +1,7 @@
 # Raw storage commands
 
+Storage archives and nominal coverage groups default to descending start. See [sort fields and aliases](sorting.md) for both views.
+
 Browse, verify, reconcile and clean up managed raw copies. [Workflow and prerequisites](../../workflows/acquisition/managing-acquisitions.md) · [Shared CLI behavior](index.md)
 
 

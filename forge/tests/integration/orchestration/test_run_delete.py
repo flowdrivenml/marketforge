@@ -22,7 +22,11 @@ pytestmark = [pytest.mark.integration, pytest.mark.database]
 
 
 @pytest.fixture
-def paths(tmp_path: Path) -> ProjectPaths:
+def paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ProjectPaths:
+    monkeypatch.delenv("PRODUCTION_DATABASE_KEY", raising=False)
+    (tmp_path / "forge").mkdir()
+    (tmp_path / "forge/pyproject.toml").write_text('[project]\nname = "marketforge"\n')
+    (tmp_path / "engine").mkdir()
     return ProjectPaths(tmp_path, tmp_path / "data")
 
 
@@ -296,9 +300,6 @@ async def test_cli_reports_same_effects_in_human_and_json(paths: ProjectPaths) -
 
     from forge.cli.main import main
 
-    (paths.root / "forge").mkdir()
-    (paths.root / "forge" / "pyproject.toml").touch()
-    (paths.root / "engine").mkdir()
     target = await run(paths)
 
     import asyncio

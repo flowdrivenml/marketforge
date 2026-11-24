@@ -4,7 +4,7 @@ Acquisition discovers provider archives, records their identities, and downloads
 
 Use [Markets](../markets/index.md) to inspect current instrument metadata and statistics. Check the historical provider and date separately before selecting archives.
 
-Start with [the historical-data workflow](historical-data.md), use the [supported historical sources](../../reference/acquisition-sources.md) and [configuration reference](../../configuration/acquisition.md) to select inputs, then [inspect and manage acquisitions](managing-acquisitions.md). The [CLI reference](../../reference/cli/acquisition.md) lists exact arguments and effects.
+Start with [the historical-data workflow](historical-data.md), use the [supported historical sources](../../reference/acquisition-sources.md) and [configuration reference](../../reference/configuration/acquisition.md) to select inputs, then [inspect and manage acquisitions](managing-acquisitions.md). The [CLI reference](../../reference/cli/acquisition.md) lists exact arguments and effects.
 
 ## Prerequisites
 

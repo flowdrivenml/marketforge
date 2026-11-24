@@ -388,7 +388,12 @@ def _schema(console: Console, result: Row) -> None:
                 ),
             ]
         )
-    _responsive_table(console, ("COLUMN", "ARROW TYPE", "NULLABLE"), rows)
+    headers = ("COLUMN", "ARROW TYPE", "NULLABLE")
+    if any(column.get("meaning") for column in columns):
+        headers += ("MEANING",)
+        for row, column in zip(rows, columns, strict=True):
+            row.append(Text(column.get("meaning") or "—"))
+    _responsive_table(console, headers, rows)
     console.print(Text(f"{len(columns)} columns", "mf.secondary"))
 
 
@@ -409,10 +414,12 @@ def _preview_value(value: Any) -> str:
 
 
 def _preview(console: Console, result: Row, *, include_identity: bool) -> None:
-    file, records = result["file"], result["rows"]
-    if include_identity:
+    file: Row = result.get("file") or {}
+    records = result["rows"]
+    if include_identity and file:
         _file_identity(console, file)
-    total = file.get("summary", {}).get("rows")
+    saved: Row = file.get("summary") or {}
+    total = saved.get("rows")
     console.print(
         Text(
             f"{len(records)} of {total:,} stored rows"

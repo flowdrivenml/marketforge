@@ -14,6 +14,8 @@ from forge.historical.archives.config import AcquisitionInterval, ArchiveRequest
 from forge.historical.archives.models import DiscoveredArchive
 from forge.historical.archives.registry import register_remote_archive
 from forge.historical.archives.storage.acquire import root_key
+from forge.historical.archives.storage.files import disk
+from forge.historical.engine.managed import checksum
 from forge.markets.models import array, obj
 from forge.markets.repository import json_value
 from forge.shared.errors import MarketForgeError
@@ -25,6 +27,61 @@ from forge.storage.models import StorageFilters
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 BASE = datetime(2026, 10, 27, tzinfo=UTC)
+
+
+async def external_copy(
+    database: AsyncConnection[TupleRow], identity: int, symbol: str, original: Path
+) -> None:
+    source = await (
+        await database.execute(
+            """INSERT INTO historical.raw_sources(source_key,source_kind,root_uri)
+               VALUES(%s,'recording',%s) RETURNING id""",
+            (symbol, str(original.parent)),
+        )
+    ).fetchone()
+    assert source is not None
+    scope = json_value(
+        {
+            "exchange": "bybit",
+            "market_category": "spot",
+            "instrument_type": "spot",
+            "symbol": symbol,
+            "scope_kind": "instrument",
+            "scope_identifier": symbol,
+        }
+    )
+    raw = await (
+        await database.execute(
+            """INSERT INTO historical.raw_objects
+               (raw_source_id,acquisition_method,venue_code,scope_key,scope_json,data_type,
+                source_object_key,filename,remote_status)
+               VALUES(%s,'local_copy','bybit',%s,%s,'trades',%s,%s,'unknown') RETURNING id""",
+            (source[0], f"local:{source[0]}:{original.name}", scope, original.name, original.name),
+        )
+    ).fetchone()
+    assert raw is not None
+    external = await (
+        await database.execute(
+            """INSERT INTO historical.raw_interpretations
+               (raw_object_id,external_source_id,source_object_key,sha256,bytes_expected,
+                identity_json,data_type,normalization_readiness,import_provenance)
+               VALUES(%s,%s,%s,%s,%s,%s,'trades','requires_profile','{}') RETURNING id""",
+            (
+                raw[0],
+                source[0],
+                original.name,
+                checksum(original),
+                (await disk(original.stat)).st_size,
+                scope,
+            ),
+        )
+    ).fetchone()
+    assert external is not None
+    await database.execute(
+        """UPDATE historical.local_archives SET remote_archive_id=NULL,external_archive_id=%s
+           WHERE id=%s""",
+        (external[0], identity),
+    )
 
 
 @dataclass
@@ -295,35 +352,7 @@ async def test_ambiguous_or_recoverable_partial_ownership_is_blocked(
             (relative, identity),
         )
     elif unsafe == "external":
-        cur = await database.execute(
-            "INSERT INTO historical.external_sources(source_key,source_kind,root_uri) VALUES(%s,'recording',%s) RETURNING id",
-            (f.symbol, str(tmp_path)),
-        )
-        source = await cur.fetchone()
-        assert source is not None
-        cur = await database.execute(
-            """INSERT INTO historical.external_archives
-            (external_source_id,source_object_key,sha256,bytes_expected,identity_json,data_type,normalization_readiness,import_provenance)
-            VALUES(%s,'original',%s,8,%s,'trades','requires_profile','{}') RETURNING id""",
-            (
-                source[0],
-                "b" * 64,
-                json_value(
-                    {
-                        "exchange": "bybit",
-                        "market_category": "spot",
-                        "instrument_type": "spot",
-                        "symbol": f.symbol,
-                    }
-                ),
-            ),
-        )
-        external = await cur.fetchone()
-        assert external is not None
-        await database.execute(
-            "UPDATE historical.local_archives SET remote_archive_id=NULL,external_archive_id=%s WHERE id=%s",
-            (external[0], identity),
-        )
+        await external_copy(database, identity, f.symbol, original)
     source, plan = await f.preview("prune", identity=identity)
     assert plan.targets[0].state == "blocked" and plan.targets[0].reclaimable_bytes == 0
     await cleanup.apply(database, f.paths, source, plan)
@@ -577,35 +606,7 @@ async def test_completed_external_copy_deletion_preserves_original(
     identity, copy, _ = await f.archive(status="complete", final=b"copy")
     original = tmp_path / "original.bin"
     original.write_bytes(b"original")
-    cur = await database.execute(
-        "INSERT INTO historical.external_sources(source_key,source_kind,root_uri) VALUES(%s,'recording',%s) RETURNING id",
-        (f.symbol, str(tmp_path)),
-    )
-    source = await cur.fetchone()
-    assert source is not None
-    cur = await database.execute(
-        """INSERT INTO historical.external_archives
-        (external_source_id,source_object_key,sha256,bytes_expected,identity_json,data_type,normalization_readiness,import_provenance)
-        VALUES(%s,'original.bin',%s,8,%s,'trades','requires_profile','{}') RETURNING id""",
-        (
-            source[0],
-            "b" * 64,
-            json_value(
-                {
-                    "exchange": "bybit",
-                    "market_category": "spot",
-                    "instrument_type": "spot",
-                    "symbol": f.symbol,
-                }
-            ),
-        ),
-    )
-    external = await cur.fetchone()
-    assert external is not None
-    await database.execute(
-        "UPDATE historical.local_archives SET remote_archive_id=NULL,external_archive_id=%s WHERE id=%s",
-        (external[0], identity),
-    )
+    await external_copy(database, identity, f.symbol, original)
     source_path, plan = await f.preview("delete", StorageFilters(), identity=identity)
     assert plan.targets[0].state == "eligible"
     result = await cleanup.apply(database, f.paths, source_path, plan)

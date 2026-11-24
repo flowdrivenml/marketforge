@@ -197,6 +197,14 @@ async def test_prepare_and_execute_cli_share_one_logical_run(
         from forge.historical.archives.templates import ACQUISITION_TEMPLATE
 
         source.write_text(ACQUISITION_TEMPLATE)
+    elif operation == "convert":
+        from forge.historical.conversion.recipes import create
+
+        setting = managed_paths.workflow_dir("merge")
+        setting.mkdir()
+        (setting / "upstream.toml").write_text(source.read_text())
+        source.unlink()
+        create(managed_paths, "combined", "merge", "upstream", "USDT")
     job = managed_paths.runs_dir / "prepared.json"
     execution = managed_paths.runs_dir / "execution-result.json"
 
@@ -271,3 +279,148 @@ async def test_pipeline_service_resumes_with_same_registry_identity(
         assert all(
             map(Path.is_file, [Path(attempt["report_path"]) for attempt in record["attempts"]])
         )
+
+
+@pytest.mark.asyncio
+async def test_run_history_order_is_global_and_stable(managed_paths: ProjectPaths) -> None:
+    from forge.shared.presentation.runs import inventory
+
+    name = uuid4().hex
+    created: list[str] = []
+    for i in range(4):
+        execution = await registry.begin(managed_paths, RunOperation.MERGE, "run", recipe=name)
+        if i < 3:
+            await execution.finish({"status": "complete"})
+        created.append(execution.id)
+    async with registry.connection_for(managed_paths) as (connection, _):
+        await connection.execute(
+            "UPDATE historical.execution_runs SET started_at=%s WHERE run_id=ANY(%s)",
+            ("2025-01-01T00:00:00Z", created[:2]),
+        )
+        await connection.execute(
+            "UPDATE historical.execution_runs SET started_at=%s WHERE run_id=%s",
+            ("2025-01-01T01:00:00.000001+01:00", created[2]),
+        )
+    tied = sorted(created[:2])
+    first = await registry.list_index(managed_paths, recipe=name, limit=1, order="asc")
+    second = await registry.list_index(
+        managed_paths, recipe=name, limit=1, sort="time", order="asc", offset=1
+    )
+    assert first["runs"][0]["run_id"] == tied[0]
+    assert second["runs"][0]["run_id"] == tied[1]
+    newest = await registry.list_index(managed_paths, recipe=name, limit=2)
+    assert [row["run_id"] for row in newest["runs"]] == [created[3], created[2]]
+    for direction in ("asc", "desc"):
+        ranked = await registry.list_index(
+            managed_paths, recipe=name, limit=4, sort="end", order=direction
+        )
+        assert ranked["runs"][-1]["finished_at"] is None
+    page = inventory(first, (("recipe", name),), "testing", 1, sort="time", order="asc")
+    assert f"--recipe {name} --sort time --order asc" in page.next_command
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("recover", [False, True])
+async def test_four_stage_completion_and_exact_reconciliation(
+    managed_paths: ProjectPaths, monkeypatch: pytest.MonkeyPatch, recover: bool
+) -> None:
+    import json
+
+    with database_environment(testing=True):
+        execution = await registry.begin(managed_paths, RunOperation.PIPELINE, "run")
+        unrelated = await registry.begin(managed_paths, RunOperation.PIPELINE, "run")
+        reference = "a" * 64
+        report = execution.root / "report.json"
+        result = {
+            "run_id": execution.id,
+            "state": "complete",
+            "registry_id": execution.registry,
+            "environment": "testing",
+            "report_path": str(report),
+            "stages": {
+                "acquire": {"state": "complete"},
+                "normalize": {"state": "complete", "prepared": {"job": "/fixture/batch.json"}},
+                "merge": {"state": "complete"},
+                "convert": {
+                    "state": "complete",
+                    "result": {
+                        "jobs": [
+                            {
+                                "status": "complete",
+                                "indexing": "complete",
+                                "work_key": reference,
+                                "publication": {"manifest": "/fixture/output/manifest.json"},
+                                "input": {
+                                    "registry_publication_id": 41,
+                                    "engine_publication_id": "501",
+                                },
+                            }
+                        ]
+                    },
+                },
+            },
+        }
+        report.write_text(json.dumps(result))
+        if recover:
+            with monkeypatch.context() as patch:
+                patch.setattr(registry, "finalize", AsyncMock(side_effect=DatabaseError("offline")))
+                failed = await execution.finish(result)
+                await unrelated.finish({"state": "complete"})
+            assert failed["execution_registry_warning"]
+            kept = execution.outcome.read_bytes()
+            assert (await registry.show_index(managed_paths, execution.id) or {})[
+                "status"
+            ] == "running"
+            outcome = json.loads(kept)
+            async with registry.connection_for(managed_paths) as (connection, _):
+                for invalid in (
+                    ["unsupported", "report", "/fixture/report"],
+                    ["convert", "unknown_kind", reference],
+                    ["merge", "conversion_output_ref", reference],
+                ):
+                    with pytest.raises(MarketForgeError, match="resource association"):
+                        await registry.finalize(
+                            connection, {**outcome, "resources": [invalid]}, execution.outcome
+                        )
+                with pytest.raises(DatabaseError):
+                    await registry.finalize(
+                        connection, {**outcome, "registry_id": str(uuid4())}, execution.outcome
+                    )
+                with pytest.raises(MarketForgeError, match="indexed execution attempt"):
+                    await registry.finalize(
+                        connection, {**outcome, "attempt_id": str(uuid4())}, execution.outcome
+                    )
+            preview = await reconcile(
+                managed_paths, limit=1, offset=0, run_id=execution.id, apply=False
+            )
+            assert [item["status"] for item in preview["outcomes"]] == ["retained_outcome"]
+            repaired = await reconcile(
+                managed_paths, limit=1, offset=0, run_id=execution.id, apply=True
+            )
+            assert [item["status"] for item in repaired["outcomes"]] == ["reconciled"]
+            assert (await registry.show_index(managed_paths, unrelated.id) or {})[
+                "status"
+            ] == "running"
+            assert execution.outcome.read_bytes() == kept
+        else:
+            assert (await execution.finish(result))["execution_registry_status"] == "finalized"
+        before_retry = execution.outcome.read_bytes()
+        assert (await execution.finish(result))["execution_registry_status"] == "finalized"
+        assert execution.outcome.read_bytes() == before_retry
+        repeated = await reconcile(
+            managed_paths, limit=1, offset=0, run_id=execution.id, apply=True
+        )
+        assert [item["status"] for item in repeated["outcomes"]] == ["already_reconciled"]
+        record = await registry.show_index(managed_paths, execution.id)
+        assert record is not None and record["status"] == "completed"
+        assert [str(item["attempt_id"]) for item in record["attempts"]] == [
+            str(execution.attempt_id)
+        ]
+        resources = [
+            (item["stage"], item["kind"], item["reference"]) for item in record["resources"]
+        ]
+        assert ("convert", "conversion_output_ref", reference) in resources
+        assert ("convert", "registry_publication", "41") in resources
+        assert ("convert", "source_publication", "501") in resources
+        assert ("normalize", "prepared_batch", "/fixture/batch.json") in resources
+        assert len(resources) == len(set(resources))

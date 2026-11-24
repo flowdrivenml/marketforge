@@ -10,11 +10,13 @@ from forge.historical.archives.config import AcquisitionConfig, AcquisitionInter
 from forge.historical.archives.selection import request_key
 from forge.historical.archives.sources.base import UnsupportedRequestError
 from forge.historical.archives.sources.exchanges import validate_request
-from forge.historical.merge.config import TimelineOrdering, unix_ns
+from forge.historical.conversion.contract import Policy, Resources
+from forge.historical.merge.config import DatabaseID, TimelineOrdering, unix_ns
 from forge.historical.merge.service import Recipe
 from forge.historical.normalization.config import NormalizationRecipe, NormalizationSource
 from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
+from forge.shared.identity import PIPELINE_STAGES
 
 
 class NormalizeOptions(SettingsModel, frozen=True):
@@ -25,12 +27,32 @@ class MergeOptions(SettingsModel, frozen=True):
     timeline_ordering: TimelineOrdering | None = None
 
 
+class ConvertOptions(Policy, frozen=True):
+    reference_stream_ids: list[str] = Field(default_factory=list)
+    reference_publication_id: DatabaseID | None = None
+    resources: Resources = Field(default_factory=Resources)
+
+    @model_validator(mode="after")
+    def valid_references(self) -> Self:
+        references = self.reference_stream_ids
+        if any(not value.strip() for value in references) or len(references) != len(
+            set(references)
+        ):
+            raise ValueError("Conversion reference stream IDs must be nonblank and unique.")
+        if self.reference_publication_id is not None and not references:
+            raise ValueError(
+                "An external reference publication requires explicit trade stream IDs."
+            )
+        return self
+
+
 class PipelineRecipe(SettingsModel, frozen=True):
     version: int = Field(ge=1, le=1)
     interval: AcquisitionInterval
     requests: list[ArchiveRequest] = Field(min_length=1)
     normalize: NormalizeOptions = Field(default_factory=NormalizeOptions)
     merge: MergeOptions = Field(default_factory=MergeOptions)
+    convert: ConvertOptions | None = None
 
     @model_validator(mode="after")
     def consistent(self) -> Self:
@@ -50,6 +72,9 @@ class PipelineRecipe(SettingsModel, frozen=True):
                 ) from None
         self.normalization()
         return self
+
+    def stage_order(self) -> tuple[str, ...]:
+        return PIPELINE_STAGES if self.convert is not None else PIPELINE_STAGES[:-1]
 
     def acquisition(self) -> AcquisitionConfig:
         return AcquisitionConfig(interval=self.interval, requests=self.requests)

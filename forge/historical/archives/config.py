@@ -47,10 +47,14 @@ class ArchiveSource(SettingsModel, frozen=True):
     scope: ArchiveScope
     source_options: ArchiveSourceOptions | None = None
 
+    @staticmethod
+    def supports_source_options(exchange: str, data_type: str) -> bool:
+        return exchange == "gateio" and data_type == "order_book_l2"
+
     @model_validator(mode="after")
     def validate_source_options(self) -> Self:
-        if self.source_options is not None and (
-            self.exchange != "gateio" or self.data_type != "order_book_l2"
+        if self.source_options is not None and not self.supports_source_options(
+            self.exchange, self.data_type
         ):
             raise ValueError("source_options is supported only for Gate.io order_book_l2 requests")
         return self

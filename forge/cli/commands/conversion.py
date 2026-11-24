@@ -15,6 +15,7 @@ from forge.cli.commands.normalization_runtime import configure as configure_runt
 from forge.cli.commands.recipe_deletion import configure_delete
 from forge.cli.commands.recipe_deletion import run as delete_recipe
 from forge.cli.environment import add_database_options
+from forge.cli.sorting import add_sorting
 from forge.historical.conversion import recipes, service
 from forge.historical.conversion.contract import Currency
 from forge.historical.conversion.evidence import (
@@ -38,6 +39,7 @@ from forge.shared.identity import RunOperation
 from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.paths import ProjectPaths
 from forge.shared.presentation.conversion import ConversionView, inspect_recipe
+from forge.shared.sorting import NAMES
 from forge.shared.terminal.conversion import render, render_inventory, render_recipe
 from forge.startup.context import ApplicationContext
 
@@ -50,9 +52,10 @@ def configure(parser: argparse.ArgumentParser) -> None:
     deletion = actions.add_parser("delete", help="Preview or delete a managed recipe.")
     configure_delete(deletion, family="conversion")
     deletion.set_defaults(service_handler=run)
-    actions.add_parser("list", help="List managed conversion recipes.").set_defaults(
-        service_handler=run
-    )
+    listing = actions.add_parser("list", help="List managed conversion recipes.")
+    listing.set_defaults(service_handler=run)
+    add_sorting(listing, NAMES)
+
     for action in ("new", "show", "edit", "validate", "prepare", "run"):
         child = actions.add_parser(action, allow_abbrev=False)
         child.add_argument(
@@ -161,8 +164,8 @@ def dispatch(args: argparse.Namespace, context: ApplicationContext) -> int:
                 check_source_environment(recipe.source)
         elif action == "run":
             _, document, _ = service.retained_collection(path)
-            if declaration := document["pins"].get("publication_source"):
-                check_source_environment(PublicationSource.model_validate(declaration))
+            if binding := service.collection_publication_source(document):
+                check_source_environment(binding)
         with cli_execution(context.paths, RunOperation.CONVERT, action, reference):
             return run_operation(args, context, resolved)
     return run_operation(args, context)
@@ -182,7 +185,7 @@ def run_operation(
         library = recipes.library(paths)
         inventory = [
             inspect_recipe(paths, resolve_config_file(library, name))
-            for name in list_config_names(library)
+            for name in list_config_names(library, sort=args.sort, order=args.order)
         ]
         if args.as_json:
             print(
@@ -191,7 +194,11 @@ def run_operation(
                 )
             )
         else:
-            render_inventory(context.console, inventory)
+            render_inventory(
+                context.console,
+                inventory,
+                ordering=NAMES.resolve(args.sort, args.order).description,
+            )
         return 0
     if action == "new":
         try:

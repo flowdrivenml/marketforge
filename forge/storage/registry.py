@@ -1,5 +1,6 @@
 """Cardinality-preserving registry joins and parameterized browsing filters."""
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import LiteralString
 
@@ -8,7 +9,9 @@ from psycopg.rows import TupleRow, dict_row
 
 from forge.historical.archives.storage.acquire import root_key
 from forge.markets.filters import symbol_pattern
+from forge.shared.sorting import SortOrder
 from forge.storage.models import StorageFilters
+from forge.storage.sorting import ARCHIVES, GROUP_FIELDS
 
 # Gate's canonical registry intentionally omits source_feed for incremental depth;
 # archive_scope_document adds it only for snapshot depth. Bitget's canonical
@@ -146,25 +149,55 @@ async def counts(c: AsyncConnection[TupleRow], params: dict[str, object]) -> dic
 
 
 async def page(c: AsyncConnection[TupleRow], params: dict[str, object]) -> list[dict[str, object]]:
-    orders: dict[str, LiteralString] = {
-        "id": "id",
-        "relative_path": "relative_path",
-        "bytes_written": "bytes_written",
-        "start_at": "start_at",
-        "status": "status",
-    }
-    order = orders.get(str(params.get("sort")), "id")
-    direction: LiteralString = " DESC" if params.get("descending", True) else " ASC"
+    requested = params.get("sort")
+    direction = params.get("order")
+    if direction is None and params.get("descending") is not None:
+        direction = "desc" if params["descending"] else "asc"
+    order = ARCHIVES.resolve(
+        str(requested) if requested is not None else None,
+        str(direction) if direction is not None else None,
+    )
     async with c.cursor(row_factory=dict_row) as cur:
         await cur.execute(
             REGISTRY
             + "SELECT * FROM matching ORDER BY "
-            + order
-            + direction
-            + " NULLS LAST,id LIMIT %(limit)s OFFSET %(offset)s",
+            + order.sql()
+            + " LIMIT %(limit)s OFFSET %(offset)s",
             params,
         )
         return list(await cur.fetchall())
+
+
+async def coverage_rows(
+    c: AsyncConnection[TupleRow],
+    params: dict[str, object],
+    order: SortOrder,
+) -> AsyncIterator[dict[str, object]]:
+    keys = ", ".join(GROUP_FIELDS)
+    join = " AND ".join("m." + key + " IS NOT DISTINCT FROM p." + key for key in GROUP_FIELDS)
+    async with c.cursor(row_factory=dict_row) as cur:
+        async for row in cur.stream(
+            REGISTRY
+            + ", grouped AS (SELECT "
+            + keys
+            + """,
+                min(start_at) FILTER (WHERE start_at<end_at) AS earliest,
+                max(end_at) FILTER (WHERE start_at<end_at) AS latest,
+                count(*) AS file_count, sum(bytes_written) AS recorded_bytes
+                FROM matching GROUP BY """
+            + keys
+            + "), page AS (SELECT *, row_number() OVER (ORDER BY "
+            + order.sql()
+            + ") AS position FROM grouped ORDER BY "
+            + order.sql()
+            + """ LIMIT %(limit)s OFFSET %(offset)s)
+              SELECT total, m.* FROM (SELECT count(*) AS total FROM grouped) t
+              LEFT JOIN page p ON true LEFT JOIN matching m ON """
+            + join
+            + " ORDER BY p.position,m.id",
+            params,
+        ):
+            yield row
 
 
 async def scan(

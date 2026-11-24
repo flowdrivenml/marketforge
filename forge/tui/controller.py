@@ -4,16 +4,19 @@ import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from time import monotonic
 from typing import cast
 from uuid import uuid4
 
-from forge.shared.database.connection import DatabaseError, database_environment
+from forge.historical.archives.storage.files import disk
+from forge.orchestration.registry import current_execution
+from forge.shared.database.connection import DatabaseError, database_environment, pinned_registry
 from forge.shared.ownership import OwnershipConflictError, WorkspaceOwnership
 from forge.startup.context import ApplicationContext
 from forge.tui.actions import Action, Values, read_only
 from forge.tui.services import execute
-from forge.tui.workflows import Edit, Progress
+from forge.tui.workflows import PIPELINE_DESCRIPTORS, Edit, Progress
 
 Invoke = Callable[[str, Values, ApplicationContext, Progress, Edit], Awaitable[object]]
 
@@ -45,6 +48,15 @@ class Operation:
     started_tick: float = field(default_factory=monotonic)
     finished_tick: float | None = None
     finished_at: str | None = None
+    run_id: str | None = None
+    environment: str | None = None
+    events: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
+
+    def record(self, phase: str) -> None:
+        if self.events and self.events[-1][1] == phase:
+            return
+        self.events.append((datetime.now(UTC).isoformat(), phase))
+        del self.events[:-20]
 
     def snapshot(self) -> object:
         if callable(self.progress):
@@ -57,6 +69,7 @@ class Controller:
         self.context = context
         self.editor = editor
         self.invoke = invoke
+        self.registry_identity: str | None = None
         self.task: asyncio.Task[Operation] | None = None
         self.current: Operation | None = None
         self.history: list[Operation] = []
@@ -65,13 +78,23 @@ class Controller:
         return self.task is not None and not self.task.done()
 
     def launch(
-        self, action: Action, values: Values, apply: Callable[[], Awaitable[object]] | None = None
+        self,
+        action: Action,
+        values: Values,
+        apply: Callable[[], Awaitable[object]] | None = None,
+        *,
+        reviewed: tuple[Path, bytes] | None = None,
     ) -> asyncio.Task[Operation]:
         if self.active():
             raise ValueError("Work is already active. Inspect it in Runs or wait for cleanup.")
-        op = Operation(uuid4().hex, action.key, reference=str(values.get("reference", "")))
+        op = Operation(
+            uuid4().hex,
+            action.key,
+            reference=str(values.get("reference", "")),
+            environment="testing" if self.context.testing else "production",
+        )
         self.current = op
-        self.task = asyncio.create_task(self._run(op, action, values, apply))
+        self.task = asyncio.create_task(self._run(op, action, dict(values), apply, reviewed))
         return self.task
 
     async def _run(
@@ -80,12 +103,24 @@ class Controller:
         action: Action,
         values: Values,
         apply: Callable[[], Awaitable[object]] | None,
+        reviewed: tuple[Path, bytes] | None,
     ) -> Operation:
         def progress(value: object) -> None:
             op.progress = value
+            if isinstance(value, str):
+                op.record(value)
+            if execution := current_execution():
+                op.run_id = str(execution.id)
 
         async def invoke() -> object:
-            with database_environment(testing=self.context.testing):
+            with (
+                database_environment(testing=self.context.testing),
+                pinned_registry(self.registry_identity),
+            ):
+                if reviewed is not None and await disk(reviewed[0].read_bytes) != reviewed[1]:
+                    raise ValueError(
+                        "The input changed after review. Reopen it and confirm the current version."
+                    )
                 if apply is not None:
                     return await apply()
                 return await self.invoke(action.key, values, self.context, progress, self.editor)
@@ -96,8 +131,17 @@ class Controller:
                 and action.effect in {"write", "engine", "network", "guarded"}
                 and not (apply is not None and action.key.startswith("storage "))
             ):
-                with WorkspaceOwnership(self.context.paths):
-                    op.result = await invoke()
+                with WorkspaceOwnership(self.context.paths) as owner:
+                    token = (
+                        PIPELINE_DESCRIPTORS.set(owner.descriptors())
+                        if action.key.startswith("pipeline ")
+                        else None
+                    )
+                    try:
+                        op.result = await invoke()
+                    finally:
+                        if token is not None:
+                            PIPELINE_DESCRIPTORS.reset(token)
             else:
                 op.result = await invoke()
             op.state = outcome(op.result)
@@ -110,6 +154,7 @@ class Controller:
             op.state = "failed"
             op.error = str(error)
         finally:
+            op.record(op.state)
             op.finished_tick = monotonic()
             op.finished_at = datetime.now(UTC).isoformat()
             self.history.append(op)

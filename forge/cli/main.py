@@ -7,6 +7,7 @@ import json
 import sys
 import tomllib
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -44,10 +45,13 @@ from forge.cli.commands.recipe_deletion import configure_delete
 from forge.cli.commands.registration import configure as configure_registration
 from forge.cli.environment import add_database_options
 from forge.cli.help import HelpParser
+from forge.cli.sorting import add_sorting
+from forge.historical.archives.sources.capabilities import CAPABILITIES
 from forge.shared.config.library import resolve_config_file
 from forge.shared.database.connection import database_environment
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import WorkspaceOwnership
+from forge.shared.sorting import NAMES
 from forge.shared.terminal.console import create_console
 from forge.shared.terminal.spacing import terminal_spacing
 from forge.startup.context import ApplicationContext, build_context
@@ -215,17 +219,20 @@ def build_parser() -> HelpParser:
             "plan", help="Inspect cached discovery and sample local copies (optional)."
         )
     )
-    acquisition_commands.add_parser(
+    acquisition_list = acquisition_commands.add_parser(
         "list",
         help="List saved acquisition configurations.",
         allow_abbrev=False,
     )
 
-    acquisition_commands.add_parser(
+    add_sorting(acquisition_list, NAMES)
+
+    acquisition_sources = acquisition_commands.add_parser(
         "sources",
         help="List supported historical archive combinations and scopes.",
         allow_abbrev=False,
     )
+    add_sorting(acquisition_sources, CAPABILITIES)
 
     for action, description in (
         ("new", "Create an acquisition recipe."),
@@ -389,7 +396,11 @@ def _dispatch(parser: HelpParser, arguments: _Arguments) -> int:
                 )
             from forge.tui.app import ForgeApp
 
-            ForgeApp(context).run()
+            app = ForgeApp(context)
+            while (selected_environment := app.run()) in {"testing", "production"}:
+                previous = app
+                app = ForgeApp(replace(previous.context, testing=selected_environment == "testing"))
+                app.initial_area, app.initial_view = previous.area, previous.view
             return 0
 
         if arguments.service_handler is not None:
@@ -403,11 +414,18 @@ def _dispatch(parser: HelpParser, arguments: _Arguments) -> int:
                     directory,
                     as_json=arguments.as_json,
                     console=context.console,
+                    sort=getattr(arguments, "sort", None),
+                    order=getattr(arguments, "order", None),
                 )
                 return 0
 
             if arguments.acquisition_command == "sources":
-                show_acquisition_sources(context.console, as_json=arguments.as_json)
+                show_acquisition_sources(
+                    context.console,
+                    as_json=arguments.as_json,
+                    sort=getattr(arguments, "sort", None),
+                    order=getattr(arguments, "order", None),
+                )
                 return 0
 
             if arguments.configuration_name is None:

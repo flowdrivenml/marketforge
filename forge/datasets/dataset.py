@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+import hashlib
+import json
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from .physical import PhysicalPartition, Selection
 
 from . import parquet
 from .metadata import bounds, content
@@ -18,6 +23,9 @@ class Rows:
         self,
     ) -> tuple[tuple[Path, ...], tuple[parquet.Footer, ...], tuple[parquet.Predicate, ...]]:
         raise NotImplementedError
+
+    def _physical_groups(self) -> Mapping[Path, Sequence[int]] | None:
+        return None
 
     def schema(self) -> Any:
         files, footers, _ = self._row_source()
@@ -62,6 +70,7 @@ class Rows:
             footers=footers,
             predicates=self._time(start, end, time_field),
             input_rows=input_rows,
+            row_groups=self._physical_groups(),
         )
 
     def batches(
@@ -73,6 +82,7 @@ class Rows:
         end: Any = None,
         time_field: str = "event_timestamp_ns",
         input_rows: int | None = None,
+        bounded: bool = False,
     ) -> Iterator[Any]:
         files, _, _ = self._row_source()
         return parquet.batches(
@@ -81,6 +91,8 @@ class Rows:
             batch_size=batch_size,
             predicates=self._time(start, end, time_field),
             input_rows=input_rows,
+            row_groups=self._physical_groups(),
+            bounded=bounded,
         )
 
     def scan(
@@ -92,6 +104,8 @@ class Rows:
         time_field: str = "event_timestamp_ns",
     ) -> Any:
         files, footers, _ = self._row_source()
+        if self._physical_groups() is not None:
+            raise ValueError("Explicit row groups use exact .batches() or bounded .head().")
         return parquet.scan(
             files,
             columns=columns,
@@ -191,6 +205,10 @@ class Dataset(Rows):
     requested_interval: tuple[int, int] | None = None
     matching_streams: tuple[Stream, ...] | None = None
     partition_id: int | None = None
+    file_partitions: tuple[int | None, ...] = ()
+    output_ref: str | None = None
+    target_quote: str | None = None
+    manifest_sha256: str | None = None
 
     @property
     def files(self) -> tuple[Path, ...]:
@@ -219,6 +237,9 @@ class Dataset(Rows):
             "publication_path": str(self.publication_path) if self.publication_path else None,
             "primary_file": self.primary_file,
             "partition_id": self.partition_id,
+            "output_ref": self.output_ref,
+            "target_quote": self.target_quote,
+            "manifest_sha256": self.manifest_sha256,
             "instrument_namespace": self.instrument_namespace,
             "operation": self.operation,
             "data_type": self.data_type,
@@ -230,6 +251,66 @@ class Dataset(Rows):
             "observed_end_ns": self.observed[1],
             "timestamp_evidence": self.timestamp_evidence,
             "requested_interval": self.requested_interval,
+        }
+
+    def discovery_fields(self) -> dict[str, Any]:
+        reference, kind = (
+            (str(self.dataset_id), "primary file")
+            if self.dataset_id is not None
+            else (str(self.publication_id), "registry publication")
+            if self.publication_id is not None
+            else (self.output_ref, "indexed output")
+            if self.output_ref
+            else (str(self.path), "filesystem path")
+        )
+        members = [stream.identity or {} for stream in self.streams_by_key]
+        instruments = {
+            (
+                item.get("instrument_namespace"),
+                item.get("instrument_id"),
+                item.get("exchange"),
+                item.get("instrument_type"),
+                item.get("market_category"),
+                item.get("symbol"),
+            )
+            for item in members
+            if item.get("instrument_id") is not None or item.get("symbol") is not None
+        }
+
+        def label(name: str) -> str | None:
+            values = sorted({str(item[name]) for item in members if item.get(name) is not None})
+            return ", ".join(values) if values else None
+
+        categories = sorted(
+            {
+                " · ".join(
+                    str(item[field]).title()
+                    for field in ("instrument_type", "market_category")
+                    if item.get(field) is not None
+                    and (field != "market_category" or item[field] != item.get("instrument_type"))
+                )
+                for item in members
+                if item.get("instrument_type") or item.get("market_category")
+            }
+        )
+        instrument = label("symbol")
+        if len(instruments) > 1:
+            instrument = f"Multiple instruments · {len(instruments)} known"
+        elif instrument and (
+            "membership" in self.metadata_scope
+            or self.metadata_scope in {"conflicting", "directory grouping"}
+        ):
+            instrument = f"Known: {instrument}"
+        return {
+            "reference": reference,
+            "reference_kind": kind,
+            "exchange": label("exchange"),
+            "market": ", ".join(categories) or None,
+            "instrument": instrument,
+            "data_type": self.data_type,
+            "observed_start_ns": self.observed[0],
+            "observed_end_ns": self.observed[1],
+            "files": len(self.files),
         }
 
     def streams(self) -> Any:
@@ -288,6 +369,69 @@ class Dataset(Rows):
         for key in ("rows", "bytes", "files", "row_groups", "path"):
             context.pop(key, None)
         return replace(stream, context=context)
+
+    def partitions(self) -> tuple[PhysicalPartition, ...]:
+        from .physical import partitions
+
+        return partitions(self)
+
+    def partition(self, reference: str) -> PhysicalPartition:
+        for item in self.partitions():
+            if item.reference == reference:
+                return item
+        raise ValueError(f"Unknown partition {reference!r} for {self.path}; inspect .partitions().")
+
+    def query(
+        self,
+        *,
+        data_type: str | None = None,
+        instrument_id: int | None = None,
+        stream_id: str | None = None,
+        partition: str | Sequence[str] | None = None,
+    ) -> Selection:
+        from .physical import Selection, select
+
+        source: Rows = self
+        if isinstance(partition, str):
+            source = self.partition(partition)
+        elif partition is not None:
+            if not partition:
+                raise ValueError("Select at least one partition reference.")
+            paths = {
+                footer.path
+                for reference in partition
+                for footer in self.partition(reference).footers
+            }
+            source = Selection(tuple(footer for footer in self.footers if footer.path in paths))
+        return select(source, self.data_type, data_type, instrument_id, stream_id)
+
+    def lineage(self) -> dict[str, Any]:
+        """Return recorded physical provenance and its evidence scope."""
+        if self.publication_path is None:
+            return {"scope": "unavailable"}
+        path = self.publication_path / "manifest.json"
+        raw = path.read_bytes()
+        if (
+            self.manifest_sha256 is not None
+            and hashlib.sha256(raw).hexdigest() != self.manifest_sha256
+        ):
+            raise ValueError(f"Publication manifest changed since the handle was opened: {path}")
+        document = json.loads(raw)
+        if not isinstance(document, dict):
+            raise ValueError(f"Invalid publication manifest: {path}")
+        manifest = cast(dict[str, Any], document)
+        return {
+            "scope": "recorded publication manifest",
+            "manifest": str(self.publication_path / "manifest.json"),
+            "manifest_sha256": self.manifest_sha256,
+            "input": manifest.get("input"),
+            "input_datasets": manifest.get("input_datasets"),
+            "source_tasks": manifest.get("source_tasks"),
+            "source_inventory": manifest.get("source_inventory"),
+        }
+
+    def depth(self, **filters: Any) -> Stream:
+        return self.select(kind="depth", **filters)
 
     def trades(self, **filters: Any) -> Stream:
         return self.select(kind="trades", **filters)

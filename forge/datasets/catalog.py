@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from forge.shared.paths import ProjectPaths
+from forge.shared.sorting import SortField, SortSpec, ordered
 
 from .dataset import Dataset, Stream
 from .discovery import Diagnostic, inventory, is_staging, open_dataset, standalone
@@ -20,6 +21,9 @@ Text = str | Sequence[str]
 IDs = int | Sequence[int]
 Moment = int | str | datetime
 Paths = str | Path | Sequence[str | Path]
+CATALOG_SORT = SortSpec(
+    {"time": SortField("observed start", "desc"), "path": SortField("path")}, "time"
+)
 
 
 def _values(value: Any) -> tuple[Any, ...] | None:
@@ -55,9 +59,29 @@ class DatasetCatalog:
             raise ValueError(f"Expected exactly one matching file, found {len(self)}.")
         return self.entries[0]
 
+    def first(self) -> Dataset:
+        if not self.entries:
+            raise ValueError("No datasets match this catalog.")
+        return self.entries[0]
+
+    def get(self, reference: int | str | Path) -> Dataset:
+        matches = tuple(
+            item
+            for item in self
+            if (
+                item.dataset_id == reference
+                if type(reference) is int
+                else str(item.path) == str(reference)
+                or item.output_ref == str(reference)
+                or (item.dataset_id is not None and str(item.dataset_id) == str(reference))
+            )
+        )
+        return replace(self, entries=matches).one()
+
     def records(self) -> list[dict[str, object]]:
         return [
             {
+                **item.discovery_fields(),
                 **item.info(),
                 "memberships": [stream.membership() for stream in item.streams_by_key],
                 "matching_memberships": None
@@ -80,7 +104,13 @@ class DatasetCatalog:
         rows = self.records()
         if not rows:
             return pl.DataFrame(
-                schema={"path": pl.String, "dataset_id": pl.Int64, "rows": pl.Int64}
+                schema={
+                    "reference": pl.String,
+                    "reference_kind": pl.String,
+                    "path": pl.String,
+                    "dataset_id": pl.Int64,
+                    "rows": pl.Int64,
+                }
             )
         # Registry and engine IDs occupy distinct domains. Engine IDs may use
         # the full UInt64 range and also arrive as strings from registry JSON.
@@ -152,6 +182,10 @@ class DatasetCatalog:
         interval: Literal["overlap", "envelope_contained"] = "overlap",
         status: Text | None = None,
         integrity: Text | None = None,
+        output_ref: Text | None = None,
+        target_quote: Text | None = None,
+        sort: Literal["time", "path"] | None = None,
+        order: Literal["asc", "desc"] | None = None,
     ) -> DatasetCatalog:
         """Filter file metadata. All requested market fields match one membership."""
         if symbol_match not in {"exact", "contains"} or interval not in {
@@ -159,6 +193,17 @@ class DatasetCatalog:
             "envelope_contained",
         }:
             raise ValueError("Unsupported symbol or interval matching mode.")
+        if sort is None:
+            sort = (
+                "path"
+                if any(
+                    value is not None
+                    for value in (publication_id, publication_path, engine_publication_id)
+                )
+                else "time"
+            )
+        if sort not in {"time", "path"} or order not in {None, "asc", "desc"}:
+            raise ValueError("Use sort='time' or 'path' and order='asc' or 'desc'.")
         time = bounds(start, end)
         limits = {
             "min_rows": min_rows,
@@ -182,6 +227,8 @@ class DatasetCatalog:
             "path": path,
             "status": status,
             "integrity": integrity,
+            "output_ref": output_ref,
+            "target_quote": target_quote,
         }
         member_fields = {
             "exchange": exchange,
@@ -274,6 +321,15 @@ class DatasetCatalog:
             }.items()
             if value is not None
         }
+        ordering = CATALOG_SORT.resolve(sort, order)
+        if sort == "time":
+            result = ordered(
+                result, ordering, lambda item: item.observed[0], lambda item: str(item.path)
+            )
+        else:
+            result = ordered(
+                result, ordering, lambda item: str(item.path), lambda item: str(item.path)
+            )
         return replace(self, entries=tuple(result), filters=(*self.filters, applied))
 
     def __repr__(self) -> str:
@@ -293,9 +349,64 @@ class MarketData:
             root=Path(root) if root else None, data_root=Path(data_root) if data_root else None
         )
 
-    def open(self, path: str | Path, *, allow_staging: bool = False) -> Dataset:
+    def open(
+        self,
+        path: str | Path,
+        *,
+        allow_staging: bool = False,
+        metadata_only: bool = False,
+        strict: bool = False,
+    ) -> Dataset:
         source = Path(path).expanduser()
-        return open_dataset(self.paths.root / source, allow_staging=allow_staging)
+        return open_dataset(
+            self.paths.root / source,
+            allow_staging=allow_staging,
+            metadata_only=metadata_only,
+            strict=strict,
+        )
+
+    async def find_registered(
+        self,
+        *,
+        testing: bool = False,
+        **filters: Any,
+    ) -> dict[str, Any]:
+        """Browse a registry publication page without reading Parquet footers."""
+        from forge.datasets.query import DatasetRequest, browse
+        from forge.shared.database.connection import database_environment
+
+        with database_environment(testing=testing):
+            return await browse(self.paths, DatasetRequest("find", view="publications", **filters))
+
+    async def open_registered(
+        self,
+        *,
+        publication_id: int | None = None,
+        file_id: int | None = None,
+        output_ref: str | None = None,
+        testing: bool = False,
+    ) -> Dataset:
+        from forge.datasets.query import DatasetRequest, open_registered
+        from forge.shared.database.connection import (
+            database_connection,
+            database_dsn,
+            database_environment,
+        )
+
+        with database_environment(testing=testing):
+            async with (
+                database_connection(database_dsn(self.paths.root)) as connection,
+                connection.transaction(),
+            ):
+                await connection.execute(
+                    "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+                )
+                return await open_registered(
+                    connection,
+                    DatasetRequest(
+                        "show", id=file_id, publication_id=publication_id, output_ref=output_ref
+                    ),
+                )
 
     def discover(
         self,
@@ -304,6 +415,7 @@ class MarketData:
         include_staging: bool = False,
         registry_records: Iterable[Mapping[str, Any]] = (),
         registry_context: str | None = None,
+        metadata_only: bool = False,
     ) -> DatasetCatalog:
         """Refresh filesystem metadata. Supplied file summaries are optional and read-only."""
         if scope not in {"committed", "tests", "all"}:
@@ -346,7 +458,9 @@ class MarketData:
                     continue
                 dirs.sort()
                 if "manifest.json" in files:
-                    datasets, issues = inventory(root, registry=registry)
+                    datasets, issues = inventory(
+                        root, registry=registry, metadata_only=metadata_only
+                    )
                     entries.update({item.path: item for item in datasets})
                     diagnostics.extend(issues)
                     dirs[:] = []

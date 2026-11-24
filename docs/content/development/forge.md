@@ -34,7 +34,7 @@ Forge is MarketForge’s Python application layer. It connects user requests, ma
 
 The diagram shows the main relationships. Each operation follows the applicable path through the system. Acquisition produces managed raw inputs; normalization produces canonical publications; merge consumes registered normalized files; conversion consumes merged publications and their interpretation evidence. Forge prepares these operations, invokes the appropriate Engine executable, and records their outcomes.
 
-The implemented historical pipeline composes acquisition, normalization, and merge. Standalone commands also expose these operations individually. Conversion has its own preparation and execution workflow.
+The historical pipeline composes Acquisition, Normalization, and Merge, with optional Conversion from the registered Merge publication. Standalone commands expose these operations individually.
 
 This page explains where each responsibility lives, how the components cooperate, and which parts to inspect when extending Forge. Source paths are relative to the repository root.
 
@@ -80,7 +80,7 @@ The Python project is configured by `forge/pyproject.toml`. Both `mf` and `marke
 | `forge/historical/normalization/` | Select raw inputs, prepare batches, execute Rust, and register verified output | `batch.py`, `mapping.py`, `execution.py`, `datasets.py` |
 | `forge/historical/merge/` | Select normalized files and prepare, execute, verify, and register merges | `config.py`, `discovery.py`, `service.py` |
 | `forge/historical/conversion/` | Discover merged inputs, establish conversion evidence, and execute standalone JSON jobs | `recipes.py`, `contract.py`, `service.py`, `execution.py` |
-| `forge/historical/pipelines/` | Coordinate the fixed acquisition, normalization, and merge workflow | `config.py`, `service.py`, `planning.py`, `dashboard.py` |
+| `forge/historical/pipelines/` | Coordinate historical stage dependencies, retained work, and stage windows | `config.py`, `service.py`, `planning.py`, `dashboard.py` |
 | `forge/historical/engine/` | Build, identify, verify, and supervise managed Engine executables | `managed.py`, `process.py` |
 | `forge/storage/` | Browse, verify, reconcile, and clean up managed raw storage | `browsing.py`, `service.py`, `cleanup.py`, `dependencies.py` |
 | `forge/datasets/` | Publication registration, registry inspection, filesystem discovery, and Python row access | `registration.py`, `catalog.py`, `dataset.py`, `parquet.py` |
@@ -557,7 +557,7 @@ An external instrument-catalogue file is not required by that standalone job int
 
 Conversion operates on whole selected merge publications. Selection must satisfy the workflow’s scope rules; it does not introduce arbitrary row clipping.
 
-The current Forge execution flow runs the prepared jobs sequentially and stops after a failure. Converted-publication registration and conversion resume are not implemented in this workflow. Its receipts explicitly represent registration as unavailable.[^conversion]
+The current Forge execution flow runs the prepared jobs sequentially and stops after a failure. Forge checks for recoverable committed work and verified completed output before invoking the converter. The execution receipt distinguishes reuse from new execution. Conversion has no catalogue registration or pipeline-style resume.[^conversion]
 
 ## The historical pipeline
 
@@ -581,11 +581,12 @@ flowchart TD
 
 `PipelineRun` owns the stage state, retained evidence, and recovery decisions. It calls the services directly.
 
-The current sequence is fixed:
+The current dependency order is:
 
 - Acquire the requested archives.
 - Prepare, execute, verify, and register normalization.
 - Prepare, execute, verify, and register merge.
+- If requested, prepare, execute, verify, and index conversion from the registered merge.
 
 ### Exact stage handoffs
 
@@ -627,7 +628,7 @@ Changes to pipeline recovery must account for both publication state and registr
 
 ### Current extension boundaries
 
-The pipeline contract uses archive acquisition requests. It does not currently expose external recording registration, equity `source_key` selection, conversion, arbitrary stage ordering, or a general task graph.
+The pipeline contract uses archive acquisition requests. It does not currently expose external recording registration, equity `source_key` selection, arbitrary stage ordering, or a general task graph.
 
 Adding a stage requires explicit changes to:
 
@@ -949,7 +950,7 @@ For market data, expected behavior often requires exact timestamps, decimal valu
 ## Related development paths
 
 - [System architecture](architecture.md) and [operation lifecycles](operations.md) place Forge in the historical workflow.
-- [Prepared contract](../reference/prepared-forge.md) and [user workflow](../workflows/pipeline.md) describe the public handoff.
+- [Prepared contract](../reference/data-formats/prepared-forge.md) and [user workflow](../workflows/pipeline.md) describe the public handoff.
 - [Test selection](testing.md) and [diagnostics](debugging.md) cover verification and inspection.
 
 ## Registry context for an extension

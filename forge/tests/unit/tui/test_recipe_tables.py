@@ -20,7 +20,7 @@ from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 from forge.startup.context import ApplicationContext
 from forge.tui.app import ForgeApp
-from forge.tui.inspection import ActionMenu
+from forge.tui.inspection import ActionMenu, Inspection
 from forge.tui.presentation import Results
 from forge.tui.resources import Row, local_page
 
@@ -107,17 +107,22 @@ async def test_recipe_mouse_activation_sort_and_exact_menu(tmp_path: Path) -> No
         assert not opened
         await pilot.press("enter")
         await pilot.pause(0.35)
-        assert opened == [directory / "b.toml"]
-        assert not app.recipe_activation
-        await pilot.click("#results", offset=(10, 2))
+        assert isinstance(app.screen, Inspection)
+        assert app.screen.heading == "b"
+        assert not opened
+        await pilot.press("escape")
+        first_row = table.styles.gutter.top + table.header_height
+        await pilot.click("#results", offset=(10, first_row))
         await pilot.pause(0.35)
-        assert opened[-1] == directory / "a.toml"
-        await pilot.click("#results", offset=(10, 1))
+        assert isinstance(app.screen, Inspection)
+        assert app.screen.heading == "a"
+        await pilot.press("escape")
+        await pilot.click("#results", offset=(10, first_row - 1))
         await pilot.pause(0.3)
         assert app.state.sort == "Recipe"
         assert "↑" in str(app.query_one("#query-state", Static).content)
         app.state.selection = "a"
-        await pilot.click("#results", offset=(10, 3), button=3)
+        await pilot.click("#results", offset=(10, first_row + 1), button=3)
         await pilot.pause()
         assert isinstance(app.screen, ActionMenu)
         assert app.screen.heading == "b"
@@ -129,7 +134,6 @@ async def test_recipe_mouse_activation_sort_and_exact_menu(tmp_path: Path) -> No
 async def test_instrument_apply_updates_exact_destination(tmp_path: Path) -> None:
     from textual.widgets import Input
 
-    from forge.tui.inspection import Inspection
     from forge.tui.screens import Confirm
 
     paths = ProjectPaths(tmp_path, tmp_path / "data")
@@ -211,7 +215,7 @@ def test_runs_filter_and_sort_retained_duration_before_page(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_system_configuration_actions_use_shared_reports(
+async def test_workspace_configuration_actions_use_shared_reports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from forge.tui import services
@@ -226,7 +230,7 @@ async def test_system_configuration_actions_use_shared_reports(
         return {"effective": {"normalize": {}, "merge": {}}}
 
     monkeypatch.setattr(services, "runtime_report", inspect)
-    assert BY_KEY["engine runtime"].area == "System"
+    assert BY_KEY["engine runtime"].area == "Workspace tools"
     assert await services.system("config show", {}, context, lambda _: None) == (
         context.configuration_report()
     )

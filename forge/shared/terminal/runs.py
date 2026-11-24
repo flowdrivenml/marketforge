@@ -89,6 +89,8 @@ def show_table(console: Console, view: TableView) -> None:
 
 def render_inventory(console: Console, view: RunInventory, environment: str) -> None:
     header(console, "Runs", environment=environment)
+    console.print(Text(view.ordering, style="mf.secondary"))
+    finish = view.sort_field == "end"
     if view.filters:
         console.print(
             Text(
@@ -108,7 +110,7 @@ def render_inventory(console: Console, view: RunInventory, environment: str) -> 
                 "Operation",
                 "Action",
                 "Status",
-                "Started UTC",
+                "Finished UTC" if finish else "Started UTC",
                 "Duration",
                 "Recipe / outcome",
             ):
@@ -119,7 +121,7 @@ def render_inventory(console: Console, view: RunInventory, environment: str) -> 
             identity = Text(row.identity or "—")
             state = label(row.status) + ("\nliveness unknown" if row.liveness == "unknown" else "")
             state_text = Text(state, style=status_style(row.status))
-            start = row.started.removesuffix(" UTC").partition(".")[0]
+            time = (row.finished if finish else row.started).removesuffix(" UTC")
             elapsed = (
                 row.elapsed
                 if "." not in row.elapsed
@@ -132,14 +134,18 @@ def render_inventory(console: Console, view: RunInventory, environment: str) -> 
                     Text(row.operation),
                     Text(row.action),
                     state_text,
-                    Text(start),
+                    Text(time),
                     Text(elapsed),
                     Text(outcome or "—"),
                 )
             else:
                 details = Text(f"{row.operation} · {row.action}\n")
                 details.append_text(state_text)
-                details.append(f"\n{start} UTC" if start != "—" else "\nStart not recorded")
+                details.append(
+                    f"\n{'Finished' if finish else 'Started'} {time} UTC"
+                    if time != "—"
+                    else "\nTime unavailable"
+                )
                 if row.elapsed != "—":
                     details.append(f" · {elapsed}")
                 if outcome:

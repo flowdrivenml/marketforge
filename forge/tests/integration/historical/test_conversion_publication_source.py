@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -60,7 +61,7 @@ async def test_exact_publication_binding_and_eligibility(
     inventory = {file.name: checksum(file) for file in (manifest_path, job_path, primary)}
     (root / "publication-checksums.json").write_text(json.dumps(inventory))
     namespace = uuid4().hex
-    evidence = {
+    evidence: dict[str, Any] = {
         "file_memberships": {primary.name: []},
         "manifest": manifest,
         "path": str(root),

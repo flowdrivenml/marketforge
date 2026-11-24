@@ -15,10 +15,23 @@ from forge.storage.registry import counts, parameters
 async def plan(paths: ProjectPaths, recipe: PipelineRecipe, source: Path) -> dict[str, Any]:
     blockers: list[str] = []
     inventory: list[dict[str, Any]] = []
-    try:
-        runtime_report(paths, "pipeline")
-    except (MarketForgeError, OSError) as error:
-        blockers.append(str(error))
+    stages = {
+        "acquire": "Discovery and local verification deferred until run.",
+        "normalize": "Exact archive selection, ranking and jobs deferred until acquisition.",
+        "merge": "Primary-file identities and merge job deferred until normalization registration.",
+    }
+    if recipe.convert is not None:
+        stages["convert"] = (
+            "Exact merged publication and reference resolution deferred until merge registration."
+        )
+    runtime: dict[str, str] = {}
+    for operation in ("pipeline", "convert") if recipe.convert is not None else ("pipeline",):
+        try:
+            runtime_report(paths, operation)
+            runtime[operation] = "Available"
+        except (MarketForgeError, OSError) as error:
+            runtime[operation] = "Unavailable"
+            blockers.append(str(error))
     try:
         async with (
             database_connection(database_dsn(paths.root)) as connection,
@@ -55,11 +68,8 @@ async def plan(paths: ProjectPaths, recipe: PipelineRecipe, source: Path) -> dic
         "environment": database_purpose(),
         "source": str(source),
         "recipe": recipe.model_dump(mode="json"),
-        "stages": {
-            "acquire": "Discovery and local verification deferred until run.",
-            "normalize": "Exact archive selection, ranking and jobs deferred until acquisition.",
-            "merge": "Primary-file identities and merge job deferred until normalization registration.",
-        },
+        "stages": stages,
         "inventory": inventory,
         "blockers": blockers,
+        "runtime_availability": runtime,
     }

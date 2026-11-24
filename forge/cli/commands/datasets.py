@@ -13,6 +13,7 @@ from typing import TextIO, cast
 from rich.table import Table
 
 from forge.cli.environment import add_database_options
+from forge.cli.sorting import add_sorting
 from forge.datasets import deduplication, explicit_delete, force_cleanup
 from forge.datasets.query import (
     DATA_TYPES,
@@ -22,6 +23,7 @@ from forge.datasets.query import (
     browse,
     timestamp,
 )
+from forge.datasets.sorting import STREAMS, VIEWS
 from forge.shared.database.connection import database_purpose
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import WorkspaceOwnership
@@ -148,7 +150,8 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "streams": "Inspect source membership.",
         "lineage": "Inspect selected inputs and recorded contributions.",
         "verify": "Verify the selected file or indexed conversion against retained fingerprints.",
-        "schema": "Read the schema of a selected Parquet file.",
+        "schema": "Read a stored Arrow schema.",
+        "partitions": "Inspect physical partitions, files and Parquet row groups.",
         "head": "Preview rows from a selected Parquet file.",
     }
     for name in (
@@ -160,6 +163,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "coverage",
         "verify",
         "schema",
+        "partitions",
         "head",
         "migrate-registration",
         "refresh-summary",
@@ -183,7 +187,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
                     type=output_reference,
                     help="Exact indexed conversion work reference.",
                 )
-                if name in {"show", "streams"}:
+                if name in {"show", "streams", "partitions", "head", "schema"}:
                     references.add_argument(
                         "--publication-id", type=positive_id, help="Registry publication ID."
                     )
@@ -268,24 +272,52 @@ def configure(parser: argparse.ArgumentParser) -> None:
             command.add_argument(
                 "--search", help="Match a symbol, exchange, stream or output reference."
             )
-            if name != "coverage":
-                command.add_argument(
-                    "--sort",
-                    choices=("id", "observed", "size", "stage")
-                    + (("instrument", "exchange", "start", "end") if name == "list" else ()),
-                    default="id",
-                    help="Sort before paging. Timeline sorts include instrument, exchange, start and end.",
-                )
+            add_sorting(
+                command,
+                {view: VIEWS[view] for view in views},
+                notes="time and observed mean observed start; end means observed end. Sorts apply globally within the selected view.",
+            )
             command.add_argument("--start", type=timestamp)
             command.add_argument("--end", type=timestamp)
             command.add_argument("--limit", type=bounded, default=50)
             command.add_argument("--offset", type=int, default=0)
+        if name == "streams":
+            add_sorting(
+                command, STREAMS, notes="time means the first observed timestamp for the stream."
+            )
+        if name in {"partitions", "schema", "head"}:
+            command.add_argument("--partition", help="Physical locator from datasets partitions.")
+        if name in {"schema", "head"}:
+            command.add_argument(
+                "--row-group",
+                type=int,
+                help="Zero-based row group within the selected partition file.",
+            )
+            command.add_argument(
+                "--partition-file",
+                type=positive_id,
+                default=1,
+                help="One-based file within the partition (default: 1).",
+            )
+        if name == "partitions":
+            command.add_argument(
+                "--row-groups",
+                action="store_true",
+                help="List footer groups for the selected partition.",
+            )
+            command.add_argument("--limit", type=bounded, default=50)
+            command.add_argument("--offset", type=int, default=0)
         if name == "head":
+            command.add_argument("--data-type", choices=("trades", "depth"))
+            command.add_argument("--instrument-id", type=positive_id)
+            command.add_argument("--stream-id")
+            command.add_argument("--start", type=timestamp)
+            command.add_argument("--end", type=timestamp)
             command.add_argument("--limit", type=bounded, default=10)
             command.add_argument(
                 "--column",
                 action="append",
-                help="Select a stored column. Repeat to select several columns.",
+                help="Repeat to select several stored columns.",
             )
             command.add_argument(
                 "--wide", action="store_true", help="Show all stored columns by default."
@@ -340,22 +372,10 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
                 or request.engine_publication
                 or request.target_quote
                 or request.search
-                or request.sort != "id"
             ):
-                raise MarketForgeError(
-                    "Specify --view to use the new dataset filters or sorting in JSON."
-                )
-        if request.view == "timelines" and request.sort == "size":
-            raise MarketForgeError("Size sorting is available in the publication and file views.")
-        if request.view in {"publications", "files"} and request.sort in {
-            "instrument",
-            "exchange",
-            "start",
-            "end",
-        }:
-            raise MarketForgeError("This sort is available in the timeline view.")
+                raise MarketForgeError("Specify --view to use the new dataset filters in JSON.")
         result = asyncio.run(browse(context.paths, request, detailed=not args.as_json))
-    except (ImportError, KeyError, ValueError) as error:
+    except (ImportError, KeyError, OSError, ValueError) as error:
         raise MarketForgeError(str(error)) from error
     if args.as_json:
         print(json.dumps(result, default=str))
@@ -371,7 +391,15 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
         render_timelines(console, result, request)
     elif request.dataset_action in SEARCH_ACTIONS:
         render_browse(console, result, request)
-    elif request.dataset_action in {"show", "streams", "lineage", "schema", "head", "verify"}:
+    elif request.dataset_action in {
+        "show",
+        "streams",
+        "lineage",
+        "schema",
+        "head",
+        "verify",
+        "partitions",
+    }:
         render_detail(console, request, result, environment=database_purpose())
     else:
         console.print_json(json.dumps(result, default=str))

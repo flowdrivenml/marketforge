@@ -18,10 +18,10 @@ from psycopg.types.json import Jsonb
 from rich.console import Console
 
 from forge.datasets import converted as converted_index
-from forge.datasets import parquet, query, views
+from forge.datasets import parquet, query, views, workspace_inventory
 from forge.shared.database.connection import registry_id
 from forge.shared.paths import ProjectPaths
-from forge.shared.terminal.dataset_browse import render_browse, render_detail
+from forge.shared.terminal.dataset_browse import next_page, render_browse, render_detail
 from forge.shared.terminal.theme import build_theme
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -60,8 +60,14 @@ async def test_stage_views(
         "end_timestamp_ns": END,
     }
 
-    async def publish(operation: str, kinds: list[list[dict[str, Any]]]) -> tuple[int, list[int]]:
-        location = root / operation
+    async def publish(
+        operation: str,
+        kinds: list[list[dict[str, Any]]],
+        *,
+        suffix: str = "",
+        sizes: list[int] | None = None,
+    ) -> tuple[int, list[int]]:
+        location = root / (operation + suffix)
         location.mkdir()
         manifest = location / "manifest.json"
         manifest.write_text("{}")
@@ -72,7 +78,7 @@ async def test_stage_views(
             VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
                 (
                     token,
-                    token + operation,
+                    token + operation + suffix,
                     operation,
                     str(location),
                     str(manifest),
@@ -100,8 +106,8 @@ async def test_stage_views(
                         else "l2"
                         if members[0]["kind"] == "depth"
                         else "trade",
-                        START,
-                        END if len(members) > 1 else START + 1,
+                        min(int(member["start_timestamp_ns"]) for member in members),
+                        max(int(member["end_timestamp_ns"]) for member in members),
                         str(path),
                         operation,
                         str(location),
@@ -109,7 +115,7 @@ async def test_stage_views(
                         Jsonb(
                             {
                                 "memberships": members,
-                                "size_bytes": 7,
+                                "size_bytes": sizes[idx] if sizes else 7,
                                 "rows": 2,
                                 "integrity": "clean",
                             }
@@ -151,14 +157,18 @@ async def test_stage_views(
                     }
                     for point in (START, END)
                 ]
-            ),
+            ).append_column("event_kind", pa.array([0, 1], type=pa.uint8())),
             file,
+            row_group_size=1,
         )
         manifest = folder / "manifest.json"
         manifest.write_text(
             json.dumps(
                 {
                     "job_id": 9876,
+                    "protocol_version": 1,
+                    "conversion_schema_version": 1,
+                    "input": {"merge_job_id": 222},
                     "conversion": {"target_quote": quote},
                     "integrity": {"status": "pass"},
                     "output": {
@@ -171,7 +181,7 @@ async def test_stage_views(
                                 "path": file.name,
                                 "rows": 2,
                                 "size_bytes": file.stat().st_size,
-                                "row_groups": 1,
+                                "row_groups": 2,
                             }
                         ],
                     },
@@ -179,8 +189,10 @@ async def test_stage_views(
             )
         )
         files = [manifest, file, folder / "execution.json", folder / "conversion-runtime.json"]
-        for path in files[2:]:
-            path.write_text("{}")
+        files[2].write_text("{}")
+        files[3].write_text(
+            json.dumps({"job": {"job_id": 9876, "source": {"merge_job_id": 222, "streams": []}}})
+        )
         return key, {
             "status": "complete",
             "registration": "not_available",
@@ -307,6 +319,70 @@ async def test_stage_views(
     assert converted_head["rows"][0]["trade"]["price"] == Decimal("123.456789012")
     assert converted_head["rows"][0]["trade_target"]["price_target"] == Decimal("246.913578024")
     assert "publication_id" not in converted["output"]
+
+    @asynccontextmanager
+    async def workspace_connection(_: ProjectPaths) -> AsyncGenerator[AsyncConnection[TupleRow]]:
+        yield database
+
+    monkeypatch.setattr(workspace_inventory, "readonly", workspace_connection)
+    merged_rows, more = await workspace_inventory.stage_page(paths, "Merged", 0, str(merged))
+    assert len(merged_rows) == 1 and not more
+    merged_row = merged_rows[0]
+    assert merged_row["publication"] == merged
+    assert set(merged_row["exchanges"]) == {"bybit", "okx"}
+    assert set(merged_row["kinds"]) == {"trade", "depth"}
+    assert (merged_row["instruments"], merged_row["file_count"], merged_row["state"]) == (
+        2,
+        1,
+        "Registered",
+    )
+
+    outputs, more = await workspace_inventory.stage_page(paths, "Converted", 0, ref)
+    assert len(outputs) == 1 and not more
+    indexed_output = outputs[0]
+    assert indexed_output["output_ref"] == ref and "publication" not in indexed_output
+    assert set(indexed_output["exchanges"]) == {"bybit", "okx"}
+    assert (indexed_output["instruments"], indexed_output["data_type"]) == (2, "combined")
+    assert (indexed_output["target_quote"], indexed_output["state"]) == ("USDT", "Indexed")
+    assert (indexed_output["start"], indexed_output["finish"]) == (START, END)
+    assert indexed_output["file_count"] == 1
+    partition_request = replace(converted_request, dataset_action="partitions")
+    inventory = await query.browse(paths, partition_request)
+    assert inventory["output_ref"] == ref and inventory["publication_id"] is None
+    assert inventory["partitions"][0]["reference"] == "file:1"
+    selected = await query.browse(
+        paths, replace(partition_request, partition="file:1", row_groups=True)
+    )
+    assert [row["rows"] for row in selected["row_groups"]] == [1, 1]
+    selected_head = await query.browse(
+        paths,
+        replace(
+            partition_request,
+            dataset_action="head",
+            partition="file:1",
+            data_type="trades",
+            limit=1,
+            column=["event_timestamp_ns", "trade"],
+        ),
+    )
+    assert selected_head["rows"] == [
+        {"event_timestamp_ns": START, "trade": {"price": Decimal("123.456789012")}}
+    ]
+
+    from forge.cli.commands.datasets import request_from_args
+    from forge.cli.main import build_parser
+    from forge.shared.config.models import AppSettings
+    from forge.startup.context import ApplicationContext
+    from forge.tui.services import datasets as tui_datasets
+
+    cli_args = build_parser().parse_args(
+        ["datasets", "partitions", "--output-ref", ref, "--testing"]
+    )
+    assert await query.browse(paths, request_from_args(cli_args)) == inventory
+    console = Console(file=StringIO())
+    context = ApplicationContext(AppSettings(), paths, None, console, console, testing=True)
+    assert await tui_datasets("partitions", {"output_ref": ref}, context) == inventory
+
     converted_timeline_row = next(row for row in converted_timeline if row["variant"] == ref)
     converted_detail = await query.browse(
         paths,
@@ -358,6 +434,79 @@ async def test_stage_views(
     assert historic["publication"]["supersession_state"] == "retained"
     assert historic["publication"]["status"] == "complete"
 
+    # These later-created outputs have older and tied observed starts.
+    older, old_files = await publish(
+        "merge", [[{**first, "start_timestamp_ns": START - 1}]], suffix="-one", sizes=[10]
+    )
+    tied, tied_files = await publish(
+        "merge", [[{**first, "start_timestamp_ns": START - 1}]], suffix="-two", sizes=[2]
+    )
+    newest, newest_files = await publish(
+        "merge", [[{**first, "start_timestamp_ns": START + 1}]], suffix="-three", sizes=[100]
+    )
+    selection = replace(request, operation="merge", sort="time", order="asc")
+    oldest_page = await query.browse(paths, selection, detailed=False)
+    next_result = await query.browse(paths, replace(selection, offset=1), detailed=True)
+    assert oldest_page["publications"][0]["publication_id"] == older
+    assert next_result["publications"][0]["publication_id"] == tied
+    assert oldest_page["total"] == 3
+    assert next_page(selection, oldest_page).endswith(
+        f"--search {token} --sort time --order asc --limit 1 --offset 1"
+    )
+    assert oldest_page == await query.browse(paths, selection, detailed=True)
+    assert (
+        newest
+        == (await views.page(database, replace(selection, sort=None, order=None)))["publications"][
+            0
+        ]["publication_id"]
+    )
+    assert (
+        older
+        == (await views.page(database, replace(selection, sort=None)))["publications"][0][
+            "publication_id"
+        ]
+    )
+    assert [
+        row["publication_id"]
+        for row in (
+            await views.page(database, replace(selection, sort="size", order=None, limit=10))
+        )["publications"]
+    ] == [newest, older, tied]
+    for view, key in (
+        ("publications", "publications"),
+        ("files", "datasets"),
+        ("timelines", "timelines"),
+    ):
+        chosen = replace(selection, view=view, order="desc", limit=10)
+        ordered = (await views.page(database, chosen))[key]
+        assert ordered == (await views.page(database, replace(chosen, sort="start")))[key]
+        bounds = [row["start_timestamp_ns"] for row in ordered]
+        assert bounds == sorted(bounds, reverse=True)
+    physical = await views.page(database, replace(selection, view="files", limit=10))
+    assert [r["id"] for r in physical["datasets"]] == [*old_files, *tied_files, *newest_files]
+    extent, _ = await publish("merge", [[first], [last]], suffix="-extent")
+    mixed = await views.page(
+        database,
+        replace(selection, publication_id=extent, instrument="ETHUSDT", sort="end", order="desc"),
+    )
+    assert (
+        mixed["publications"][0]["start_timestamp_ns"],
+        mixed["publications"][0]["end_timestamp_ns"],
+    ) == (START, END)
+    assert (
+        mixed["publications"][0]["file_count"] == 2
+        and mixed["publications"][0]["matching_file_count"] == 1
+    )
+    newest_end = await views.page(database, replace(selection, sort="end", order="desc"))
+    assert newest_end["publications"][0]["publication_id"] == extent
+    for direction in ("asc", "desc"):
+        files_with_unknowns = await views.page(
+            database, replace(request, view="files", order=direction, limit=100)
+        )
+        converted_files = files_with_unknowns["datasets"][-3:]
+        assert [item["operation"] for item in converted_files] == ["convert"] * 3
+        assert all(item["start_timestamp_ns"] is None for item in converted_files)
+
 
 def test_reference_options() -> None:
     from argparse import ArgumentParser
@@ -375,6 +524,27 @@ def test_reference_options() -> None:
         request_from_args(parser.parse_args(["show", "--output-ref", "a" * 64])).output_ref
         == "a" * 64
     )
+    for view in ("publications", "timelines", "files"):
+        selected = request_from_args(
+            parser.parse_args(
+                [
+                    "list",
+                    "--view",
+                    view,
+                    "--operation",
+                    "merge",
+                    "--sort",
+                    "time",
+                    "--order",
+                    "desc",
+                ]
+            )
+        )
+        assert selected.sort == "time" and selected.order == "desc"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["list", "--sort", "unknown"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["list", "--order", "sideways"])
     with pytest.raises(SystemExit):
         parser.parse_args(["show", "42", "--publication-id", "42"])
     with pytest.raises(SystemExit):
@@ -397,3 +567,80 @@ async def test_conversion_capability_distinguishes_missing_index_from_empty() ->
     rows_cursor.fetchall.return_value = []
     connection.execute.side_effect = [index_cursor, identity_cursor, rows_cursor]
     assert await converted_index.indexed_outputs(connection) == ([], "available", [])
+
+
+@pytest.mark.asyncio
+async def test_workspace_registry_aggregation_and_half_open_windows(
+    database: AsyncConnection[TupleRow], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from forge.datasets import workspace_inventory
+    from forge.historical.archives.storage.acquire import root_key
+
+    paths = ProjectPaths(tmp_path, tmp_path / "data")
+    token = uuid4().hex
+
+    @asynccontextmanager
+    async def fixture(_: ProjectPaths) -> AsyncGenerator[AsyncConnection[TupleRow]]:
+        yield database
+
+    monkeypatch.setattr(workspace_inventory, "readonly", fixture)
+    baseline = await workspace_inventory.summary(paths)
+    exchange = await (
+        await database.execute(
+            "INSERT INTO catalog.exchanges(code,name) VALUES (%s,%s) RETURNING id",
+            (token, "Disposable workspace fixture"),
+        )
+    ).fetchone()
+    assert exchange
+    await database.execute(
+        """INSERT INTO catalog.instruments(exchange_id,symbol,instrument_type,market_category)
+           VALUES (%s,'ABCTEST','spot','spot'),(%s,'OTHERTEST','option','linear')""",
+        (exchange[0], exchange[0]),
+    )
+    ids: list[str] = []
+    for number, day in enumerate((1, 2, 4)):
+        archived = await (
+            await database.execute(
+                """INSERT INTO historical.remote_archives
+              (exchange_id,scope_key,scope_json,data_type,source_object_key,filename,start_at,end_at)
+              VALUES (%s,%s,%s,'trades',%s,%s,%s,%s) RETURNING id""",
+                (
+                    exchange[0],
+                    token,
+                    Jsonb(
+                        {
+                            "scope_kind": "instrument",
+                            "scope_identifier": "ABCTEST",
+                            "instrument_type": "spot",
+                            "market_category": "spot",
+                        }
+                    ),
+                    str(number),
+                    f"a{number}.gz",
+                    f"2026-01-0{day}T00:00:00Z",
+                    f"2026-01-0{day + 1}T00:00:00Z",
+                ),
+            )
+        ).fetchone()
+        assert archived
+        local = await (
+            await database.execute(
+                """INSERT INTO historical.local_archives
+             (remote_archive_id,storage_root_key,relative_path,status,bytes_written,sha256,downloaded_at)
+             VALUES (%s,%s,%s,'complete',10,%s,now()) RETURNING id""",
+                (archived[0], root_key(paths.raw_dir), f"a{number}.gz", "f" * 64),
+            )
+        ).fetchone()
+        assert local
+        ids.append(f"local:{local[0]}")
+    data = await workspace_inventory.summary(paths)
+    assert data.registered == baseline.registered + 2
+    assert data.exchanges == baseline.exchanges + 1
+    assert data.with_history == baseline.with_history + 1
+    assert (token, 1, 0, 0, 0, 2) in data.universe
+    assert (token, "spot", "spot", True, False) in data.availability
+    assert data.storage["Raw"] == (30, 0)
+    rows, more = await workspace_inventory.stage_page(paths, "Raw", 0)
+    assert not more
+    assert [row["archives"] for row in rows] == [[ids[2]], ids[:2]]
+    assert [row["recorded_bytes"] for row in rows] == [10, 20]

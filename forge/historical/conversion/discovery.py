@@ -19,6 +19,8 @@ from forge.historical.conversion.registry import (
     parents,
     publications,
     raw_for_files,
+    require_external_reference_mode,
+    selectable_publication,
 )
 from forge.historical.engine.managed import checksum
 from forge.historical.merge.config import DerivedRecipe, normalization_source
@@ -445,7 +447,9 @@ async def discover(
                     | {"lineage": proof}
                 )
             if recipe.reference_publication_id is not None:
-                ref = (await publications(connection, ids=[recipe.reference_publication_id]))[0]
+                for source_item in verified:
+                    require_external_reference_mode(source_item["mode"])
+                ref = await selectable_publication(connection, recipe.reference_publication_id)
                 if ref.id in {pub.id for pub, *_ in allowed} or ref.manifest["mode"] != "trades":
                     raise MarketForgeError(
                         "External references require a distinct, registered trade-only merge publication."

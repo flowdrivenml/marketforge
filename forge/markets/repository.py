@@ -5,7 +5,6 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import LiteralString
 
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow, class_row, dict_row
@@ -13,6 +12,7 @@ from psycopg.types.json import Jsonb
 
 from forge.markets.filters import symbol_pattern
 from forge.markets.models import Exchange, Instrument, Market, MarketDataError, Observation
+from forge.markets.sorting import MARKETS
 
 
 def json_value(value: object) -> Jsonb:
@@ -324,34 +324,20 @@ async def browse(
     status: str | None = None,
     availability: str | None = None,
     limit: int = 50,
-    sort: str = "identity",
+    sort: str | None = None,
+    order: str | None = None,
     descending: bool | None = None,
     reference: str | None = None,
     offset: int = 0,
 ) -> list[dict[str, object]]:
     if not 1 <= limit <= 10001 or offset < 0:
         raise MarketDataError("Result limit must be 1..10001.")
-    orders: dict[str, LiteralString] = {
-        "identity": "e.code,i.market_category,i.symbol",
-        "turnover": "m.turnover_denomination,m.turnover_24h DESC NULLS LAST,e.code,i.market_category,i.symbol",
-        "freshness": "m.measured_at DESC NULLS LAST,e.code,i.market_category,i.symbol",
-    }
-    order = orders.get(sort)
-    if order is None and descending is None:
-        raise MarketDataError("Unknown market sort.")
-    if descending is not None:
-        direction: LiteralString = " DESC NULLS LAST" if descending else " ASC NULLS LAST"
-        directed: dict[str, LiteralString] = {
-            "symbol": "i.symbol" + direction,
-            "exchange": "e.code" + direction,
-            "measured": "m.measured_at" + direction,
-            "turnover": "m.turnover_denomination, m.turnover_24h" + direction,
-            "identity": "e.code" + direction + ",i.market_category,i.symbol",
-        }
-        order = directed.get(sort)
-        if order is None:
-            raise MarketDataError("Unknown market sort.")
-    assert order is not None
+    ordering = MARKETS.resolve(
+        sort,
+        order
+        if order is not None
+        else (None if descending is None else "desc" if descending else "asc"),
+    )
     async with c.cursor(row_factory=dict_row) as cur:
         await cur.execute(
             """SELECT i.id,e.code AS exchange,i.instrument_type,i.market_category,i.symbol,
@@ -379,8 +365,8 @@ async def browse(
               AND (%s::text IS NULL OR i.status=%s)
               AND (%s::text IS NULL OR (m.observation_id IS NOT NULL)=(%s='available'))
             ORDER BY """
-            + order
-            + ",i.id LIMIT %s OFFSET %s",
+            + ordering.sql()
+            + " LIMIT %s OFFSET %s",
             (
                 exchange,
                 exchange,

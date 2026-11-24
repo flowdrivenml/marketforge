@@ -5,7 +5,11 @@ from pathlib import Path
 
 from forge.historical.archives.config import load_acquisition
 from forge.historical.archives.templates import ACQUISITION_TEMPLATE
-from forge.historical.normalization.config import NormalizationRecipe, PreparationRequest
+from forge.historical.normalization.config import (
+    ExactRecipe,
+    NormalizationRecipe,
+    PreparationRequest,
+)
 from forge.orchestration.registry import retain_recipe
 from forge.shared.config.library import resolve_config_file
 from forge.shared.config.loader import configuration_errors
@@ -20,16 +24,21 @@ def recipe_path(paths: ProjectPaths, name: str) -> Path:
     return resolve_config_file(paths.normalization_recipe_dir, name)
 
 
-def load_configuration(source: Path) -> NormalizationRecipe | PreparationRequest:
+Recipe = NormalizationRecipe | PreparationRequest | ExactRecipe
+
+
+def load_configuration(source: Path, *, retain: bool = True) -> Recipe:
     with configuration_errors(source):
         data = source.read_bytes()
         document = tomllib.loads(data.decode())
-        recipe = (
-            PreparationRequest.model_validate(document)
-            if "inputs" in document or "job_id" in document
-            else NormalizationRecipe.model_validate(document)
-        )
-    retain_recipe(RunOperation.NORMALIZE, source, data)
+        if "archive_pins" in document:
+            recipe = ExactRecipe.model_validate(document)
+        elif "inputs" in document or "job_id" in document:
+            recipe = PreparationRequest.model_validate(document)
+        else:
+            recipe = NormalizationRecipe.model_validate(document)
+    if retain:
+        retain_recipe(RunOperation.NORMALIZE, source, data)
     return recipe
 
 

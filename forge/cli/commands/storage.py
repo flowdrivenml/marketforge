@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 from forge.cli.commands.markets import emit
 from forge.cli.environment import add_database_options
 from forge.cli.market_filters import configure_identity_filters
+from forge.cli.sorting import add_sorting
 from forge.markets.models import array
 from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.errors import MarketForgeError
@@ -16,6 +17,7 @@ from forge.shared.terminal.storage import render_storage
 from forge.startup.context import ApplicationContext
 from forge.storage.browsing import coverage, list_archives
 from forge.storage.models import StorageFilters
+from forge.storage.sorting import ARCHIVES, COVERAGE
 
 
 class Options(BaseModel):
@@ -84,6 +86,11 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.description = "Browse nominal local archive coverage by default. Read-only list/details use the configured raw root. Maintenance is explicit."
     add_database_options(parser)
     filters(parser)
+    add_sorting(
+        parser,
+        {"coverage": COVERAGE, "list": ARCHIVES},
+        notes="time is the nominal archive start (earliest in a coverage group).",
+    )
     parser.add_argument("--gaps", action="store_true", help="Show missing half-open UTC intervals.")
     parser.set_defaults(service_handler=run, storage_action="coverage")
     actions = parser.add_subparsers(dest="storage_action")
@@ -93,6 +100,11 @@ def configure(parser: argparse.ArgumentParser) -> None:
         add_database_options(child)
         if action in {"coverage", "list"}:
             filters(child)
+            add_sorting(
+                child,
+                COVERAGE if action == "coverage" else ARCHIVES,
+                notes="time is the nominal archive start (earliest in a coverage group).",
+            )
             if action == "coverage":
                 child.add_argument(
                     "--gaps", action="store_true", help="Show missing half-open UTC intervals."
@@ -168,6 +180,11 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     )
     identity = local_identity(options.archive_reference)
 
+    ordering = None
+    if options.storage_action in {"coverage", "list"}:
+        spec = COVERAGE if options.storage_action == "coverage" else ARCHIVES
+        ordering = spec.resolve(selected.sort, selected.order)
+
     async def execute() -> dict[str, object]:
         async with database_connection(database_dsn(context.paths.root)) as connection:
             async with connection.transaction():
@@ -198,5 +215,11 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     if options.as_json:
         emit(context, utc_json(value), True)
     else:
-        render_storage(context.console, options.storage_action, value, wide=options.wide)
+        render_storage(
+            context.console,
+            options.storage_action,
+            value,
+            wide=options.wide,
+            ordering=ordering.description if ordering else "",
+        )
     return 0

@@ -125,6 +125,7 @@ async def test_timeline_membership_paging_and_snapshot(
         search=namespace,
         limit=1,
         sort="start",
+        order="asc",
         instrument_type="perpetual",
         market_category="linear",
         exchange="bybit",

@@ -15,6 +15,7 @@ class StageSnapshot:
     finished_at: str | None
     summary: str
     verified_jobs: tuple[int, int] | None
+    terminal: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,6 +14,7 @@ from forge.historical.archives.storage.acquire import root_key
 from forge.historical.merge.discovery import (
     contributing_tasks,
 )
+from forge.shared.database.connection import database_flag
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -112,6 +113,14 @@ async def publications(
     ]
 
 
+def require_external_reference_mode(content_type: str) -> None:
+    if content_type in {"trade", "trades"}:
+        raise MarketForgeError(
+            "Trade-only conversion uses internal reference trades. "
+            "Use a depth or combined source publication for external references."
+        )
+
+
 async def selectable_publication(connection: Connection, publication_id: int) -> Publication:
     records = await rows(
         connection,
@@ -127,14 +136,14 @@ async def selectable_publication(connection: Connection, publication_id: int) ->
     if not records or records[0]["operation"] != "merge":
         raise MarketForgeError(
             f"Registry publication {publication_id} is not a registered merge in this environment. "
-            "Find its registry publication ID with mf datasets list --view publications --operation merge."
+            f"Find its registry publication ID with mf datasets list --view publications --operation merge {database_flag()}."
         )
     record = records[0]
     if record["supersession"] is not None or record["invalidation"] is not None:
         raise MarketForgeError(
             f"Registry merge publication {publication_id} is superseded, retired or invalidated. "
             "Inspect its recorded state with mf datasets show --publication-id "
-            f"{publication_id}; select an eligible publication explicitly."
+            f"{publication_id} {database_flag()} and select an eligible publication explicitly."
         )
     try:
         return (await publications(connection, ids=[publication_id]))[0]

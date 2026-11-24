@@ -18,7 +18,9 @@ from forge.shared.errors import MarketForgeError
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 
 
-def manifest_evidence(result: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+def manifest_evidence(
+    result: dict[str, Any], *, verify_fingerprint: bool = True
+) -> tuple[Path, dict[str, Any]]:
     publication = result["publication"]
     path = Path(publication["manifest"])
     if (
@@ -32,7 +34,10 @@ def manifest_evidence(result: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
         raw = stream.read(MAX_MANIFEST_BYTES + 1)
     if len(raw) > MAX_MANIFEST_BYTES:
         raise ValueError("Converted manifest exceeds the metadata read limit.")
-    if hashlib.sha256(raw).hexdigest() != publication["fingerprints"]["manifest.json"]:
+    if (
+        verify_fingerprint
+        and hashlib.sha256(raw).hexdigest() != publication["fingerprints"]["manifest.json"]
+    ):
         raise ValueError("Converted manifest differs from its indexed fingerprint.")
     document = json.loads(raw)
     if not isinstance(document, dict):
@@ -67,7 +72,7 @@ def output_row(
         "instrument_namespace": result["input"].get("source_instrument_namespace"),
         "status": result["status"],
         "registration": result.get("registration", "not_available"),
-        "verification": "recorded",
+        "verification": result.get("verification", "recorded"),
         "integrity": "clean" if manifest["integrity"]["status"] == "pass" else "failed",
         "data_type": {"trades": "trade", "depth": "l2", "combined": "trade_l2"}[
             output["content_type"]
@@ -96,6 +101,8 @@ def output_row(
         "manifest_sha256": result["publication"]["fingerprints"]["manifest.json"],
         "indexed_result": result,
         "conversion": conversion,
+        "statistics": manifest.get("statistics"),
+        "integrity_evidence": manifest["integrity"],
     }
 
 
@@ -114,7 +121,7 @@ async def indexed_outputs(
         await connection.execute(
             """
             WITH indexed AS (
-                SELECT work_key,result FROM historical.resolved_work
+                SELECT work_key,result,owner FROM historical.resolved_work
                 WHERE registry_id=%s AND operation='convert' AND result->>'status'='complete'
                       AND (%s::text IS NULL OR work_key=%s)
             ), parents AS (
@@ -133,7 +140,7 @@ async def indexed_outputs(
                 WHERE d.primary_file IS NOT NULL
                 GROUP BY p.id
             )
-            SELECT i.work_key,i.result,COALESCE(m.items,'[]'::jsonb)
+            SELECT i.work_key,i.result,COALESCE(m.items,'[]'::jsonb),i.owner
             FROM indexed i LEFT JOIN members m ON m.id=i.result#>>'{input,registry_publication_id}'
             ORDER BY i.work_key
             """,
@@ -144,9 +151,17 @@ async def indexed_outputs(
     def read() -> tuple[list[dict[str, Any]], str, list[str]]:
         outputs: list[dict[str, Any]] = []
         unavailable: list[str] = []
-        for key, result, members in records:
+        for key, result, members, owner in records:
             try:
-                outputs.append(output_row(key, result, members))
+                output = output_row(key, result, members)
+                outputs.append(
+                    {
+                        **output,
+                        "producing_execution": owner,
+                        "execution": result.get("execution", "complete"),
+                        "indexing": "complete",
+                    }
+                )
             except (OSError, KeyError, TypeError, ValueError):
                 unavailable.append(key)
         return outputs, "available", unavailable

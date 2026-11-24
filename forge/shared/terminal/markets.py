@@ -95,10 +95,14 @@ def render_market_result(
     filters: str = "",
     exchange_filtered: bool = False,
     market_filtered: bool = False,
+    ordering: str = "",
+    time_field: str | None = None,
 ) -> None:
     console.print(
         Text("Markets · " + action + (" · " + filters if filters else ""), style="mf.heading")
     )
+    if ordering:
+        console.print(Text(ordering, style="mf.secondary"))
     if action in {"sync", "refresh"}:
         sources = [obj(v) for v in array(value["sources"])]
         label = "Metadata records" if action == "sync" else "Observations"
@@ -270,6 +274,11 @@ def render_market_result(
                 )
             console.print(t)
         return
+    time_label = {
+        "measured_at": "Window end",
+        "source_observed_at": "Source observed",
+        "fetched_at": "Fetched",
+    }.get(time_field or "", "")
     if not rows:
         console.print(
             f"No stored instruments match. Run marketforge markets sync {database_flag()} to collect metadata."
@@ -286,6 +295,7 @@ def render_market_result(
                 "Last price",
                 "Native 24h turnover",
                 "Statistics",
+                *([time_label + " UTC"] if time_label else []),
                 "Status",
             ]
         )
@@ -324,6 +334,9 @@ def render_market_result(
                         "\n",
                         state(freshness(r)),
                         " · " + str(r.get("status") or "—"),
+                        ("\n" + time_label + " " + timestamp(r.get(time_field)))
+                        if time_field
+                        else "",
                     ),
                 )
             else:
@@ -341,6 +354,7 @@ def render_market_result(
                         else "mf.body",
                     ),
                     state(freshness(r)),
+                    *([timestamp(r.get(time_field))] if time_field else []),
                     str(r.get("status") or "—"),
                 )
         console.print(t)
@@ -368,8 +382,18 @@ def render_ranking_result(
     limit: int | None = 50,
     excluded: bool = False,
     conversion: str | None = None,
+    ordering: str = "",
+    show_observed: bool = False,
 ) -> None:
     console.print(Text("Markets · ranking " + action, style="mf.heading"))
+    if ordering:
+        volume = (
+            action == "show"
+            and obj(obj(value["snapshot"]).get("comparison_basis") or {}).get("metric") == "volume"
+        )
+        console.print(
+            Text(ordering + (" within each base asset" if volume else ""), style="mf.secondary")
+        )
     if action == "new":
         console.print("Created policy: " + str(value["configuration"]))
         return
@@ -481,7 +505,14 @@ def render_ranking_result(
             )
         )
     if policy.get("metric") == "volume":
-        render_volume_snapshot(console, value, limit=limit, excluded=excluded, evidence=conversion)
+        render_volume_snapshot(
+            console,
+            value,
+            limit=limit,
+            excluded=excluded,
+            evidence=conversion,
+            show_observed=show_observed,
+        )
         return
     currency = str(header["comparison_currency"])
     console.print(Text(f"{header['policy_name']} · {header['id']}", style="mf.identifier"))
@@ -542,7 +573,12 @@ def render_ranking_result(
             )
         )
     t = table(
-        "Rank", "Exchange", "Type / market", "Instrument", f"Comparable turnover ({currency})"
+        "Rank",
+        "Exchange",
+        "Type / market",
+        "Instrument",
+        f"Comparable turnover ({currency})",
+        *(["Source observed UTC"] if show_observed else []),
     )
     for r in included_rows[:limit]:
         t.add_row(
@@ -551,6 +587,7 @@ def render_ranking_result(
             f"{r.get('instrument_type', '—')}/{r.get('market_category', '—')}",
             Text(str(r.get("symbol", r["instrument_reference"])), style="mf.identifier"),
             numeric(r["score"]) + (" (est.)" if r.get("turnover_estimated") else ""),
+            *([timestamp(r.get("source_observed_at"))] if show_observed else []),
         )
     console.print(t)
     console.print(
@@ -862,6 +899,7 @@ def render_volume_snapshot(
     limit: int | None,
     excluded: bool,
     evidence: str | None,
+    show_observed: bool = False,
 ) -> None:
     header = obj(value["snapshot"])
     rows = [obj(row) for row in array(value["entries"])]
@@ -881,7 +919,13 @@ def render_volume_snapshot(
     if filters:
         console.print("Filters: " + ", ".join(filters))
     t = table(
-        "Base asset", "Group rank", "Exchange", "Type / market", "Instrument", "24h base quantity"
+        "Base asset",
+        "Group rank",
+        "Exchange",
+        "Type / market",
+        "Instrument",
+        "24h base quantity",
+        *(["Source observed UTC"] if show_observed else []),
     )
     for row in included[:limit]:
         t.add_row(
@@ -891,6 +935,7 @@ def render_volume_snapshot(
             f"{row.get('instrument_type', '—')}/{row.get('market_category', '—')}",
             Text(str(row.get("symbol", row["instrument_reference"])), style="mf.identifier"),
             amount(row["score"], row["volume_unit"], estimated=bool(row["volume_estimated"])),
+            *([timestamp(row.get("source_observed_at"))] if show_observed else []),
         )
     console.print(t)
     console.print(

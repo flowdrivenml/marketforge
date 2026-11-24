@@ -1,6 +1,6 @@
 # Engine runtime settings and policies
 
-Use the [normalization runtime reference](../configuration/normalization-runtime.md) for the normalization TOML, Rust defaults and policy semantics. This page retains the shared entry point for [merge and conversion settings](#merge-and-conversion-runtime) and [pipeline inheritance](#pipeline-runtime).
+Use the [normalization runtime reference](configuration/normalization-runtime.md) for the normalization TOML, Rust defaults and policy semantics. This page retains the shared entry point for [merge and conversion settings](#merge-and-conversion-runtime) and [pipeline inheritance](#pipeline-runtime).
 
 ## Normalization runtime
 
@@ -13,7 +13,7 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="what-does-this-configuration-establish"></a><a id="important-notes"></a>
 <a id="does-strict-mean-that-every-source-is-historically-complete"></a><a id="does-this-configuration-enable-every-engine-feature"></a>
 
-- [Schema and validation](../configuration/normalization-runtime.md#runtime-configuration-overview)
+- [Schema and validation](configuration/normalization-runtime.md#runtime-configuration-overview)
 
 <a id="resource-management"></a><a id="why-resource-budgets-matter"></a>
 <a id="worker-count"></a><a id="what-does-it-control"></a>
@@ -35,11 +35,11 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="merge-and-conversion-alignment"></a><a id="why-require-whole-mib-values"></a>
 <a id="example"></a><a id="does-every-engine-operation-use-identical-resource-validation"></a>
 
-- [Resource management and Parquet](../configuration/normalization-runtime.md#2-resource-management)
+- [Resource management and Parquet](configuration/normalization-runtime.md#2-resource-management)
 
 <a id="processing-policies"></a>
 
-- [Processing and performance](../configuration/normalization-runtime.md#1-processing-and-performance)
+- [Processing and performance](configuration/normalization-runtime.md#1-processing-and-performance)
 
 <a id="normalization-safety-limits"></a><a id="why-are-safety-limits-separate-from-budgets"></a>
 <a id="why-are-they-useful"></a><a id="default-normalization-limits"></a>
@@ -55,7 +55,7 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="metric-entries"></a><a id="reconciliation-bytes"></a>
 <a id="why-bound-diagnostic-information"></a><a id="does-a-small-metric-limit-suppress-every-integrity-violation"></a>
 
-- [Normalization safety limits](../configuration/normalization-runtime.md#3-normalization-safety-limits)
+- [Normalization safety limits](configuration/normalization-runtime.md#3-normalization-safety-limits)
 
 <a id="diagnostic-collection"></a><a id="what-are-runtime-diagnostics"></a>
 <a id="diagnostic-modes"></a><a id="does-detailed-mode-change-normalized-data"></a>
@@ -63,7 +63,7 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="accepted-range"></a><a id="why-configure-an-interval"></a>
 <a id="does-a-smaller-interval-always-improve-debugging"></a>
 
-- [Diagnostics](../configuration/normalization-runtime.md#5-diagnostics)
+- [Diagnostics](configuration/normalization-runtime.md#5-diagnostics)
 
 <a id="integrity-evaluation"></a><a id="why-does-marketforge-need-integrity-policies"></a>
 <a id="what-does-an-integrity-policy-decide"></a><a id="what-does-it-not-decide"></a>
@@ -102,7 +102,7 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="during-source-processing"></a><a id="during-final-evaluation"></a>
 <a id="why-separate-these-stages"></a><a id="does-delayed-rate-evaluation-mean-violations-are-ignored"></a>
 
-- [Integrity evaluation](../configuration/normalization-runtime.md#6-integrity-policies)
+- [Integrity evaluation](configuration/normalization-runtime.md#6-integrity-policies)
 
 <a id="source-reconciliation"></a><a id="why-do-historical-archives-overlap"></a>
 <a id="why-can-this-happen_1"></a><a id="why-is-reconciliation-necessary"></a>
@@ -127,7 +127,7 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="what-if-one-source-contains-unknown-identities"></a><a id="what-happens-to-excluded-observations"></a>
 <a id="why-is-this-important_1"></a>
 
-- [Trade reconciliation](../configuration/normalization-runtime.md#7-trade-reconciliation)
+- [Trade reconciliation](configuration/normalization-runtime.md#7-trade-reconciliation)
 
 <a id="explicit-event-loss-authorization"></a><a id="why-event-loss-must-be-explicit"></a>
 <a id="default-behavior"></a><a id="meaning"></a>
@@ -141,7 +141,7 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="why-distinguish-source-observations-from-rows"></a><a id="what-does-marketforge-count"></a>
 <a id="what-about-parse-failures"></a>
 
-- [Explicit event loss](../configuration/normalization-runtime.md#source-preference-and-loss-limits)
+- [Explicit event loss](configuration/normalization-runtime.md#source-preference-and-loss-limits)
 
 <a id="depth-reconciliation"></a><a id="why-depth-reconciliation-is-different"></a>
 <a id="why-is-overlapping-depth-difficult"></a><a id="what-could-go-wrong"></a>
@@ -165,7 +165,7 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="what-does-marketforge-compare"></a><a id="does-json-property-order-matter"></a>
 <a id="what-about-deltas-sharing-snapshot-ids"></a><a id="can-a-terminal-snapshot-be-represented-by-the-next-initialization"></a>
 
-- [Order-book reconciliation](../configuration/normalization-runtime.md#8-order-book-reconciliation)
+- [Order-book reconciliation](configuration/normalization-runtime.md#8-order-book-reconciliation)
 
 <a id="timestamp-regression-policies"></a><a id="why-have-separate-timestamp-policies"></a>
 <a id="trades"></a><a id="depth"></a>
@@ -205,7 +205,7 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="why_1"></a><a id="does-this-mean-every-source-must-have-a-sequence-field"></a>
 <a id="depth-timestamp-parameter-reference"></a><a id="important-rules_1"></a>
 
-- [Timestamp regression](../configuration/normalization-runtime.md#9-timestamp-regression)
+- [Timestamp regression](configuration/normalization-runtime.md#9-timestamp-regression)
 
 <a id="loss-accounting-and-completeness"></a><a id="why-event-accounting-matters"></a>
 <a id="why-distinguish-events-and-rows"></a><a id="loss-denominator"></a>
@@ -217,11 +217,11 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="why-track-spans"></a><a id="do-different-loss-reasons-start-separate-spans"></a>
 <a id="why_3"></a><a id="what-does-the-interval-limit-control"></a>
 
-- [Loss accounting](../configuration/normalization-runtime.md#source-preference-and-loss-limits)
+- [Loss accounting](configuration/normalization-runtime.md#source-preference-and-loss-limits)
 
 <a id="runtime-evidence-in-publications"></a>
 
-- [Runtime evidence](../configuration/normalization-runtime.md#configuration-file-and-resolution)
+- [Runtime evidence](configuration/normalization-runtime.md#configuration-file-and-resolution)
 
 <a id="scratch-representation"></a><a id="why-does-marketforge-have-scratch-formats"></a>
 <a id="why-use-separate-scratch-formats"></a><a id="scratch-format"></a>
@@ -230,35 +230,21 @@ Use the [normalization runtime reference](../configuration/normalization-runtime
 <a id="zlib"></a><a id="uncompressed"></a>
 <a id="why-provide-both"></a><a id="does-changing-the-codec-change-normalized-values"></a>
 
-- [Scratch representation](../configuration/normalization-runtime.md#1-processing-and-performance)
+- [Scratch representation](configuration/normalization-runtime.md#1-processing-and-performance)
 
 <a id="merge-runtime-settings"></a><a id="merge-fan-in"></a>
 <a id="normalization-merge-fan-in"></a><a id="what-does-fan-in-control"></a>
 <a id="why-limit-fan-in"></a><a id="does-increasing-fan-in-always-improve-performance"></a>
 <a id="is-merge-fan-in-the-same-as-stream-rank"></a>
 
-- [Normalization merge fan-in](../configuration/normalization-runtime.md#merge-fan-in)
+- [Normalization merge fan-in](configuration/normalization-runtime.md#merge-fan-in)
 
 <a id="parquet-compression"></a><a id="does-a-higher-number-always-improve-compression"></a>
 <a id="does-compression-change-market-data-meaning"></a><a id="is-this-the-same-as-scratch-codec"></a>
 
 ## Merge and conversion runtime
 
-The [merge runtime reference](../configuration/merge-runtime.md) documents `merge.toml`, including the CLI, loader defaults, partitioning, and runtime evidence.
-
-Conversion preparation reads `data/.config/engine/convert.toml`. Its schema-1 loader shares the I/O resource types and Parquet settings. The conversion document has no partitioning table.
-
-| Conversion field | Loader requirements |
-| --- | --- |
-| `schema_version` | Required integer 1. |
-| `resources.workers` | Required positive integer. |
-| `resources.memory_limit_mb` | Required positive binary MiB, convertible to unsigned 64-bit bytes. |
-| `resources.max_open_files` | Positive integer, default 64. |
-| `parquet.row_group_target_mb` | Required positive binary MiB, no larger than the file target. |
-| `parquet.file_target_mb` | Required binary MiB, at least the row-group target and convertible to unsigned 64-bit bytes. |
-| `parquet.compression_level` | Zstandard level 1–22, default 3. |
-
-Conversion clamps recipe resource requests to the runtime ceilings and transfers the resulting values and Parquet settings into the prepared job. The direct converter can lower the prepared worker count with `--workers`. See the [conversion workflow](../workflows/conversion.md) for input and execution requirements.
+Use the operation-specific references for [Merge](configuration/merge-runtime.md) and [Conversion](configuration/conversion-runtime.md). They define the editable files, defaults, admission limits and retained settings.
 
 ## Pipeline runtime
 
@@ -280,8 +266,7 @@ compression_level = 5
 Each operation TOML is independently validated, then each override is applied
 recursively to its own stage. Unspecified fields inherit the operation file
 and its Rust defaults. Rust validates the resulting TOML before processing.
-Acquire uses Forge HTTP settings and the workflow request. The pipeline executes
-acquire, normalize and merge.
+Acquisition uses Forge HTTP settings and the workflow request. An optional Conversion stage freezes the [base converter runtime](configuration/conversion-runtime.md) separately.
 
 For a new run, Forge retains the effective TOMLs, their checksums, the source
 TOML hashes, compiled settings, profile source files and executable hashes.
@@ -297,4 +282,11 @@ mf --json engine runtime pipeline
 
 Runtime inspection requires the matching managed Engine builds and does not open
 a database connection. The pipeline workflow recipe supplies the interval,
-requests, ranking name and merge ordering. [Pipeline recipe](../configuration/pipeline.md)
+requests, ranking name and merge ordering. [Pipeline recipe](configuration/pipeline.md)
+
+Conversion recipe resource requests default to one worker, 1024 MiB of memory,
+and 64 open files when `convert.resources` is omitted. The runtime still
+validates these against the converter’s limits. The recipe owns target
+currency, valuation policy, and reference selection. The prepared conversion
+job retains its effective resource requests and frozen runtime.
+[Pipeline recipe field reference](configuration/pipeline.md#complete-field-reference)

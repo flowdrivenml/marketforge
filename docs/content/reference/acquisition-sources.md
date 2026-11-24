@@ -26,7 +26,7 @@ Use `mf acquisition sources | cpout` to see which combinations the installed arc
 | `family` | An archive family used by the provider for derivatives | OKX inverse dated futures `BTC-USD` |
 | `base_coin` | Options grouped or resolved by their underlying coin | Bybit options on `BTC` |
 
-Explicit historical instrument and family scopes can find delisted instruments absent from today's catalogue if their archives are still published. Use the exact identifier expected by the historical source. See [scope and provider options](../configuration/acquisition.md#scope-and-provider-options).
+Explicit historical instrument and family scopes can find delisted instruments absent from today's catalogue if their archives are still published. Use the exact identifier expected by the historical source. See [scope and provider options](configuration/acquisition.md#scope-and-provider-options).
 
 ## Discovery by provider
 
@@ -48,4 +48,4 @@ Spot discovery uses native symbols such as `BTC-USDT`. Derivatives use a family 
 
 ### Gate.io
 
-The adapter probes monthly trade candidates and hourly L2 candidates for existence, using separate spot, USDT derivatives and BTC derivatives routes. The [L2 feed option](../configuration/acquisition.md#scope-and-provider-options) selects incremental or snapshot archives. Dated futures use the same candidate construction as the corresponding perpetual market. Only a successful probe establishes that a candidate archive was found.
+The adapter probes monthly trade candidates and hourly L2 candidates for existence, using separate spot, USDT derivatives and BTC derivatives routes. The [L2 feed option](configuration/acquisition.md#scope-and-provider-options) selects incremental or snapshot archives. Dated futures use the same candidate construction as the corresponding perpetual market. Only a successful probe establishes that a candidate archive was found.

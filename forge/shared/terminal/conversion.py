@@ -41,8 +41,10 @@ def interval(bounds: dict[str, Any]) -> str:
     return f"{utc_ns(bounds['start_ns'])} → {utc_ns(bounds['end_ns'])} (end exclusive)"
 
 
-def render_inventory(console: Console, views: list[RecipeView]) -> None:
+def render_inventory(console: Console, views: list[RecipeView], *, ordering: str = "") -> None:
     header(console, "Convert · Recipes")
+    if ordering:
+        console.print(Text(ordering, style="mf.secondary"))
     if not views:
         empty_state(
             console,

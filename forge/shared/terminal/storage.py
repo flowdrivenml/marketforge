@@ -65,9 +65,16 @@ def numeric_columns(t: Table) -> None:
 
 
 def render_storage(
-    console: Console, action: str, value: dict[str, object], *, wide: bool = False
+    console: Console,
+    action: str,
+    value: dict[str, object],
+    *,
+    wide: bool = False,
+    ordering: str = "",
 ) -> None:
     console.print(Text("Storage · " + action, style="mf.heading"))
+    if ordering:
+        console.print(Text(ordering, style="mf.secondary"))
     if action == "show":
         render_details(console, obj(array(value["archives"])[0]))
         return

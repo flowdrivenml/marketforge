@@ -6,6 +6,8 @@ Use this route to produce a first historical dataset from a fresh checkout.
 2. [Acquire and normalize a day of Bybit BTCUSDT trades and depth](quickstart.md). Follow the returned file IDs to inspect the registered output and reconstruct the first book state.
 3. [Choose a guide](../workflows/index.md) for another market, your own recording, a merge, or a downstream dataset reader.
 
+For the identities and time semantics behind the first dataset, see [MarketForge concepts](../concepts/index.md).
+
 For current instruments and rankings, start with [Markets and statistics](../workflows/markets/index.md).
 
-If your workspace already has a publication, go directly to [dataset inspection](../workflows/datasets.md). For a development checkout or implementation change, start with the [developer overview](../development/index.md).
+If your workspace already has a publication, go directly to [dataset inspection](../workflows/inspection/datasets.md). For a development checkout or implementation change, start with the [developer overview](../development/index.md).

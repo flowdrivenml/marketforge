@@ -96,9 +96,9 @@ def normalization_source(paths: ProjectPaths, source: str) -> tuple[Path, Normal
     data = path.read_bytes()
     with configuration_errors(path):
         document = tomllib.loads(data.decode("utf-8"))
-        if "inputs" in document or "job_id" in document:
+        if {"inputs", "job_id", "archive_pins"} & document.keys():
             raise MarketForgeError(
                 "Source-derived merge requires a normalization recipe with requests and an interval. "
-                "For a legacy archive-ID request, select the registered file dataset IDs explicitly."
+                "For an exact archive selection, select the registered file dataset IDs explicitly."
             )
         return path, NormalizationRecipe.model_validate(document), hashlib.sha256(data).hexdigest()

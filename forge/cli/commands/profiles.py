@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from forge.cli.environment import add_database_options
+from forge.cli.sorting import add_sorting
 from forge.historical.imports.formats import sample
 from forge.historical.profiles.authoring import authoring_guide
 from forge.historical.profiles.documentation import guide_url
@@ -25,6 +26,7 @@ from forge.historical.profiles.service import (
 )
 from forge.historical.profiles.source_sample import DEFAULT_ROWS, MAX_ROWS, inspect_source
 from forge.shared.errors import MarketForgeError
+from forge.shared.sorting import NAMES
 from forge.shared.terminal.console import create_console
 from forge.shared.terminal.editor import edit_file
 from forge.shared.terminal.profiles import (
@@ -40,6 +42,7 @@ from forge.startup.context import ApplicationContext
 def configure(parser: argparse.ArgumentParser) -> None:
     actions = parser.add_subparsers(dest="profile_action", required=True)
     command = actions.add_parser("list")
+    add_sorting(command, NAMES, notes="The name is the full installed profile ID.")
     for name in ("type", "exchange", "instrument-type", "market-category"):
         command.add_argument(f"--{name}")
     command.set_defaults(service_handler=run)
@@ -114,9 +117,13 @@ def inventory(args: argparse.Namespace, context: ApplicationContext) -> int:
         for name in ("type", "exchange", "instrument_type", "market_category")
     }
     if args.as_json:
-        print(json.dumps({"profiles": discover(context.paths, **filters)}))
+        print(
+            json.dumps(
+                {"profiles": discover(context.paths, sort=args.sort, order=args.order, **filters)}
+            )
+        )
     else:
-        installed_profiles = discover(context.paths)
+        installed_profiles = discover(context.paths, sort=args.sort, order=args.order)
         keys = ("exchange", "instrument_type", "market_category", "type")
         matching = [
             entry
@@ -126,7 +133,13 @@ def inventory(args: argparse.Namespace, context: ApplicationContext) -> int:
                 for key, token in zip(keys, entry["id"].split("."), strict=True)
             )
         ]
-        render_inventory(context.console, matching, len(installed_profiles), filters)
+        render_inventory(
+            context.console,
+            matching,
+            len(installed_profiles),
+            filters,
+            ordering=NAMES.resolve(args.sort, args.order).description,
+        )
     return 0
 
 

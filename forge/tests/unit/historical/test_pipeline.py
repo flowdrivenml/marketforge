@@ -246,7 +246,7 @@ def test_dashboard_renders_provisional_acquisition(
     assert "discovery in progress" in rendered and "Ctrl+C" in rendered
     assert "\x1b" not in rendered
     if width >= 65:
-        assert "Normalize" in rendered and "Merge" in rendered
+        assert "Normalization" in rendered and "Merge" in rendered
     assert all(len(line) <= width for line in rendered.splitlines())
 
 

@@ -1,5 +1,7 @@
 # Forge command index
 
+[Collection sorting](sorting.md) lists the supported fields, aliases, and defaults for each browsing command.
+
 `mf` and `marketforge` use the same parser. Run `mf` or `mf --help` to browse the
 command groups. Follow a family into its nested commands, then use `-h` or
 `--help` at the action you want. Action help shows operands, choices, required
@@ -10,7 +12,7 @@ flags, defaults and mutually exclusive options from the installed parser.
 | Getting Started | [Interactive workspace](forge.md) · [Initialization and diagnostics](maintenance.md) |
 | Data Engineering | [Acquisition](acquisition.md) · [Import, profiles and registration](registration.md) · [Normalization](normalize.md) · [Merge](merge.md) · [Conversion](convert.md) · [Pipeline](pipeline.md) |
 | Data & Markets | [Datasets](datasets.md) · [Storage](storage.md) · [Markets and rankings](markets.md) · [Catalogue](catalog.md) |
-| Operations & System | [Runs](runs.md) · [Engine](engine.md) · [Database and configuration](maintenance.md) · [Run and dataset maintenance](../history-maintenance.md) |
+| Operations & System | [Runs](runs.md) · [Engine](engine.md) · [Database and configuration](maintenance.md) · [Run and dataset maintenance](../../maintenance/publications.md) |
 
 ```bash
 mf --help | cpout
@@ -22,7 +24,7 @@ mf normalize prepare --help | cpout
 Help works outside a workspace and exits before command execution. It uses the
 Tokyo Night palette when terminal and application settings permit it.
 Redirected output is plain text in automatic color mode. The
-[`presentation.color` setting](../../configuration/application.md) can force or
+[`presentation.color` setting](../configuration/application.md) can force or
 disable color.
 
 ## Global options
@@ -61,6 +63,6 @@ mf database status --production | cpout
 - `--testing` selects the guarded testing database. Commands can still write records, access the network, or remove eligible managed files. A preview or dry run is available only where documented. [Testing credentials and setup](../../getting-started/installation.md#postgresql-credentials)
 - Normalization and merge `--tui` require an interactive terminal and are incompatible with global `--json`. `--silent` is action-specific. It generally controls progress while preserving results. Some editor actions require an interactive session.
 - Exit `0` means the action completed under its stated policy. Check result fields for empty selections, incomplete evidence, or explicitly accepted partial normalization. Exit `1` generally means an operation-level failure, an unaccepted partial result, or a blocked apply. Exit `2` means a parser or handled setup/configuration error. Handled cancellation can return `130`. Processing actions can instead return `1` with an interrupted receipt.
-- Raw archive IDs, PostgreSQL file dataset IDs, engine job IDs, and engine publication IDs serve different purposes. Committed publications retain their original manifests and paths. Inspect the reported artifacts under the configured data root. Registration-only recovery uses the committed publication, primary file or execution intent as documented for each processor. [File dataset model](../../workflows/datasets.md)
+- Raw archive IDs, PostgreSQL file dataset IDs, engine job IDs, and engine publication IDs serve different purposes. Committed publications retain their original manifests and paths. Inspect the reported artifacts under the configured data root. Registration-only recovery uses the committed publication, primary file or execution intent as documented for each processor. [File dataset model](../../workflows/inspection/datasets.md)
 
 Handled errors in JSON mode use `{"schema_version":1,"error":{"message":"…"}}` on stderr. The command's successful or partial result is a separate stdout document when the handler supports JSON. Some failures return an operation report on stdout with a nonzero code. Read both channels and the process status. The command references describe result fields as implemented, subject to the explicitly versioned artifact contracts.

@@ -1,5 +1,11 @@
 # Instrument specifications
 
+In **Catalogue → Specifications**, choose **New** and use **Find** to
+select the instrument by venue, type, market and symbol. Exact decimal
+values can be entered directly. The form reveals applicable sizing fields
+and marks contract value and denomination as required when quantity is
+measured in contracts. Review the validity interval before **Register**.
+
 Use a quoted decimal or an exact TOML integer for economic values. An instrument declaration supplies the default base, quote, and settlement assets. Derivative quantities expressed in contracts require an explicit value and denomination. Historical declarations need provenance and an inclusive start and exclusive end. An observation timestamp can be supplied when known.
 
 [Example historical specification](../../examples/catalogue/specs.toml) for synthetic AAPL data:

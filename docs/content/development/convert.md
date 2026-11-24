@@ -852,5 +852,5 @@ For a new feature, follow one event through prepared identity, reference eligibi
 ## Related development paths
 
 - [System architecture](architecture.md) and [operation lifecycles](operations.md) place Conversion Engine in the historical workflow.
-- [Prepared contract](../reference/prepared-conversion.md) and [user workflow](../workflows/conversion.md) describe the public handoff.
+- [Prepared contract](../reference/data-formats/prepared-conversion.md) and [user workflow](../workflows/conversion.md) describe the public handoff.
 - [Test selection](testing.md) and [diagnostics](debugging.md) cover verification and inspection.

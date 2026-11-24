@@ -13,6 +13,7 @@ from rich.text import Text
 from forge.historical.archives.progress import ProgressSnapshot
 from forge.historical.pipelines.progress import PipelineSnapshot
 from forge.orchestration.inspection import MANAGED_RUN
+from forge.shared.terminal.palette import BLUE, CYAN
 from forge.tui.controller import Operation, document, outcome
 from forge.tui.operation_view import duration
 from forge.tui.presentation import Cell, entries, status
@@ -155,7 +156,7 @@ def operation_lines(op: Operation, active: bool, height: int, snapshot: object) 
         )
     )
     output = Text(no_wrap=True, overflow="ellipsis")
-    output.append(op.title.title(), style="bold #7aa2f7")
+    output.append(op.title.title(), style=f"bold {BLUE}")
     if label:
         output.append(f" · {label[:42]}")
     output.append(" · ")
@@ -194,7 +195,7 @@ def operation_lines(op: Operation, active: bool, height: int, snapshot: object) 
     if isinstance(snapshot, str):
         phase = snapshot
     if phase or progress:
-        output.append("\n" + " · ".join(filter(None, (phase, progress))), style="#7dcfff")
+        output.append("\n" + " · ".join(filter(None, (phase, progress))), style=CYAN)
     if active and activity and height >= 20:
         output.append("\n" + activity)
     if not active:

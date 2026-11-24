@@ -1,30 +1,25 @@
 """Bounded Overview evidence and interaction checks."""
 
-import asyncio
 import json
 from pathlib import Path
 
 import pytest
-from pytest import mark
 from rich.console import Console
-from textual.widgets import Input, Static
+from textual.containers import VerticalScroll
+from textual.widgets import Static
 
-from forge.orchestration.inspection import run_page
 from forge.shared.config.models import AppSettings
 from forge.shared.paths import ProjectPaths
 from forge.startup.context import ApplicationContext
 from forge.tui import overview
-from forge.tui.actions import BY_KEY, Values
 from forge.tui.app import ForgeApp
 from forge.tui.controller import Operation
 from forge.tui.inspection import Inspection
-from forge.tui.presentation import Results
-from forge.tui.workflows import Edit, Progress
 
 RUN = "11111111-1111-4111-8111-111111111111"
 SECOND = "22222222-2222-4222-8222-222222222222"
-MANAGED = "merge-execute-abcd"
-RECOVERY = "merge-register-abcd"
+MANAGED = "merge-execute-1001"
+RECOVERY = "merge-register-1002"
 
 
 def context(path: Path) -> ApplicationContext:
@@ -62,152 +57,6 @@ def test_requested_results_and_full_publication_scope() -> None:
     assert not overview.pipeline_recovery({"kind": "historical_pipeline", "state": "interrupted"})
 
 
-@mark.asyncio
-async def test_overview_owned_cancel_registry_failure_and_retained_selection(
-    tmp_path: Path,
-) -> None:
-    ctx = context(tmp_path)
-    ready, cancelling, cleanup = asyncio.Event(), asyncio.Event(), asyncio.Event()
-    calls: list[str] = []
-
-    async def service(
-        key: str, _: Values, __: ApplicationContext, progress: Progress, ___: Edit
-    ) -> object:
-        calls.append(key)
-        assert key == "convert run"
-        progress("execute")
-        ready.set()
-        try:
-            await asyncio.Future[None]()
-        except asyncio.CancelledError:
-            cancelling.set()
-            await cleanup.wait()
-        return {"status": "interrupted", "registration": "not_available"}
-
-    async def status(
-        key: str, _: Values, __: ApplicationContext, ___: Progress, ____: Edit
-    ) -> object:
-        calls.append(key)
-        if key == "database status":
-            raise ValueError("Fake registry failure")
-        assert key == "engine status"
-        return {"targets": [{"target": "convert", "status": "verified"}]}
-
-    app = ForgeApp(ctx, invoke=service)
-    app.overview_probe = status
-    async with app.run_test(size=(80, 24)) as pilot:
-        await pilot.pause()
-        assert app.query_one("#overview-results", Results).row_count == 0
-        assert "Idle" in str(app.query_one("#overview-current", Static).content)
-        report(
-            ctx.paths.runs_dir,
-            RUN,
-            {"kind": "historical_pipeline", "state": "running", "name": "External"},
-        )
-        app.action_reload()
-        await pilot.pause()
-        assert app.state.rows[RUN].state == "Recorded running"
-        owned = app.controller.launch(BY_KEY["convert run"], {"reference": "fixture-convert"})
-        await asyncio.wait_for(ready.wait(), timeout=2)
-        await pilot.pause(0.3)
-        assert "execute" in str(app.query_one("#overview-current", Static).content)
-        assert "Production registry unavailable" in str(
-            app.query_one("#overview-attention", Static).content
-        )
-        await app.switch("Runs")
-        assert app.controller.active()
-        await app.switch("Overview")
-        assert app.state.selection == RUN
-        cancel = asyncio.create_task(app.controller.cancel())
-        await asyncio.wait_for(cancelling.wait(), timeout=2)
-        app.render_operation()
-        assert "interrupting" in str(app.query_one("#overview-current", Static).content)
-        cleanup.set()
-        await cancel
-        await owned
-        await pilot.pause(0.4)
-        assert app.state.selection == RUN
-        assert app.controller.current is not None and app.controller.current.state == "interrupted"
-        assert app.screen == app.root_screen
-        assert set(calls) == {"convert run", "engine status", "database status"}
-
-
-@mark.asyncio
-async def test_overview_exact_recovery_and_evidence_resolution(tmp_path: Path) -> None:
-    ctx = context(tmp_path)
-    directory = ctx.paths.runs_dir
-    intent = str(directory / MANAGED / "execution-intent.json")
-    failed: dict[str, object] = {
-        "status": "failed",
-        "verification": "verified",
-        "registration": "failed",
-        "execution_id": MANAGED,
-        "execution_receipt": intent,
-        "submitted_sha256": "digest",
-    }
-    report(directory, MANAGED, failed, "execution-result.json")
-    report(
-        directory,
-        RUN,
-        {
-            "kind": "historical_pipeline",
-            "state": "interrupted",
-            "name": "Exact recipe",
-            "submitted_sha256": "fixture",
-            "resolved_sha256": "fixture",
-            "started_at": "2026-11-20T12:00:00+00:00",
-        },
-    )
-    report(directory, SECOND, {"state": "failed", "name": "Unrelated historic failure"})
-    app = ForgeApp(ctx)
-
-    async def status(
-        _: str, __: Values, ___: ApplicationContext, ____: Progress, _____: Edit
-    ) -> object:
-        return {
-            "database": "marketforge",
-            "initialized": True,
-            "purpose": "production",
-            "database_id": "fixture",
-        }
-
-    app.overview_probe = status
-    async with app.run_test(size=(120, 32)) as pilot:
-        await pilot.pause()
-        assert set(app.state.rows) == {RUN, SECOND, MANAGED}
-        assert "Unrelated historic failure" not in str(
-            app.query_one("#overview-attention", Static).content
-        )
-        row = app.state.rows[RUN]
-        app.open_overview_run(row)
-        await pilot.pause()
-        screen = app.screen
-        assert isinstance(screen, Inspection)
-        assert "Resume retained pipeline" in screen.links
-        screen.links["Resume retained pipeline"]()
-        await pilot.pause()
-        assert app.screen.query_one("#field-reference", Input).value == RUN
-        await pilot.press("escape", "escape")
-        assert app.overview_needs_registration({**failed, "submitted_sha256": "other"})
-        recovered: dict[str, object] = {
-            "registration": "registered",
-            "registry_id": "fixture",
-            "execution": {"execution_id": MANAGED, "submitted_sha256": "digest"},
-            "publications": {"output": {"publication_id": 7654321}},
-        }
-        report(directory, RECOVERY, recovered, "registration-result.json")
-        app.action_reload()
-        await pilot.pause()
-        assert "Recover registration" not in app.overview_run_links(MANAGED, failed)
-        assert app.overview_needs_registration({**failed, "submitted_sha256": "other"})
-        assert "Publication 7654321" in app.overview_run_links(RECOVERY, recovered)
-        assert "registration outstanding" not in str(
-            app.query_one("#overview-attention", Static).content
-        )
-        assert len(run_page(directory, 8, 0)[0]) == 2
-        assert len(run_page(directory, 8, 0, include_managed=True)[0]) == 4
-
-
 def test_standalone_phase_has_no_pipeline_stages() -> None:
     op = Operation("fixture", "normalize run", reference="fixture", progress="validate")
     label = overview.operation_lines(op, True, 24, op.snapshot()).plain
@@ -215,154 +64,266 @@ def test_standalone_phase_has_no_pipeline_stages() -> None:
     assert "Acquire" not in label
 
 
-@mark.asyncio
-async def test_status_generation_rejects_late_results(tmp_path: Path) -> None:
-    ctx = context(tmp_path)
-    entered, cancelled, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
-    calls = 0
+def test_activity_is_latest_and_retained_running_is_unconfirmed() -> None:
+    from forge.tui import workspace_dashboard as dashboard
 
-    async def probe(
-        key: str, _: Values, __: ApplicationContext, ___: Progress, ____: Edit
-    ) -> object:
-        nonlocal calls
-        if key == "engine status":
-            return {"targets": [{"target": "normalize", "status": "missing"}]}
-        calls += 1
-        if calls == 1:
-            entered.set()
-            try:
-                await asyncio.Future[None]()
-            except asyncio.CancelledError:
-                cancelled.set()
-                await release.wait()
-            return {"database": "marketforge_test", "initialized": False}
-        return {
-            "database": "marketforge",
-            "initialized": True,
-            "purpose": "production",
-            "database_id": "fixture",
-        }
-
-    app = ForgeApp(ctx)
-    app.overview_probe = probe
-    async with app.run_test(size=(80, 24)) as pilot:
-        await asyncio.wait_for(entered.wait(), timeout=2)
-        await app.switch("Runs")
-        await asyncio.wait_for(cancelled.wait(), timeout=2)
-        await app.switch("Overview")
-        release.set()
-        await pilot.pause(0.3)
-        registry = app.overview_status["Registry"]
-        assert registry.text == "connected"
-        app.render_operation()
-        assert app.overview_status["Registry"].checked == registry.checked
+    reports: list[dict[str, object]] = [
+        {"operation": "merge", "status": "completed", "started_at": "2026-11-20T10:00:00Z"},
+        {
+            "operation": "merge",
+            "status": "completed",
+            "registration": "failed",
+            "started_at": "2026-11-20T11:00:00Z",
+        },
+        {"operation": "normalize", "status": "prepared", "started_at": "2026-11-20T12:00:00Z"},
+        {"operation": "pipeline", "status": "stopped", "started_at": "2026-11-20T12:00:00Z"},
+        {"operation": "convert", "status": "running", "started_at": "2026-11-20T12:00:00Z"},
+        {
+            "operation": "acquisition",
+            "status": "running",
+            "owned_active": True,
+            "started_at": "2026-11-20T12:00:00Z",
+        },
+    ]
+    states = {op: state for op, (_, state) in dashboard.activity(reports).items()}
+    assert states == {
+        "merge": "Failed",
+        "normalize": "Completed",
+        "pipeline": "Completed",
+        "convert": "—",
+        "acquire": "Pending",
+    }
+    assert dashboard.result("Failed").style == "#f7768e"
+    assert dashboard.result("Completed").style == "#9ece6a"
+    assert dashboard.result("Pending").style == "#e0af68"
+    assert dashboard.cpu_percent(None, (100, 45)) is None
+    assert dashboard.cpu_percent((100, 45), (200, 75)) == 70
 
 
-@mark.asyncio
-async def test_inventory_dashboard_exact_routes_and_cached_outage(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size", [(80, 24), (100, 30), (120, 32), (160, 48)])
+async def test_workspace_layout_and_stage_interaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    size: tuple[int, int],
 ) -> None:
-    from datetime import UTC, datetime
+    from typing import Any
 
-    from forge.datasets import inventory as source
+    from forge.datasets import workspace_inventory
+    from forge.tui import app as shell
+    from forge.tui import workspace_dashboard as dashboard
 
     ctx = context(tmp_path)
-    market = source.Market(
-        "fixture:canonical", "bybit", "711", "SAME", "spot", "spot", True, True, 1700000000000000000
-    )
-    alternative = source.Market(
-        "fixture:canonical", "okx", "711", "SAME", "spot", "spot", True, False, None
-    )
-    unavailable = False
-    page_offsets: list[int] = []
-    sorted_markets = (market, alternative)
-    target: list[tuple[str | None, source.Market | None]] = []
+    receipts: dict[str, object] = {
+        "kind": "historical_pipeline",
+        "environment": "production",
+        "status": "stopped",
+        "name": "Fixture",
+        "started_at": "2026-11-20T12:00:00Z",
+        "finished_at": "2026-11-20T12:01:00Z",
+    }
+    report(ctx.paths.runs_dir, RUN, receipts)
+    copied: list[str] = []
+    inspected: list[str] = []
 
-    async def registry(_: ProjectPaths) -> source.Inventory:
-        if unavailable:
-            raise OSError("offline")
-        return source.Inventory(
-            (source.Stage("normalize", 2, 3, 2048, 1, 11, 3),),
-            2,
-            2,
+    async def summary(_: ProjectPaths) -> workspace_inventory.WorkspaceInventory:
+        return workspace_inventory.WorkspaceInventory(
             3,
             2,
             1,
-            2048,
-            1,
-            sorted_markets,
-            datetime.now(UTC),
+            (("bybit", 1, 1, 0, 0, 3),),
+            (("bybit", "spot", "spot", True, False),),
+            {"Raw": (1, 0), "Normalized": (30, 0), "Merged": (None, 1), "Converted": (50, 0)},
         )
 
-    async def raw(_: ProjectPaths) -> tuple[int, int]:
-        return 7, 512
+    async def page(_: ProjectPaths, stage: str, offset: int) -> tuple[list[dict[str, Any]], bool]:
+        row: dict[str, Any] = {
+            "exchange": "bybit",
+            "symbol": "LONG-BTCUSDT",
+            "data_type": "trade",
+            "file_count": 2,
+            "recorded_bytes": 10,
+            "archives": ["local:100", "local:101"],
+            "publication": 41,
+        }
+        if stage == "Merged":
+            row["publication"] = 9_000_000_000_000_001
+        if stage == "Raw":
+            row.pop("publication")
+        if stage == "Converted":
+            row.pop("publication")
+            row["output_ref"] = "a" * 64
+        return [row], offset == 0
 
-    async def markets(_: ProjectPaths, offset: int) -> tuple[tuple[source.Market, ...], bool]:
-        page_offsets.append(offset)
-        return (sorted_markets if offset == 0 else (alternative,)), offset == 0
+    async def selected(_: Path) -> str:
+        return "verified-registry"
 
-    async def publications(
-        _: ProjectPaths, __: int, operation: str | None, item: source.Market | None
-    ) -> tuple[list[dict[str, object]], bool]:
-        target.append((operation, item))
-        return [], False
+    async def indexed(_: ProjectPaths) -> list[dict[str, object]]:
+        return []
 
-    monkeypatch.setattr(source, "inventory", registry)
-    monkeypatch.setattr(source, "raw_inventory", raw)
-    monkeypatch.setattr(source, "market_page", markets)
-    monkeypatch.setattr(source, "publication_page", publications)
+    def inspect(_: ForgeApp, reference: str) -> None:
+        inspected.append(reference)
+
+    def copy(_: ForgeApp, identity: str) -> None:
+        copied.append(identity)
+
+    monkeypatch.setattr(workspace_inventory, "summary", summary)
+    monkeypatch.setattr(workspace_inventory, "stage_page", page)
+    monkeypatch.setattr(shell, "selected_registry_id", selected)
+    monkeypatch.setattr(shell, "workspace_runs", indexed)
+    monkeypatch.setattr(ForgeApp, "copy_dashboard_id", copy)
+    monkeypatch.setattr(ForgeApp, "open_indexed_output", inspect)
+
+    def inspect_publication(_: ForgeApp, identity: int) -> None:
+        inspected.append(str(identity))
+
+    monkeypatch.setattr(ForgeApp, "open_overview_publication", inspect_publication)
+    monkeypatch.setattr(
+        dashboard, "host_sample", lambda: dashboard.HostSample((100, 50), (2**30, 4 * 2**30))
+    )
+
+    app = ForgeApp(ctx)
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause(0.5)
+        assert (
+            app.query_one("#workspace-header", Static).content == "MarketForge Workspace · Overview"
+        )
+        monitor = str(app.query_one("#workspace-monitor", Static).content)
+        assert "PRODUCTION connected" in monitor and "UTC" in monitor
+        assert "Engine" not in monitor and "25%" in monitor
+        panels = list(app.query(".workspace-panel"))
+        assert [panel.border_title for panel in panels] == [
+            "Instrument Universe",
+            "Data Storage",
+            "Recent Activity",
+            "Market Data Availability",
+            "Data by Stage",
+            "Recent Runs",
+        ]
+        universe, storage, activity, availability, stage_panel, recent_panel = panels
+        assert storage.region.y == universe.region.bottom
+        assert activity.region.y == storage.region.bottom
+        assert stage_panel.region.y == max(activity.region.bottom, availability.region.bottom)
+        assert recent_panel.region.y == stage_panel.region.bottom
+        assert stage_panel.region.width == recent_panel.region.width
+        if size[0] < 110:
+            assert availability.region.y >= storage.region.bottom
+        else:
+            assert universe.region.y == availability.region.y
+            assert storage.region.y != activity.region.y
+        table = app.query_one("#workspace-inventory", dashboard.OverviewTable)
+        table.focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, Inspection)
+        assert app.screen.heading == "Raw archive window"
+        app.refresh_monitor()
+        assert "PRODUCTION connected" in str(
+            app.screen.query_one(".workspace-monitor", Static).content
+        )
+        await pilot.press("escape")
+        for index in range(1, 4):
+            tab = app.query_one(f"#workspace-stage-{index}")
+            tab.scroll_visible(immediate=True, force=True)
+            await pilot.pause()
+            await pilot.click(tab)
+            await pilot.pause(0.2)
+            table.focus()
+            await pilot.press("enter")
+            await pilot.pause()
+        assert inspected == ["41", "9000000000000001", "a" * 64]
+        table.scroll_visible(immediate=True, force=True)
+        await pilot.pause()
+        x = sum(
+            column.width + 2
+            for column in table.columns.values()
+            if column.label.plain in {"Exchanges", "Instruments", "Data", "Target"}
+        )
+        await pilot.click(table, offset=(x + 1, 1))
+        await pilot.pause()
+        assert copied == ["a" * 64]
+        table.focus()
+        await pilot.press("pagedown")
+        await pilot.pause()
+        assert app.inventory_pages["Converted"] == 20
+        recent = app.query_one("#overview-results", dashboard.OverviewTable)
+        app.query_one("#overview-scroll", VerticalScroll).scroll_end(animate=False, immediate=True)
+        await pilot.pause()
+        await pilot.click(recent, offset=(3, 1))
+        await pilot.pause()
+        assert copied[-1] == RUN
+        recent.focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, Inspection)
+        await pilot.press("escape")
+        await app.switch("Configs", "General")
+        await pilot.pause()
+        assert "PRODUCTION connected" in str(app.query_one("#workspace-monitor", Static).content)
+        assert app.workspace_header() == "MarketForge Workspace · Configs"
+
+
+@pytest.mark.asyncio
+async def test_outage_preserves_scoped_data_and_host_monitor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    from forge.datasets import workspace_inventory
+    from forge.tui import app as shell
+
+    ctx = replace(context(tmp_path), testing=True)
+    unavailable = False
+
+    async def selected(_: Path) -> str:
+        if unavailable:
+            raise OSError("fixture registry mismatch")
+        return "testing-id"
+
+    async def summary(_: ProjectPaths) -> workspace_inventory.WorkspaceInventory:
+        if unavailable:
+            raise OSError("fixture registry unavailable")
+        return workspace_inventory.WorkspaceInventory(
+            0, 0, 0, (), (), dict.fromkeys(("Raw", "Normalized", "Merged", "Converted"), (0, 0))
+        )
+
+    monkeypatch.setattr(workspace_inventory, "summary", summary)
+    monkeypatch.setattr(shell, "selected_registry_id", selected)
+    report(
+        ctx.paths.runs_dir,
+        RUN,
+        {
+            "kind": "historical_pipeline",
+            "environment": "testing",
+            "status": "completed",
+            "started_at": "2026-11-20T12:00:00Z",
+        },
+    )
+    report(
+        ctx.paths.runs_dir,
+        SECOND,
+        {
+            "kind": "historical_pipeline",
+            "environment": "production",
+            "status": "failed",
+            "started_at": "2026-11-21T12:00:00Z",
+        },
+    )
     app = ForgeApp(ctx)
     async with app.run_test(size=(120, 32)) as pilot:
-        await pilot.pause()
-        assert "partial" in str(app.query_one("#stat-bytes", Static).content)
-        table = app.query_one("#inventory-markets", Results)
-        table.focus()
-        table.move_cursor(row=1)
-        await pilot.press("enter")
-        await pilot.pause()
-        assert target[-1] == (None, alternative)
-        await pilot.press("escape")
+        await pilot.pause(0.4)
+        monitor = app.query_one("#workspace-monitor", Static)
+        assert "TESTING connected" in str(monitor.content)
+        assert app.database_id == "testing-id"
+        assert set(app.state.rows) == {RUN}
+        assert app.inventory_data is not None and app.inventory_data.registered == 0
         unavailable = True
+        await app.check_registry().wait()
         app.action_reload()
-        await pilot.pause()
-        assert "Stale" in str(app.query_one("#inventory-scope", Static).content)
-        assert table.cursor_row == 1
-        assert app.inventory_raw == (7, 512)
-        stages = app.query_one("#inventory-stages", Results)
-        stages.focus()
-        stages.move_cursor(row=1)
-        await pilot.press("enter")
-        await pilot.pause()
-        assert target[-1] == ("normalize", None)
-        await pilot.press("escape")
-        app.open_inventory_markets()
-        await pilot.pause()
-        visible = app.screen
-        assert isinstance(visible, Inspection)
-        visible.links["Next page"]()
-        await pilot.pause()
-        assert page_offsets == [0, 25]
-
-
-def test_conversion_inventory_counts_only_unique_retained_commits() -> None:
-    from forge.tui.inventory import converted_from_reports
-
-    complete: dict[str, object] = {
-        "status": "complete",
-        "publication": {
-            "manifest": "/fixture/converted/manifest.json",
-            "events": 300,
-        },
-    }
-    result = converted_from_reports(
-        [
-            complete,
-            {**complete, "run_id": "duplicate"},
-            {**complete, "status": "failed"},
-            {"status": "prepared"},
-            {"status": "complete", "output_path": "/fixture/staging"},
-        ]
-    )
-    assert result.records == (complete,)
-    assert result.rows == 300
-    assert result.checked_reports == 5
+        await pilot.pause(0.4)
+        assert app.database_id == "testing-id"
+        assert "TESTING disconnected" in str(monitor.content)
+        assert "UTC" in str(monitor.content) and "Disk" in str(monitor.content)
+        assert app.inventory_data is not None and app.inventory_failed
+        assert set(app.state.rows) == {RUN}

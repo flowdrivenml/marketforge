@@ -69,7 +69,12 @@ class HelpParser(argparse.ArgumentParser):
     _help_namespace: object | None = None
 
     def error(self, message: str) -> NoReturn:
-        if self.help_path == ("convert", "new") and message.endswith(": NAME"):
+        missing = message.removeprefix("the following arguments are required: ")
+        if (
+            self.help_path == ("convert", "new")
+            and missing != message
+            and "NAME" in missing.split(", ")
+        ):
             message = (
                 "The new conversion recipe needs a name. Example: "
                 "mf convert new getting_started_usdt --from-merge getting_started "

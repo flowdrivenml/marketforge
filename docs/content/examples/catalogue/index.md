@@ -1,6 +1,6 @@
 # Synthetic trade and depth recordings
 
-This bundle uses a fictional exchange and AAPL specifications. The inputs are [one CSV trade](synthetic-trades.csv) and [two JSONL book events](incremental/synthetic-depth.jsonl). The [authoring guide](../../reference/profiles.md) explains their mappings.
+This bundle uses a fictional exchange and AAPL specifications. The inputs are [one CSV trade](synthetic-trades.csv) and [two JSONL book events](incremental/synthetic-depth.jsonl). The [authoring guide](../../workflows/normalization/author-profile.md) explains their mappings.
 
 ## Check the emitted records
 
@@ -28,4 +28,4 @@ The JSON result gives the registered primary file IDs. Substitute each ID for `F
 mf datasets head FILE_ID --limit 10 --wide --precise --testing | cpout
 ```
 
-The trade preview should show a buy of 10 shares at 233.62 and event time `1730125800000000000` ns. The depth snapshot at that timestamp has a bid of 10 at 233.61 and an ask of 12 at 233.63. Apply the next event’s absolute changes to get bid 233.61 × 4 and ask 233.64 × 8, with the old ask removed. Check the [dataset inspection guide](../../workflows/datasets.md) for other ways to examine the publication.
+The trade preview should show a buy of 10 shares at 233.62 and event time `1730125800000000000` ns. The depth snapshot at that timestamp has a bid of 10 at 233.61 and an ask of 12 at 233.63. Apply the next event’s absolute changes to get bid 233.61 × 4 and ask 233.64 × 8, with the old ask removed. Check the [dataset inspection guide](../../workflows/inspection/datasets.md) for other ways to examine the publication.

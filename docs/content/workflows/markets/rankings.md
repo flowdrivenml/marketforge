@@ -6,7 +6,7 @@ Rankings publish an immutable view of eligible retained observations under a nam
 
 **Turnover** (`metric = "turnover_24h"`) compares monetary activity in one explicit currency. Optional stored spot prices value aggregate native turnover at reference prices; this is not reconstruction of FX at each trade. Derivative last prices are not conversion sources. USD/USDT/USDC equivalence is never automatic.
 
-**Volume** (`metric = "volume"`) compares base-asset quantities **within each base asset**. ETH quantities can share an ETH group across spot, perpetuals and futures; BTC has a different group and its own rank 1. Unique storage `position` is not a global cross-asset score; `group_rank` is the within-asset rank. See the [complete policies](../../configuration/markets.md).
+**Volume** (`metric = "volume"`) compares base-asset quantities **within each base asset**. ETH quantities can share an ETH group across spot, perpetuals and futures; BTC has a different group and its own rank 1. Unique storage `position` is not a global cross-asset score; `group_rank` is the within-asset rank. See the [complete policies](../../reference/configuration/markets.md).
 
 ## Build an instrument-scoped turnover snapshot
 
@@ -17,7 +17,7 @@ mf markets rank new activity
 nvim data/.config/markets/rankings/activity.toml
 ```
 
-Replace the template with the [minimal turnover example](../../configuration/markets.md#complete-examples). It selects the same Bybit BTCUSDT spot instrument as the discovery and refresh guides and compares its native USDT turnover. To compare a broader currency universe, choose the explicit automatic or manual conversion example and make sure its references are available.
+Replace the template with the [minimal turnover example](../../reference/configuration/markets.md#complete-examples). It selects the same Bybit BTCUSDT spot instrument as the discovery and refresh guides and compares its native USDT turnover. To compare a broader currency universe, choose the explicit automatic or manual conversion example and make sure its references are available.
 
 ```bash
 mf markets rank validate activity | cpout
@@ -29,7 +29,7 @@ Build reads retained observations and writes a published snapshot. Use fresh obs
 
 ## Build grouped base volume
 
-Use the [grouped-volume example](../../configuration/markets.md#complete-examples) in a separate policy named `base_activity`. That example selects BTCUSDT and ETHUSDT. Repeat synchronization and refresh for ETHUSDT before building so both groups have observations.
+Use the [grouped-volume example](../../reference/configuration/markets.md#complete-examples) in a separate policy named `base_activity`. That example selects BTCUSDT and ETHUSDT. Repeat synchronization and refresh for ETHUSDT before building so both groups have observations.
 
 ```bash
 mf markets sync --exchange bybit --market spot --instrument ETHUSDT --testing | cpout
@@ -68,7 +68,7 @@ ETH         3           ETHUSDC
 
 ## Conversion and volume evidence
 
-Use the [ranking rate reference](../../configuration/markets.md#rate-selection-and-precision) to interpret manual overrides, venue preference, and path freshness. Ranking conversion values aggregate statistics. [Historical conversion](../conversion.md) values dataset events using a separate Engine contract.
+Use the [ranking rate reference](../../reference/configuration/markets.md#rate-selection-and-precision) to interpret manual overrides, venue preference, and path freshness. Ranking conversion values aggregate statistics. [Historical conversion](../conversion.md) values dataset events using a separate Engine contract.
 
 `estimates` controls volume-derived turnover estimates such as OKX linear quantity × last; converting reported turnover by FX is a separate valuation convention. Manual preferences can move specified turnover instruments ahead of score order; ties otherwise use score then stable reference. Inspect the policy before treating a rank as pure descending activity.
 

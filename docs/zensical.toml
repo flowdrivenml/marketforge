@@ -15,40 +15,54 @@ nav = [
       { "Installation and workspace setup" = "getting-started/installation.md" },
       { "First dataset: Bybit trades and depth" = "getting-started/quickstart.md" },
     ] },
-    { "Guides" = [
+    { "Workflows" = [
       "workflows/index.md",
-      { "Explore markets" = ["workflows/markets/index.md", "workflows/markets/instrument-discovery.md", "workflows/markets/market-statistics.md", "workflows/markets/rankings.md"] },
-      { "Acquire historical data" = [
-        { "Overview" = "workflows/acquisition/index.md" },
+      { "Acquisition" = [
+        "workflows/acquisition/index.md",
         "workflows/acquisition/historical-data.md",
-        "reference/acquisition-sources.md",
+        "workflows/acquisition/external-data.md",
+        "workflows/acquisition/forge.md",
         "workflows/acquisition/managing-acquisitions.md",
       ] },
-      "workflows/acquisition/forge.md",
-      { "Catalogue and specifications" = ["workflows/catalogue/index.md", "workflows/catalogue/exchanges-and-instruments.md", "workflows/catalogue/specifications.md"] },
-      { "Register external recordings" = "workflows/acquisition/external-data.md" },
+      { "Storage" = "workflows/storage.md" },
+      { "Catalogue" = ["workflows/catalogue/index.md", "workflows/catalogue/exchanges-and-instruments.md", "workflows/catalogue/specifications.md"] },
+      { "Markets and rankings" = ["workflows/markets/index.md", "workflows/markets/instrument-discovery.md", "workflows/markets/market-statistics.md", "workflows/markets/rankings.md"] },
       { "Normalization" = [
-        "workflows/normalize.md",
-        { "Author normalization profiles" = ["workflows/catalogue/profiles.md", "workflows/catalogue/profile-trades.md", "workflows/catalogue/profile-depth.md", "workflows/catalogue/profile-troubleshooting.md"] },
+        "workflows/normalization/index.md",
+        "workflows/normalization/author-profile.md",
+        "workflows/normalization/profile-troubleshooting.md",
       ] },
-      { "Process data" = ["workflows/merge.md", "workflows/conversion.md", "workflows/pipeline.md"] },
-      { "Inspect history and data" = ["workflows/datasets.md", "workflows/runs.md", "workflows/notebooks.md"] },
+      { "Merge" = "workflows/merge.md" },
+      { "Conversion" = "workflows/conversion.md" },
+      { "Pipeline" = "workflows/pipeline.md" },
+      { "Inspection" = ["workflows/inspection/datasets.md", "workflows/inspection/runs.md"] },
       "workflows/forge-tui.md",
     ] },
-    { "Concepts" = ["concepts/index.md", "concepts/identity.md", "concepts/time.md", "concepts/depth.md", "concepts/ordering.md", "concepts/evidence.md"] },
+    { "Concepts" = ["concepts/index.md", "concepts/data-model.md", "concepts/identity.md", "concepts/configuration.md", "concepts/time.md", "concepts/depth.md", "concepts/ordering.md", "concepts/normalization.md", "concepts/merge.md", "concepts/conversion.md", "concepts/evidence.md", "concepts/execution.md", "concepts/glossary.md"] },
     { "Reference" = [
       "reference/index.md",
-      { "CLI" = ["reference/cli/index.md", "reference/cli/forge.md", "reference/cli/acquisition.md", "reference/cli/storage.md", "reference/cli/runs.md", "reference/cli/catalog.md", "reference/cli/maintenance.md", "reference/cli/engine.md", "reference/cli/registration.md", "reference/cli/normalize.md", "reference/cli/merge.md", "reference/cli/convert.md", "reference/cli/pipeline.md", "reference/cli/datasets.md", "reference/cli/markets.md"] },
-      { "Configuration and recipes" = ["configuration/index.md", "configuration/application.md", "reference/runtime.md", "configuration/acquisition.md", "configuration/catalogue.md", "configuration/normalization.md", "configuration/normalization-runtime.md", "configuration/merge.md", "configuration/merge-runtime.md", "configuration/conversion.md", "configuration/pipeline.md", "configuration/markets.md"] },
-      { "Format profiles" = ["reference/profiles.md", "reference/profile-fields.md"] },
+      { "CLI" = ["reference/cli/index.md", "reference/cli/sorting.md", "reference/cli/forge.md", "reference/cli/acquisition.md", "reference/cli/storage.md", "reference/cli/runs.md", "reference/cli/catalog.md", "reference/cli/maintenance.md", "reference/cli/engine.md", "reference/cli/registration.md", "reference/cli/normalize.md", "reference/cli/merge.md", "reference/cli/convert.md", "reference/cli/pipeline.md", "reference/cli/datasets.md", "reference/cli/markets.md"] },
+      { "Configuration and recipes" = ["reference/configuration/index.md", "reference/configuration/application.md", "reference/configuration/explorer.md", "reference/runtime.md", "reference/configuration/pipeline-runtime.md", "reference/configuration/acquisition.md", "reference/configuration/catalogue.md", "reference/configuration/normalization.md", "reference/configuration/normalization-runtime.md", "reference/configuration/merge.md", "reference/configuration/merge-runtime.md", "reference/configuration/conversion.md", "reference/configuration/conversion-runtime.md", "reference/configuration/profile-fields.md", "reference/configuration/pipeline.md", "reference/configuration/markets.md"] },
+      "reference/acquisition-sources.md",
       "reference/registration.md",
-      { "Prepared jobs and retained evidence" = ["reference/prepared.md", "reference/prepared-normalization.md", "reference/prepared-merge.md", "reference/prepared-conversion.md", "reference/prepared-forge.md"] },
-      { "Publication formats" = ["reference/publications.md", "reference/publication-normalized.md", "reference/publication-merge.md", "reference/publication-converted.md"] },
-      "reference/python-datasets.md",
-      "reference/history-maintenance.md",
+      { "Data formats" = [
+        "reference/data-formats/publications.md",
+        "reference/data-formats/publication-normalized.md",
+        "reference/data-formats/publication-merge.md",
+        "reference/data-formats/publication-converted.md",
+        { "Prepared jobs and evidence" = ["reference/data-formats/prepared.md", "reference/data-formats/prepared-normalization.md", "reference/data-formats/prepared-merge.md", "reference/data-formats/prepared-conversion.md", "reference/data-formats/prepared-forge.md"] },
+      ] },
     ] },
     { "Examples" = ["examples/index.md", "examples/catalogue/index.md", "examples/catalogue/merge.md", "examples/bring-your-own-data/index.md", "examples/bring-your-own-data/databento/index.md"] },
-    { "Troubleshooting" = "workflows/operations.md" },
+    { "Maintenance" = ["maintenance/index.md", "maintenance/database.md", "maintenance/publications.md", "maintenance/conversion.md"] },
+  ] },
+  { "Research & Analysis" = [
+    "research/index.md",
+    "research/notebooks.md",
+    "research/discovery.md",
+    "research/partitions.md",
+    "research/querying.md",
+    "research/python-api.md",
   ] },
   { "Development" = [
     { "Developer overview" = "development/index.md" },
@@ -56,9 +70,7 @@ nav = [
     { "Architecture" = [
       { "System overview" = "development/architecture.md" },
       "development/forge.md",
-      "development/normalize.md",
-      "development/merge.md",
-      "development/convert.md",
+      { "Historical Engine" = ["development/normalize.md", "development/merge.md", "development/convert.md"] },
       "development/operations.md",
       "development/forge-tui.md",
     ] },
@@ -68,6 +80,41 @@ nav = [
     { "Contributing" = "development/compatibility.md" },
   ] },
 ]
+
+[project.plugins.redirects.redirect_maps]
+"configuration/acquisition.md" = "reference/configuration/acquisition.md"
+"configuration/application.md" = "reference/configuration/application.md"
+"configuration/catalogue.md" = "reference/configuration/catalogue.md"
+"configuration/conversion.md" = "reference/configuration/conversion.md"
+"configuration/index.md" = "reference/configuration/index.md"
+"configuration/markets.md" = "reference/configuration/markets.md"
+"configuration/merge-runtime.md" = "reference/configuration/merge-runtime.md"
+"configuration/merge.md" = "reference/configuration/merge.md"
+"configuration/normalization-runtime.md" = "reference/configuration/normalization-runtime.md"
+"configuration/normalization.md" = "reference/configuration/normalization.md"
+"configuration/pipeline.md" = "reference/configuration/pipeline.md"
+"reference/history-maintenance.md" = "maintenance/publications.md"
+"reference/prepared-conversion.md" = "reference/data-formats/prepared-conversion.md"
+"reference/prepared-forge.md" = "reference/data-formats/prepared-forge.md"
+"reference/prepared-merge.md" = "reference/data-formats/prepared-merge.md"
+"reference/prepared-normalization.md" = "reference/data-formats/prepared-normalization.md"
+"reference/prepared.md" = "reference/data-formats/prepared.md"
+"reference/profile-fields.md" = "reference/configuration/profile-fields.md"
+"reference/profiles.md" = "workflows/normalization/author-profile.md"
+"reference/publication-converted.md" = "reference/data-formats/publication-converted.md"
+"reference/publication-merge.md" = "reference/data-formats/publication-merge.md"
+"reference/publication-normalized.md" = "reference/data-formats/publication-normalized.md"
+"reference/publications.md" = "reference/data-formats/publications.md"
+"workflows/catalogue/profile-depth.md" = "workflows/normalization/author-profile.md"
+"workflows/catalogue/profile-trades.md" = "workflows/normalization/author-profile.md"
+"workflows/catalogue/profile-troubleshooting.md" = "workflows/normalization/profile-troubleshooting.md"
+"workflows/catalogue/profiles.md" = "workflows/normalization/author-profile.md"
+"workflows/datasets.md" = "workflows/inspection/datasets.md"
+"workflows/normalize.md" = "workflows/normalization/index.md"
+"workflows/notebooks.md" = "research/notebooks.md"
+"workflows/inspection/notebooks.md" = "research/notebooks.md"
+"reference/python-datasets.md" = "research/python-api.md"
+"workflows/runs.md" = "workflows/inspection/runs.md"
 
 [project.markdown_extensions]
 footnotes = {}

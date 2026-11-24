@@ -44,10 +44,10 @@ def overlay(base: dict[str, Any], overrides: dict[str, Any]) -> None:
 
 
 def compose_pipeline(
-    paths: ProjectPaths, destination: Path, binaries: dict[str, Path]
+    paths: ProjectPaths, destination: Path, binaries: dict[str, Path], *, source: Path | None = None
 ) -> dict[str, Any]:
     """Freeze source fingerprints and materialize validated stage inputs."""
-    pipeline = paths.runtime_config("pipeline")
+    pipeline = source or paths.runtime_config("pipeline")
     data = pipeline.read_bytes()
     overrides = read_document(pipeline, data)
     version = overrides.pop("schema_version", None)

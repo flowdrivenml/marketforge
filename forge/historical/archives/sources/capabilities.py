@@ -7,6 +7,7 @@ from typing import get_args
 from forge.historical.archives.config import ArchiveRequest, ArchiveScope
 from forge.historical.archives.sources.base import UnsupportedRequestError
 from forge.historical.archives.sources.exchanges import HISTORICAL_EXCHANGES, validate_request
+from forge.shared.sorting import SortField, SortSpec, ordered
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,8 +19,25 @@ class SourceCapability:
     scope: str
 
 
-def source_capabilities() -> tuple[SourceCapability, ...]:
+CAPABILITY_FIELDS = ("exchange", "instrument_type", "market_category", "data_type", "scope")
+CAPABILITIES = SortSpec(
+    {
+        "identity": SortField("source capability identity"),
+        **{field: SortField(field.replace("_", " ")) for field in CAPABILITY_FIELDS},
+    },
+    "identity",
+)
+
+
+def capability_identity(row: SourceCapability) -> tuple[str, ...]:
+    return row.exchange, row.instrument_type, row.market_category, row.data_type, row.scope
+
+
+def source_capabilities(
+    *, sort: str | None = None, order: str | None = None
+) -> tuple[SourceCapability, ...]:
     """Return accepted combinations without checking availability."""
+    ordering = CAPABILITIES.resolve(sort, order)
     fields = ArchiveRequest.model_fields
     combinations = product(
         HISTORICAL_EXCHANGES,
@@ -44,4 +62,12 @@ def source_capabilities() -> tuple[SourceCapability, ...]:
         except UnsupportedRequestError:
             continue
         supported.append(SourceCapability(exchange, instrument, market, data, scope))
-    return tuple(supported)
+    field = ordering.field
+    if field == "identity":
+        return tuple(ordered(supported, ordering, capability_identity, capability_identity))
+    index = CAPABILITY_FIELDS.index(field)
+    return tuple(
+        ordered(
+            supported, ordering, lambda row: capability_identity(row)[index], capability_identity
+        )
+    )

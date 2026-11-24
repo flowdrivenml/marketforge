@@ -37,7 +37,9 @@ def output_paths(paths: ProjectPaths, request: PreparationRequest) -> tuple[Path
     return staging, dataset
 
 
-def write_job(destination: Path, document: dict[str, object]) -> None:
+def write_job(
+    destination: Path, document: dict[str, object], *, replace_existing: bool = False
+) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
@@ -49,7 +51,15 @@ def write_job(destination: Path, document: dict[str, object]) -> None:
             source.write("\n")
             source.flush()
             os.fsync(source.fileno())
-        publish(temporary, destination)
+        if replace_existing:
+            os.replace(temporary, destination)
+            descriptor = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        else:
+            publish(temporary, destination)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

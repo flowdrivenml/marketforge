@@ -97,27 +97,19 @@ def catalog(result: DatasetCatalog) -> str:
         streams = (
             item.matching_streams if item.matching_streams is not None else item.streams_by_key
         )
-        label = (
-            f"#{item.dataset_id} · {item.path.name}"
-            if item.dataset_id is not None
-            else item.path.name
-        )
-        if len(item.streams_by_key) > 1:
-            label += f" · {len(item.streams_by_key)} streams"
-        info = item.info()
+        fields = item.discovery_fields()
+        label = fields["reference"]
         rows.append(
             (
                 label,
-                markets(streams, "exchange"),
-                markets(streams, "symbol"),
-                markets(streams, "instrument_type"),
-                markets(streams, "market_category"),
+                fields["reference_kind"],
+                fields["exchange"],
+                fields["market"],
+                fields["instrument"],
                 item.data_type,
-                item.operation,
                 span(*item.observed),
-                f"{info['rows']:,}",
-                size(info["bytes"]),
-                f"{item.status} · {item.metadata_scope}",
+                fields["files"],
+                item.operation,
             )
         )
         match = (
@@ -137,20 +129,18 @@ def catalog(result: DatasetCatalog) -> str:
     if rows:
         body += table(
             (
-                "Dataset / file",
+                "Reference",
+                "Identity kind",
                 "Exchange",
-                "Symbol",
-                "Instrument type",
-                "Category",
-                "Content",
-                "Operation",
+                "Market",
+                "Instrument",
+                "Data",
                 "Observed UTC",
-                "Rows",
-                "Size",
-                "Status / evidence",
+                "Files",
+                "Stage",
             ),
             rows,
-            (8, 9),
+            (7,),
         )
         body += (
             "<details><summary>Paths and matching membership counts</summary>"

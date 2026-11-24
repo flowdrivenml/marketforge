@@ -23,6 +23,12 @@ ROOT = Path(__file__).resolve().parents[4]
 RUNTIME = ROOT / "engine/src/shared/historical/config/fixtures/runtime.toml"
 
 
+@pytest.fixture(autouse=True)
+def readable_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The relocated canonical link is wider than an 80-column terminal.
+    monkeypatch.setenv("COLUMNS", "100")
+
+
 @pytest.fixture(scope="module")
 def runtime_engine(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, str]:
     path = Path(
@@ -456,7 +462,7 @@ def test_reference_documents_each_rust_field_default_and_enum(
 ) -> None:
     assert invoke(workspace, "schema", machine=True) == 0
     fields = report(capsys)["fields"]
-    reference = (ROOT / "docs/content/configuration/normalization-runtime.md").read_text()
+    reference = (ROOT / "docs/content/reference/configuration/normalization-runtime.md").read_text()
     for field in fields:
         path = field["path"]
         anchor = '<a id="' + path.replace(".", "-").replace("_", "-") + '"></a>'

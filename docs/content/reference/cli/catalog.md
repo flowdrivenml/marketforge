@@ -1,6 +1,8 @@
 # Catalogue commands
 
-Validate, register and inspect catalogue declarations. [Workflow and prerequisites](../../workflows/catalogue/index.md) · [Shared CLI behavior](index.md)
+List exchanges and instruments by identity, or sort historical specification evidence by retained observation time. See [collection sorting](sorting.md).
+
+Validate, register and inspect catalogue declarations. Catalog lists show registered records in tables. Specification inspection displays current fields and historical evidence separately, with assumed intervals labeled as such. Local validation checks the declaration. Registration reports the accepted identity or evidence without assigning a mutation type. Use global `--json` for the original structured result. [Workflow and prerequisites](../../workflows/catalogue/index.md) · [Shared CLI behavior](index.md)
 
 
 ## Synopsis and arguments
@@ -433,6 +435,6 @@ If a profile fails validation, inspect its format mappings and the Rust compiler
 
 If installation fails because of a missing venue or an existing conflicting profile identity, inspect the corresponding catalogue and profile records.
 
-See [Profile authoring and troubleshooting](../../workflows/catalogue/profiles.md).
+See [Profile authoring and troubleshooting](../../workflows/normalization/author-profile.md).
 
 ---

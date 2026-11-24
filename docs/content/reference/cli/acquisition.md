@@ -1,5 +1,7 @@
 # Acquisition commands
 
+Recipes default to ascending name and source capabilities default to ascending identity. See [collection sorting](sorting.md).
+
 Discover, plan, download, inspect and edit managed acquisition recipes. [Workflow and prerequisites](../../workflows/acquisition/historical-data.md) · [Shared CLI behavior](index.md)
 
 
@@ -182,7 +184,7 @@ If the requested rate exceeds a provider's configured limit, that limit still ap
 
 Retries, redirects, and provider cooldowns can also affect how quickly discovery or downloading proceeds.
 
-See the [HTTP configuration reference](../../configuration/acquisition.md#application-httpstorage-settings) for the current limits and application settings.
+See the [HTTP configuration reference](../configuration/acquisition.md#application-httpstorage-settings) for the current limits and application settings.
 
 ### Cache-only planning options
 

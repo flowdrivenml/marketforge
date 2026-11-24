@@ -68,6 +68,7 @@ class RunInspection:
     conversion_jobs: tuple[dict[str, Any], ...] = ()
     inspection_notes: tuple[str, ...] = ()
     removal: dict[str, Any] | None = None
+    log_files: dict[str, Path] = field(default_factory=dict[str, Path])
 
 
 async def inspect_run(
@@ -109,14 +110,18 @@ async def inspect_run_evidence(
     truncated: set[str] = set()
     supplemental: dict[str, str] = {}
     extra = supplemental if human else None
+    log_files: dict[str, Path] = {}
+    sources = log_files if human and action == "logs" else None
     if record is None:
         if not legacy:
             raise MarketForgeError("Run is absent from the selected registry.")
         if action == "logs":
             evidence = (
-                read_managed_logs(root, name, truncated=truncated, supplemental=extra)
+                read_managed_logs(
+                    root, name, truncated=truncated, supplemental=extra, sources=sources
+                )
                 if MANAGED_RUN.fullmatch(name)
-                else read_logs(root, name, limit)
+                else read_logs(root, name, limit, sources=sources)
             )
         else:
             evidence = read_managed_report(root, name)
@@ -124,7 +129,14 @@ async def inspect_run_evidence(
         evidence = record
     else:
         evidence = retained_evidence(
-            root, name, record, action=action, limit=limit, truncated=truncated, supplemental=extra
+            root,
+            name,
+            record,
+            action=action,
+            limit=limit,
+            truncated=truncated,
+            supplemental=extra,
+            sources=sources,
         )
     jobs, notes = (
         conversion_receipts(root, record)
@@ -141,7 +153,9 @@ async def inspect_run_evidence(
         jobs = tuple(conversion_metadata(job, paths.datasets_dir / "converted") for job in jobs)
     if removal:
         evidence = {**evidence, "history_removal": removal}
-    return RunInspection(name, evidence, record, truncated, supplemental, jobs, notes, removal)
+    return RunInspection(
+        name, evidence, record, truncated, supplemental, jobs, notes, removal, log_files
+    )
 
 
 def conversion_metadata(receipt: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -226,6 +240,7 @@ def retained_evidence(
     limit: int,
     truncated: set[str] | None = None,
     supplemental: dict[str, str] | None = None,
+    sources: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
     if Path(record["artifact_root"]).resolve() != (root / name).resolve():
         raise MarketForgeError("Run evidence belongs to a different workspace.")
@@ -241,12 +256,16 @@ def retained_evidence(
     if record["operation"] == "acquisition" and report:
         path = Path(report).with_name("events.jsonl")
         if path.resolve().is_relative_to((root / name).resolve()) and path.is_file():
-            return read_events(path, name, limit)
-    events = read_logs(root, name, limit) if not MANAGED_RUN.fullmatch(name) else None
+            return read_events(path, name, limit, sources=sources)
+    events = (
+        read_logs(root, name, limit, sources=sources) if not MANAGED_RUN.fullmatch(name) else None
+    )
     if events is not None and events.get("status") != "events_missing":
         return events
     if MANAGED_RUN.fullmatch(name):
-        return read_managed_logs(root, name, truncated=truncated, supplemental=supplemental)
+        return read_managed_logs(
+            root, name, truncated=truncated, supplemental=supplemental, sources=sources
+        )
     directory = Path(report).parent if report else None
     if (
         directory is not None
@@ -254,6 +273,6 @@ def retained_evidence(
         and MANAGED_RUN.fullmatch(directory.name)
     ):
         return read_managed_logs(
-            root, directory.name, truncated=truncated, supplemental=supplemental
+            root, directory.name, truncated=truncated, supplemental=supplemental, sources=sources
         )
     return events or {"run_id": name, "events": [], "status": "events_missing"}

@@ -12,6 +12,7 @@ from typing import Any
 from forge.cli.commands.normalization_runtime import configure as configure_runtime
 from forge.cli.commands.recipe_deletion import configure_delete
 from forge.cli.environment import add_database_options
+from forge.cli.sorting import add_sorting
 from forge.historical.engine.runtime_config import directory_fd
 from forge.historical.merge import service
 from forge.historical.merge.config import DerivedRecipe, Selection, normalization_source
@@ -30,6 +31,7 @@ from forge.shared.errors import MarketForgeError
 from forge.shared.identity import RunOperation
 from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.presentation.merge import MergeView, RecipeView
+from forge.shared.sorting import NAMES
 from forge.shared.terminal.merge import render_inventory, render_merge, render_recipe
 from forge.startup.context import ApplicationContext
 
@@ -44,9 +46,11 @@ def configure(parser: argparse.ArgumentParser) -> None:
         actions.add_parser("delete", help="Preview or delete one managed merge recipe."),
         family="merge",
     )
-    actions.add_parser(
+    listing = actions.add_parser(
         "list", help="List managed merge recipes and their structural state."
-    ).set_defaults(service_handler=run)
+    )
+    listing.set_defaults(service_handler=run)
+    add_sorting(listing, NAMES)
     reference_help = {
         "new": "Name for the new managed merge recipe.",
         "validate": "Managed merge recipe name or TOML path.",
@@ -84,7 +88,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
 def run(args: argparse.Namespace, context: ApplicationContext) -> int:
     action = args.merge_action
     if action == "list":
-        return inventory(context, as_json=args.as_json)
+        return inventory(context, as_json=args.as_json, sort=args.sort, order=args.order)
     if args.as_json and getattr(args, "tui", False):
         raise MarketForgeError("--tui is incompatible with global --json.")
     if action == "register":
@@ -261,10 +265,12 @@ def run_operation(
     )
 
 
-def inventory(context: ApplicationContext, *, as_json: bool) -> int:
+def inventory(
+    context: ApplicationContext, *, as_json: bool, sort: str | None = None, order: str | None = None
+) -> int:
     library = context.paths.workflow_dir("merge")
     items: list[RecipeView] = []
-    for name in list_config_names(library):
+    for name in list_config_names(library, sort=sort, order=order):
         path = library / f"{name}.toml"
         try:
             items.append(RecipeView(name, path, service.load_recipe(path, retain=False)))
@@ -273,7 +279,7 @@ def inventory(context: ApplicationContext, *, as_json: bool) -> int:
     if as_json:
         print(json.dumps({"schema_version": 1, "recipes": [item.machine() for item in items]}))
     else:
-        render_inventory(context.console, items)
+        render_inventory(context.console, items, ordering=NAMES.resolve(sort, order).description)
     return 0
 
 

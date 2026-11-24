@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.text import Text
 
 from forge.datasets.query import DatasetRequest
+from forge.datasets.sorting import STREAMS, VIEWS
 from forge.shared.presentation.datasets import (
     KINDS,
     STAGES,
@@ -42,7 +43,8 @@ def next_page(request: DatasetRequest, result: Row) -> str:
         ("search", request.search),
         ("start", request.start),
         ("end", request.end),
-        ("sort", request.sort if request.dataset_action != "coverage" else None),
+        ("sort", request.sort),
+        ("order", request.order),
         ("limit", request.limit),
         ("offset", request.offset + request.limit),
     ]
@@ -109,16 +111,16 @@ def render_rows(console: Console, rows: list[Row], view: str, request: DatasetRe
     table = data_table()
     ref_title = {"publications": "Publication ID", "files": "File ID", "coverage": "Variant"}[view]
     titles = (
-        ("Stage", ref_title, "Scope / observed period (UTC)", "Data")
+        (ref_title, "Scope / observed period (UTC)", "Data", "Stage")
         if narrow
         else (
-            "Stage",
             ref_title,
             "Scope",
             "Market",
             "Data",
             "Observed UTC",
             "Recorded",
+            "Stage",
             "State / integrity",
         )
     )
@@ -160,10 +162,10 @@ def render_rows(console: Console, rows: list[Row], view: str, request: DatasetRe
         if narrow:
             details = " · ".join(filter(None, (metrics, state)))
             facts = f"{identity} · {market}\n{bounds if request.precise else observed}\n{details}"
-            cells = (stage, ref, facts, kind)
+            cells = (ref, facts, kind, stage)
         else:
-            cells = (stage, ref, identity, market, kind, bounds, metrics, state)
-        styles = ("mf.heading", "mf.dataset_id", "mf.body", "mf.identifier_detail")
+            cells = (ref, identity, market, kind, bounds, metrics, stage, state)
+        styles = ("mf.dataset_id", "mf.heading", "mf.body", "mf.identifier_detail")
         table.add_row(
             *(
                 Text(cell, styles[index] if index < len(styles) else "mf.body")
@@ -183,6 +185,12 @@ def render_rows(console: Console, rows: list[Row], view: str, request: DatasetRe
 
 def render_browse(console: Console, result: Row, request: DatasetRequest) -> None:
     header(console, "Datasets", environment=result["environment"])
+    console.print(
+        Text(
+            VIEWS[result["view"]].resolve(request.sort, request.order).description,
+            style="mf.secondary",
+        )
+    )
     view = result["view"]
     units = {"publications": "publications", "files": "files", "coverage": "coverage groups"}
     unit = units[view]
@@ -264,6 +272,72 @@ def render_detail(
 ) -> None:
     header(console, "Datasets", environment=environment)
     action = request.dataset_action
+    physical = action == "partitions" or "partition" in result
+    if physical:
+        if request.output_ref:
+            console.print(Text(f"Indexed output · {request.output_ref}"), soft_wrap=True)
+        elif request.publication_id is not None:
+            console.print(Text(f"Registry publication · {request.publication_id}"))
+        elif request.id is not None:
+            console.print(Text(f"Primary file · {request.id}"))
+    if action == "partitions":
+        table = data_table()
+        if "row_groups" in result:
+            section(console, result["partition"]["reference"])
+            columns = ("File", "Row group", "Rows", "Compressed size")
+            rows = [
+                (
+                    row["file"],
+                    row["row_group"],
+                    count(row["rows"]),
+                    size(row["compressed_bytes"]),
+                )
+                for row in result["row_groups"]
+            ]
+        else:
+            columns = ("Reference", "Files", "Row groups", "Rows", "Size", "Observed UTC")
+            rows = [
+                (
+                    row["reference"],
+                    row["files"],
+                    row["row_groups"],
+                    count(row["rows"]),
+                    size(row["bytes"]),
+                    period(
+                        {
+                            "start_timestamp_ns": row["observed_start_ns"],
+                            "end_timestamp_ns": row["observed_end_ns"],
+                        },
+                        precise=True,
+                    ),
+                )
+                for row in result["partitions"]
+            ]
+        for label in columns:
+            table.add_column(label)
+        for row in rows:
+            table.add_row(*(Text(str(value)) for value in row))
+        console.print(table)
+        if "row_groups" in result:
+            paths = {row["file"]: row["path"] for row in result["row_groups"]}
+            for number, path in paths.items():
+                console.print(Text(f"File {number} · {path}"), soft_wrap=True)
+        else:
+            for row in result["partitions"]:
+                for path in row["paths"]:
+                    console.print(Text(f"{row['reference']} · {path}"), soft_wrap=True)
+        console.print(Text(f"{len(rows)} of {result['total']} shown"))
+        return
+    if partition := result.get("partition"):
+        console.print(
+            Text(
+                f"{partition['reference']} · {partition['files']} file(s) · {partition['rows']:,} physical rows"
+            )
+        )
+    if action == "streams":
+        console.print(
+            Text(STREAMS.resolve(request.sort, request.order).description, style="mf.secondary")
+        )
     if "legacy_dataset_id" in result:
         render_inspection(console, action, result, show_header=False)
         return
@@ -309,6 +383,8 @@ def render_detail(
             ]
         summary(console, facts)
         console.print(Text(f"Streams · mf datasets streams {request.id} --{environment}"))
+        console.print(Text(f"Partitions · mf datasets partitions {request.id} --{environment}"))
+
         return
     if action == "verify":
         section(console, "Verification")
@@ -374,6 +450,14 @@ def render_detail(
         visible = min(len(files), 50 if request.wide else 8)
         if visible < total:
             console.print(Text(f"{visible} of {total} recorded files shown"))
+        selection = (
+            f"--output-ref {request.output_ref}"
+            if request.output_ref
+            else f"--publication-id {request.publication_id}"
+        )
+        console.print(
+            Text(f"Partitions · mf datasets partitions {selection} --{environment}"), soft_wrap=True
+        )
         if request.publication_id is not None:
             console.print(
                 Text(
@@ -406,4 +490,4 @@ def render_detail(
         )
         return
     display_result = {**result, "id": request.id or result.get("id")}
-    render_inspection(console, action, display_result, show_header=not bool(item))
+    render_inspection(console, action, display_result, show_header=not bool(item) and not physical)

@@ -208,3 +208,18 @@ def test_discovery_rejects_conflicting_physical_provenance(
     catalog = market.discover()
     assert not catalog.find(path=path, data_type="trades")
     assert any(d.code == "conflicting_metadata" and d.path == path for d in catalog.diagnostics)
+
+
+def test_metadata_only_summary_does_not_read_event_rows(
+    causal: tuple[MarketData, Path, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    market, root, _ = causal
+
+    def no_events(*_args: object, **_kwargs: object) -> Any:
+        raise AssertionError("Metadata-only discovery attempted to read event rows.")
+
+    monkeypatch.setattr(parquet, "batches", no_events)
+    catalog = market.discover(metadata_only=True).find(engine_publication_id=502)
+    assert catalog.summary()["rows"].sum() == 5
+    publication = market.open(root, metadata_only=True, strict=True)
+    assert [part.info()["rows"] for part in publication.partitions()] == [4, 1]

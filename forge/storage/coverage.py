@@ -5,19 +5,6 @@ from datetime import UTC, datetime
 
 from forge.storage.models import StorageFilters, interval
 
-GROUP_FIELDS = (
-    "origin",
-    "external_source_id",
-    "external_source_key",
-    "exchange",
-    "instrument_type",
-    "market_category",
-    "scope_kind",
-    "scope_identifier",
-    "data_type",
-    "feed",
-)
-
 
 def union(intervals: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
     result: list[tuple[datetime, datetime]] = []

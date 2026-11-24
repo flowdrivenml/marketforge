@@ -20,7 +20,23 @@
 
 <br>
 
-**[Documentation](docs/content/index.md)** · **[Installation](docs/content/getting-started/installation.md)** · **[Quick Start](docs/content/getting-started/quickstart.md)** · **[Roadmap](ROADMAP.md)** · **Discord (Coming Soon)**
+**[Documentation](docs/content/index.md)** · **[Installation](docs/content/getting-started/installation.md)** · **[Quick Start](docs/content/getting-started/quickstart.md)** · **[Research & Analysis](docs/content/research/index.md)** · **[Roadmap](ROADMAP.md)** · **Discord (Coming Soon)**
+
+## Install MarketForge
+
+On Ubuntu, Debian, or macOS:
+
+```bash
+git clone https://github.com/flowdrivenml/marketforge.git
+cd marketforge
+./install.sh
+```
+
+Use `./install.sh --dev` for a contributor environment. The installer sets up
+Neovim, Forge, the managed Engine binaries, and the selected PostgreSQL registry.
+See [installation](docs/content/getting-started/installation.md) for existing
+database connections, manual setup, and options.
+
 
 </div>
 

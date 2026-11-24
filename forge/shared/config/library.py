@@ -7,6 +7,7 @@ from pathlib import Path
 
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import require_migrated
+from forge.shared.sorting import NAMES, ordered
 
 
 class ConfigurationNameError(MarketForgeError, ValueError):
@@ -55,8 +56,11 @@ def resolve_config_file(directory: Path, name: str) -> Path:
     return destination
 
 
-def list_config_names(directory: Path) -> tuple[str, ...]:
+def list_config_names(
+    directory: Path, *, sort: str | None = None, order: str | None = None
+) -> tuple[str, ...]:
     """List supported file names without parsing configuration contents."""
+    ordering = NAMES.resolve(sort, order)
     root = directory.resolve()
 
     if not root.exists():
@@ -76,7 +80,7 @@ def list_config_names(directory: Path) -> tuple[str, ...]:
         if resolved.is_file():
             names.append(entry.stem)
 
-    return tuple(sorted(names))
+    return tuple(ordered(names, ordering, str, str))
 
 
 def run_reference(reference: str, recipe: Path | None) -> tuple[Path, bool]:

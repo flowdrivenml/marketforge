@@ -1,6 +1,6 @@
 # Runs CLI reference
 
-Runs covers logical Forge operations, attempts, child runs, and retained evidence. Start with [inspect execution history](../../workflows/runs.md) for practical examples. Use [registry identity](../../concepts/identity.md#registry-identity) to choose the environment. Production is the default, and `--testing` and `--production` are mutually exclusive.
+Runs covers logical Forge operations, attempts, child runs, and retained evidence. Start with [inspect execution history](../../workflows/inspection/runs.md) for practical examples. Use [registry identity](../../concepts/identity.md#registry-identity) to choose the environment. Production is the default, and `--testing` and `--production` are mutually exclusive.
 
 ## Browse the selected registry
 
@@ -14,7 +14,7 @@ Runs covers logical Forge operations, attempts, child runs, and retained evidenc
 | `mf runs reconcile` | `--limit N`, `--offset N`, `--dry-run` or `--apply` | Preview or apply index finalization from retained evidence |
 | `mf runs delete` | Exact indexed run IDs, optional `--with-children` or `--history-only`, or `--apply --plan PATH` | Preview or apply a reviewed run deletion |
 
-For `list`, filters are exact and run before paging. `--operation` accepts `acquisition`, `normalize`, `merge`, `convert`, and `pipeline`. `--action`, `--status`, and `--recipe` match the recorded fields. `--start` and `--end` accept timezone-qualified ISO 8601 timestamps and filter run start in `[start, end)`. Results are ordered by descending start time, then run ID. The default limit is 100, range 1–1,000. Offset defaults to zero, range 0–100,000. The count in terminal output describes the page.
+For `list`, filters are exact and run before paging. `--operation` accepts `acquisition`, `normalize`, `merge`, `convert`, and `pipeline`. `--action`, `--status`, and `--recipe` match the recorded fields. `--start` and `--end` accept timezone-qualified ISO 8601 timestamps and filter run start in `[start, end)`. Results default to descending run start, then ascending run ID. `--sort time` aliases `start`, and `--order asc` alone lists oldest starts first. [Sorting fields and defaults](sorting.md). The default limit is 100, range 1–1,000. Offset defaults to zero, range 0–100,000. The count in terminal output describes the page.
 
 ```bash
 mf runs list --testing --operation normalize --action run --status completed --limit 10
@@ -49,7 +49,7 @@ Resource kinds include discovery scans, remote and local archives, prepared batc
 | `stopped` | The operation recorded a stop, for example at a pipeline checkpoint |
 | `unknown` | The indexed status could not be established from the domain result |
 
-Engine execution, physical verification, and registration are separate outcomes. A reused result can point to an earlier verified output. A report describes its retained evidence; current physical availability requires a suitable dataset check. A retry of a logical run can produce a new attempt, while lower-level retries or Engine jobs need not create one. See [pipeline resume](pipeline.md) and [prepared jobs and evidence](../prepared-forge.md).
+Engine execution, physical verification, and registration are separate outcomes. A reused result can point to an earlier verified output. A report describes its retained evidence; current physical availability requires a suitable dataset check. A retry of a logical run can produce a new attempt, while lower-level retries or Engine jobs need not create one. See [pipeline resume](pipeline.md) and [prepared jobs and evidence](../data-formats/prepared-forge.md).
 
 ## Logs and reports
 
@@ -74,7 +74,7 @@ Report reads are bounded to 4 MiB for report documents and 512 KiB for the index
 
 ## Attempts and recovery
 
-Forge retains an attempt outcome before finalizing the registry. If finalization was interrupted, reconciliation can apply the verified metadata. Processing-specific recovery handles committed outputs whose registration is incomplete. [Run and dataset maintenance](../history-maintenance.md#recover-run-index-metadata)
+Forge retains an attempt outcome before finalizing the registry. If finalization was interrupted, reconciliation can apply the verified metadata. Processing-specific recovery handles committed outputs whose registration is incomplete. [Run and dataset maintenance](../../maintenance/publications.md#recover-run-index-metadata)
 
 ## Historical evidence and index maintenance
 
@@ -83,7 +83,7 @@ mf runs index-legacy --testing --limit 50
 mf runs reconcile --testing --limit 50
 ```
 
-Both commands default to preview. The shared paging range matches `list`. Use the [maintenance reference](../history-maintenance.md) for eligibility, decision codes and explicit apply syntax. A preview with blocked or unresolved candidates can still return successfully. Inspect the candidate decisions separately from the process exit code.
+Both commands default to preview. The shared paging range matches `list`. Use the [maintenance reference](../../maintenance/publications.md) for eligibility, decision codes and explicit apply syntax. A preview with blocked or unresolved candidates can still return successfully. Inspect the candidate decisions separately from the process exit code.
 
 ## Delete runs
 
@@ -131,3 +131,12 @@ Deletion uses its own structured result. Preview includes the plan location, rev
 ```bash
 mf --json runs delete RUN_ID --testing
 ```
+
+### Exact reconciliation
+
+Use `mf runs reconcile --run-id RUN_ID --testing` to preview the latest
+indexed attempt of one run in the current workspace and registry. Add
+`--apply` after review to finalize metadata from the retained outcome.
+A repeated, consistent apply reports **Already reconciled**. Conflicts,
+missing evidence, and a fully deleted run prevent repair. The selector
+does not accept a pagination offset. [Pipeline recovery](../../workflows/pipeline.md#processing-and-execution-history)

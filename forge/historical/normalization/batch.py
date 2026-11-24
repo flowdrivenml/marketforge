@@ -31,8 +31,14 @@ from forge.historical.engine.process import (
     ignore_preparation,
     joined_io,
 )
-from forge.historical.metadata.resolution import FamilyResolutionError
+from forge.historical.metadata.resolution import (
+    FamilyResolutionError,
+    compiled_profiles,
+    profile_fingerprints,
+)
 from forge.historical.normalization.config import (
+    ExactArchive,
+    ExactRecipe,
     NormalizationRecipe,
     NormalizationSource,
     PreparationRequest,
@@ -51,6 +57,7 @@ from forge.shared.database.connection import (
     database_dsn,
     database_purpose,
     registry_id,
+    require_registry,
 )
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
@@ -559,11 +566,91 @@ def build_plan(
     return BatchPlan(report, batch, jobs, run)
 
 
+def exact_archive_evidence(row: dict[str, object], resolved: ResolvedArchive) -> dict[str, object]:
+    return {
+        "archive": asdict(resolved.selection) if resolved.selection else None,
+        "revision": {
+            key: row.get(key)
+            for key in (
+                "remote_archive_id",
+                "external_archive_id",
+                "source_object_key",
+                "source_etag",
+                "source_last_modified",
+                "data_type",
+            )
+        },
+        "task": resolved.task,
+        "instrument_definitions": resolved.offline_instruments,
+        "identity_resolution": resolved.identity_resolution,
+    }
+
+
+def exact_archive_sha256(evidence: dict[str, object]) -> str:
+    return hashlib.sha256(json.dumps(evidence, sort_keys=True, default=str).encode()).hexdigest()
+
+
+async def resolve_exact_archive(
+    c: AsyncConnection[TupleRow],
+    paths: ProjectPaths,
+    archive_id: int,
+    *,
+    profile_root: Path | None = None,
+    executable: Path | None = None,
+) -> tuple[str, str, SourceOrder, ResolvedArchive, dict[str, object]]:
+    rows = await scan(c, parameters(paths.raw_dir, StorageFilters(), archive_id), 0)
+    if len(rows) != 1:
+        raise MarketForgeError(f"Local archive {archive_id} is not registered in this raw root.")
+    row = rows[0]
+    kind = {"trades": "trades", "order_book_l2": "depth"}.get(str(row.get("data_type")))
+    if kind is None:
+        raise MarketForgeError(f"Unsupported normalization data kind for archive {archive_id}.")
+    resolved = await resolve_archive(
+        c, paths, row, kind, profile_root=profile_root, executable=executable
+    )
+    profile = (
+        ".".join(str(row[key]) for key in ("exchange", "instrument_type", "market_category"))
+        + "."
+        + kind
+    )
+    return kind, profile, source_order(row, row["relative_path"]), resolved, row
+
+
+async def inspect_exact_archives(
+    paths: ProjectPaths, archive_ids: tuple[int, ...]
+) -> tuple[str, list[dict[str, object]]]:
+    async with database_connection(database_dsn(paths.root)) as c, c.transaction():
+        await c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        registry = await registry_id(c)
+        fingerprints = await profile_fingerprints(paths, None, None)
+        results: list[dict[str, object]] = []
+        for archive_id in archive_ids:
+            _, profile, _, resolved, row = await resolve_exact_archive(c, paths, archive_id)
+            if profile not in fingerprints:
+                raise MarketForgeError(
+                    f"Missing compatible profile {profile} for archive {archive_id}."
+                )
+            evidence = exact_archive_evidence(row, resolved)
+            results.append(
+                {
+                    "archive_id": archive_id,
+                    "selection_sha256": exact_archive_sha256(evidence),
+                    "profile_id": profile,
+                    "profile_sha256": fingerprints[profile],
+                    "source": evidence["archive"],
+                }
+            )
+        return registry, results
+
+
 async def plan_manual_batch(
     c: AsyncConnection[TupleRow],
     paths: ProjectPaths,
-    request: PreparationRequest,
+    request: PreparationRequest | ExactRecipe,
     ranking: RankingSelection | None = None,
+    *,
+    profile_root: Path | None = None,
+    executable: Path | None = None,
 ) -> BatchPlan:
     """Read legacy selections, but publish only the current Forge representation."""
     policy = request.ranking_policy
@@ -578,37 +665,74 @@ async def plan_manual_batch(
         else await ranking_positions(c, policy)
     )
     used = await used_ids(c, paths)
-    require(
-        request.job_id not in used and request.dataset_id not in used,
-        "Job or dataset ID already exists in registered or prepared artifacts.",
-    )
-    groups: SourceGroups = {request.content_type: {}}
+    exact = isinstance(request, ExactRecipe)
+    if exact:
+        require_registry({"registry_id": str(request.registry_id)}, await registry_id(c))
+        fingerprints = await profile_fingerprints(paths, profile_root, executable)
+    else:
+        require(
+            request.job_id not in used and request.dataset_id not in used,
+            "Job or dataset ID already exists in registered or prepared artifacts.",
+        )
+        fingerprints = {}
+    groups: SourceGroups = {}
     outcomes: list[dict[str, object]] = []
     blocked = False
     bounds: list[tuple[str, str]] = []
-    rows: list[dict[str, object]] = []
-    for index, selection in enumerate(request.inputs, 1):
+    expected_raw: dict[str, tuple[int, str]] = {}
+    exact_profiles: dict[str, str] = {}
+    for index, selection in enumerate(request.archive_pins if exact else request.inputs, 1):
         diagnostics: list[dict[str, object]] = []
         selected: list[dict[str, object]] = []
+        profile = ""
         try:
-            rows = await scan(
-                c, parameters(paths.raw_dir, StorageFilters(), selection.archive_id), 0
-            )
-            require(
-                len(rows) == 1,
-                f"Local archive {selection.archive_id} is not registered in this raw root.",
-            )
-            row = rows[0]
-            order = source_order(row, row.get("relative_path"))
+            if isinstance(selection, ExactArchive):
+                content, profile, order, resolved, row = await resolve_exact_archive(
+                    c, paths, selection.archive_id, profile_root=profile_root, executable=executable
+                )
+                evidence = exact_archive_evidence(row, resolved)
+                require(
+                    exact_archive_sha256(evidence) == selection.selection_sha256,
+                    "The exact archive revision or its resolved instrument evidence has changed.",
+                )
+                require(profile in fingerprints, f"Missing compatible profile {profile}.")
+                exact_profiles[profile] = fingerprints[profile]
+                if selection.profile_id is not None:
+                    require(
+                        selection.profile_id == profile,
+                        f"Incompatible profile {selection.profile_id}.",
+                    )
+                    require(
+                        selection.profile_sha256 == fingerprints[profile],
+                        f"Profile {profile} has changed.",
+                    )
+                path = str(resolved.task["input_path"])
+                pin = (selection.archive_id, str(row["sha256"]))
+                require(
+                    expected_raw.setdefault(path, pin) == pin,
+                    "Conflicting archive IDs for one managed path.",
+                )
+            else:
+                assert isinstance(request, PreparationRequest)
+                content = request.content_type
+                rows = await scan(
+                    c, parameters(paths.raw_dir, StorageFilters(), selection.archive_id), 0
+                )
+                require(
+                    len(rows) == 1,
+                    f"Local archive {selection.archive_id} is not registered in this raw root.",
+                )
+                row = rows[0]
+                order = source_order(row, row.get("relative_path"))
+                resolved = await resolve_archive(c, paths, row, content)
+                require(
+                    resolved.instrument_id == selection.instrument_id,
+                    "Selected instrument differs from archive identity.",
+                )
             bounds.append((utc_timestamp(order[0]), utc_timestamp(order[1])))
-            resolved = await resolve_archive(c, paths, row, request.content_type)
-            require(
-                resolved.instrument_id == selection.instrument_id,
-                "Selected instrument differs from archive identity.",
-            )
             stream = str(resolved.task["stream_id"])
             source = source_identity(row)
-            previous_order, previous = groups[request.content_type].setdefault(
+            previous_order, previous = groups.setdefault(content, {}).setdefault(
                 (source, stream), (order, resolved)
             )
             require(
@@ -622,6 +746,17 @@ async def plan_manual_batch(
                     "stream_id": stream,
                     "metadata_warnings": resolved.warnings,
                     "identity_resolution": resolved.identity_resolution,
+                    **(
+                        {
+                            "registered_input": asdict(resolved.selection),
+                            "profile": profile,
+                            "profile_selection": "explicit"
+                            if selection.profile_id
+                            else "automatic",
+                        }
+                        if isinstance(selection, ExactArchive) and resolved.selection
+                        else {}
+                    ),
                 }
             )
         except (MarketForgeError, OSError, ValueError) as exc:
@@ -635,10 +770,12 @@ async def plan_manual_batch(
                 "request_index": index,
                 "selected_archives": selected,
                 "blockers": diagnostics,
-                "legacy_selection": selection.model_dump(mode="json"),
+                (
+                    "archive_pin" if isinstance(selection, ExactArchive) else "legacy_selection"
+                ): selection.model_dump(mode="json"),
             }
         )
-    return build_plan(
+    plan = build_plan(
         paths,
         request.model_dump_json(),
         {
@@ -653,15 +790,19 @@ async def plan_manual_batch(
         snapshot,
         positions,
         used,
-        request,
+        None if exact else request,
         ranking,
         policy,
     )
+    if exact:
+        plan.report["exact_raw_inputs"] = expected_raw
+        plan.report["exact_profile_fingerprints"] = exact_profiles
+    return plan
 
 
 async def prepare_batch(
     paths: ProjectPaths,
-    recipe: AcquisitionConfig | NormalizationRecipe | PreparationRequest,
+    recipe: AcquisitionConfig | NormalizationRecipe | PreparationRequest | ExactRecipe,
     *,
     dry_run: bool = False,
     recipe_source: Path | None = None,
@@ -678,7 +819,11 @@ async def prepare_batch(
     async with database_connection(dsn) as c:
         async with c.transaction():
             await c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            if isinstance(recipe, PreparationRequest):
+            if isinstance(recipe, ExactRecipe):
+                plan = await plan_manual_batch(
+                    c, paths, recipe, profile_root=historical, executable=executable
+                )
+            elif isinstance(recipe, PreparationRequest):
                 plan = await plan_manual_batch(c, paths, recipe)
             elif pinned is None and not allocation_seed:
                 plan = await plan_batch(c, paths, recipe)
@@ -711,6 +856,9 @@ async def prepare_batch(
                         registry,
                         binary=engine,
                         historical=historical,
+                        expected_raw=cast(
+                            dict[str, tuple[int, str]] | None, plan.report.get("exact_raw_inputs")
+                        ),
                     )
                 except (MarketForgeError, OSError, ValueError) as error:
                     report["reuse_plan_error"] = str(error)
@@ -802,6 +950,17 @@ def stage_batch(
         return None
     binary = executable or resolve(paths)
     report["executable_sha256"] = checksum(binary)
+    if expected := report.get("exact_profile_fingerprints"):
+        pinned = compiled_profiles(
+            paths,
+            tuple((item["id"], item["sha256"]) for item in profiles),
+            profile_root,
+            binary,
+        )
+        require(
+            all(pinned.get(name) == digest for name, digest in obj(expected).items()),
+            "An exact archive profile changed during preparation. Review the selection again.",
+        )
     return batch_validation_command(paths, binary, source, config, profile_root)
 
 

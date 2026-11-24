@@ -101,6 +101,22 @@ cargo test --locked --manifest-path engine/Cargo.toml --features historical \
   --test historical_convert
 ```
 
+To inspect a portable output directly, export the 12-row dashboard fixture into a temporary directory and run it with the managed historical converter.
+
+```bash
+mf engine build convert
+preview=$(mktemp -d)
+MARKETFORGE_CONVERSION_PREVIEW_DIR="$preview" \
+  cargo test --locked --manifest-path engine/Cargo.toml --features historical \
+  --test historical_convert portable::export_conversion_dashboard_preview -- --ignored --exact
+job=$(find "$preview" -name job.json -print -quit)
+.bin/marketforge-convert --job "$job" --validate
+.bin/marketforge-convert --job "$job" --run
+jq '{statistics, integrity}' "$(dirname "$job")/converted/manifest.json"
+```
+
+Expect 12 physical rows, including one reconstruction record, with six identity, five converted and one unavailable valuation. Both `source_preservation` and `conversion_validation` pass. To inspect the monitor, use `--run --tui` in an interactive terminal with a fresh fixture destination.
+
 The optional recorded check requires the exact pinned Bybit publication. A relocated copy can be selected with `MARKETFORGE_RECORDED_CONVERT_INPUT`. The prefix case materializes 4,096 events, including causal reconstruction and reference prehistory. The ignored `publishes_canonical_recorded_conversion` test is the full recorded replay and requires space for the converted publication.
 
 ```bash

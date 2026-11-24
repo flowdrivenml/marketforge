@@ -7,6 +7,7 @@ from rich.text import Text
 
 from forge.datasets.metadata import utc
 from forge.datasets.query import DatasetRequest
+from forge.datasets.sorting import VIEWS
 from forge.shared.presentation.datasets import KINDS, STAGES, integrity, market, period
 from forge.shared.terminal.dataset_browse import next_page
 from forge.shared.terminal.presentation import data_table, header, section, summary
@@ -33,6 +34,12 @@ def publication_command(publication: Row, environment: str) -> str:
 def render_timelines(console: Console, result: Row, request: DatasetRequest) -> None:
     environment = result["environment"]
     header(console, "Datasets", environment=environment)
+    console.print(
+        Text(
+            VIEWS[result["view"]].resolve(request.sort, request.order).description,
+            style="mf.secondary",
+        )
+    )
     stats = result["timeline_counts"]
     console.print(
         Text(

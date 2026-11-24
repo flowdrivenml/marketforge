@@ -8,6 +8,13 @@ Run the commands from your MarketForge workspace. The examples use the testing r
 
 ## 1. Create a recipe
 
+In **Workflows → Acquisition → New recipe**, supply the half-open UTC
+interval and at least one archive request. Choose the venue, instrument type
+and market explicitly. **Find** in an instrument scope searches the registered
+catalogue for that classification. Add another request for an additional
+instrument or data kind. Validation checks the adapter's supported request
+combinations. **Map** discovers whether the historical archives are available.
+
 ```bash
 mf acquisition new september | cpout
 mf acquisition edit september
@@ -32,7 +39,7 @@ data_type = "trades"
 scope = { kind = "instrument", identifier = "BTCUSDT" }
 ```
 
-Choose combinations with `mf acquisition sources` or the [supported historical sources](../../reference/acquisition-sources.md). See the [configuration reference](../../configuration/acquisition.md) for every recipe field.
+Choose combinations with `mf acquisition sources` or the [supported historical sources](../../reference/acquisition-sources.md). See the [configuration reference](../../reference/configuration/acquisition.md) for every recipe field.
 
 ## 2. Validate
 
@@ -85,8 +92,8 @@ Storage shows registered files. Use the run ID from the acquisition summary to i
 | No archives found | Check the native identifier, scope and dates. Use `--refresh` if cached results need an upstream check. |
 | Unsupported source or scope | Check the [historical source matrix](../../reference/acquisition-sources.md) and update the request. |
 | Partial or failed download | Inspect the retained report and events, then follow the [recovery instructions](managing-acquisitions.md#recover-partial-or-failed-runs). |
-| Invalid recipe | Correct the TOML location or field reported by `validate`. See [common validation errors](../../configuration/acquisition.md#common-validation-errors). |
+| Invalid recipe | Correct the TOML location or field reported by `validate`. See [common validation errors](../../reference/configuration/acquisition.md#common-validation-errors). |
 
 ## Next step
 
-[Normalize managed archives](../normalize.md) into canonical datasets.
+[Normalize managed archives](../normalization/index.md) into canonical datasets.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import shlex
@@ -11,13 +12,14 @@ import time
 import tomllib
 from datetime import UTC
 from pathlib import Path
-from typing import Any, Self, cast
-from uuid import uuid4
+from typing import Annotated, Any, Self, cast
+from uuid import UUID, uuid4
 
 from pydantic import Field, model_validator
 
 from forge.historical.engine.managed import checksum, resolve, supervised
 from forge.historical.engine.process import (
+    EngineRunner,
     Lifecycle,
     PreparationObserver,
     check,
@@ -71,6 +73,9 @@ end_ns = 1727769600000000000
 
 class Recipe(SettingsModel, frozen=True):
     dataset_ids: list[DatabaseID] = Field(min_length=1)
+    registry_id: Annotated[UUID, Field(strict=False)] | None = None
+    publication_ids: list[DatabaseID] | None = Field(default=None, min_length=1)
+    selection_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     start_ns: Timestamp
     end_ns: Timestamp
     stream_ranks: dict[str, StreamRank] = Field(default_factory=dict)
@@ -80,6 +85,12 @@ class Recipe(SettingsModel, frozen=True):
     def validate_selection(self) -> Self:
         if len(set(self.dataset_ids)) != len(self.dataset_ids):
             raise ValueError("Select each registered dataset once.")
+        if self.publication_ids is not None and (
+            self.registry_id is None
+            or self.selection_sha256 is None
+            or len(set(self.publication_ids)) != len(self.publication_ids)
+        ):
+            raise ValueError("Select unique publications from a verified registry.")
         if self.start_ns >= self.end_ns:
             raise ValueError("Merge range must satisfy start_ns < end_ns.")
         return self
@@ -121,12 +132,14 @@ async def select_inputs(
     paths: ProjectPaths,
     *,
     ids: list[int] | None = None,
+    publication_ids: list[int] | None = None,
+    expected_publications: list[int] | None = None,
     job: dict[str, Any] | None = None,
     recovery: bool = False,
 ) -> list[dict[str, Any]]:
     references: list[tuple[int, str, dict[str, Any]]] = []
     submitted_files: list[dict[str, Any]] | None = None
-    if ids is None:
+    if ids is None and publication_ids is None:
         if job and job.get("primary_files"):
             # Keep registration recovery for publications produced with the previous contract.
             references = [
@@ -157,13 +170,39 @@ async def select_inputs(
     async with database_connection(database_dsn(paths.root)) as c:
         query = """SELECT d.id,d.storage_path,d.primary_file,d.file_sha256,d.operation_details,
                    d.start_timestamp_ns,d.end_timestamp_ns,p.storage_root,p.engine_dataset_id,
-                   p.instrument_namespace,p.evidence->>'manifest_sha256',p.manifest_path
+                   p.instrument_namespace,p.evidence->>'manifest_sha256',p.manifest_path,p.id
                    FROM historical.datasets d JOIN historical.dataset_publications p ON p.id=d.publication_id
                    WHERE d.operation='normalize' AND p.operation='normalize' AND d.status='complete'
                    AND d.storage_format='parquet' AND d.primary_file IS NOT NULL"""
         rows: list[tuple[Any, ...]]
-        if ids is not None:
-            cur = await c.execute(query + " AND d.id=ANY(%s)", (ids,))
+        eligible = """ AND NOT EXISTS (
+            SELECT 1 FROM historical.publication_invalidations i WHERE i.publication_id=p.id
+        ) AND NOT EXISTS (
+            SELECT 1 FROM historical.publication_supersessions s
+            WHERE s.publication_id=p.id AND s.state <> 'retained'
+        )"""
+        if publication_ids is not None:
+            if not publication_ids or len(set(publication_ids)) != len(publication_ids):
+                raise MarketForgeError("Select each normalized registry publication once.")
+            cur = await c.execute(
+                query
+                + eligible
+                + " AND p.id=ANY(%s) ORDER BY array_position(%s::bigint[],p.id),d.id",
+                (publication_ids, publication_ids),
+            )
+            rows = list(await cur.fetchall())
+            missing = set(publication_ids) - {row[12] for row in rows}
+            if missing:
+                raise MarketForgeError(
+                    f"No eligible normalized primary files for publications {sorted(missing)}."
+                )
+        elif ids is not None:
+            cur = await c.execute(
+                query
+                + " AND d.id=ANY(%s)"
+                + (eligible if expected_publications is not None else ""),
+                (ids,),
+            )
             records = {r[0]: r for r in await cur.fetchall()}
             if set(records) != set(ids):
                 raise MarketForgeError(
@@ -183,6 +222,11 @@ async def select_inputs(
                         f"No unique registered file matches {root}/{item['path']}."
                     )
                 rows.append(found[0])
+
+    if expected_publications is not None and {row[12] for row in rows} != set(
+        expected_publications
+    ):
+        raise MarketForgeError("The prepared merge no longer selects the reviewed publication IDs.")
 
     result: list[dict[str, Any]] = []
     publications: dict[str, dict[str, Any]] = {}
@@ -205,6 +249,7 @@ async def select_inputs(
         namespace,
         manifest_sha,
         manifest_path,
+        publication_id,
     ) in rows:
         if not all((file, relative, root, engine, namespace, sha, manifest_sha, manifest_path)):
             raise MarketForgeError(
@@ -261,6 +306,11 @@ async def select_inputs(
                 "content_type": manifest["content_type"],
                 "database_id": db_id,
                 "engine_id": int(engine),
+                **(
+                    {"registry_publication_id": publication_id}
+                    if publication_ids is not None
+                    else {}
+                ),
                 "namespace": namespace,
                 "path": root,
                 "primary_file": relative,
@@ -305,6 +355,70 @@ async def select_inputs(
     if len({item["namespace"] for item in result}) != 1:
         raise MarketForgeError("Select files from a single instrument namespace.")
     return result
+
+
+async def publication_recipe(
+    paths: ProjectPaths,
+    publication_ids: list[int],
+    *,
+    start_ns: int | None = None,
+    end_ns: int | None = None,
+    stream_ranks: dict[str, int] | None = None,
+    timeline_ordering: str | None = None,
+) -> tuple[Recipe, dict[str, Any]]:
+    """Resolve explicit registry publications to verified primary-file membership."""
+    registry = await selected_registry_id(paths.root)
+    with pinned_registry(registry):
+        selected = await select_inputs(paths, publication_ids=publication_ids)
+    recipe = Recipe.model_validate(
+        {
+            "dataset_ids": [item["database_id"] for item in selected],
+            "registry_id": registry,
+            "publication_ids": publication_ids,
+            "selection_sha256": publication_selection_sha256(selected),
+            "start_ns": start_ns
+            if start_ns is not None
+            else min(item["start_ns"] for item in selected),
+            "end_ns": end_ns
+            if end_ns is not None
+            else max(item["end_ns"] for item in selected) + 1,
+            "stream_ranks": stream_ranks or {},
+            "timeline_ordering": timeline_ordering,
+        }
+    )
+    return recipe, describe_publication_selection(recipe, selected)
+
+
+def publication_selection_sha256(selected: list[dict[str, Any]]) -> str:
+    return hashlib.sha256(json.dumps(selected, sort_keys=True).encode()).hexdigest()
+
+
+def describe_publication_selection(
+    recipe: Recipe, selected: list[dict[str, Any]]
+) -> dict[str, Any]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for item in selected:
+        groups.setdefault(item["stream_id"], []).append(item)
+    for stream, files in groups.items():
+        observed = sorted(files, key=lambda item: item["start_ns"])
+        latest = observed[0]
+        for item in observed[1:]:
+            if item["start_ns"] <= latest["end_ns"] and (
+                item["registry_publication_id"] != latest["registry_publication_id"]
+            ):
+                raise MarketForgeError(
+                    f"Overlapping registry publications for {stream}: "
+                    f"{latest['registry_publication_id']} and {item['registry_publication_id']}. "
+                    "Select the intended generation explicitly."
+                )
+            if item["end_ns"] > latest["end_ns"]:
+                latest = item
+    return {
+        "registry_id": str(recipe.registry_id),
+        "inputs": selected,
+        "streams": assign_ranks(selected, recipe.stream_ranks, {}),
+        "coverage": coverage(selected, recipe.start_ns, recipe.end_ns),
+    }
 
 
 def publication_selection(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -498,6 +612,32 @@ def validate_recipe(paths: ProjectPaths, recipe: Recipe | DerivedRecipe) -> None
         normalization_source(paths, recipe.selection.source)
 
 
+def verify_recipe_registry(recipe: Recipe | DerivedRecipe, registry: str) -> None:
+    if isinstance(recipe, Recipe) and recipe.registry_id is not None:
+        require_registry({"registry_id": str(recipe.registry_id)}, registry)
+
+
+async def reviewed_inputs(
+    paths: ProjectPaths, recipe: Recipe | DerivedRecipe, ids: list[int], registry: str
+) -> list[dict[str, Any]]:
+    verify_recipe_registry(recipe, registry)
+    with pinned_registry(registry):
+        if isinstance(recipe, Recipe) and recipe.publication_ids is not None:
+            selected = await select_inputs(paths, publication_ids=recipe.publication_ids)
+            if [item["database_id"] for item in selected] != ids or publication_selection_sha256(
+                selected
+            ) != recipe.selection_sha256:
+                raise MarketForgeError(
+                    "The selected publication membership or evidence has changed."
+                )
+            describe_publication_selection(recipe, selected)
+            return [
+                {key: value for key, value in item.items() if key != "registry_publication_id"}
+                for item in selected
+            ]
+        return await select_inputs(paths, ids=ids)
+
+
 def runtime_path(paths: ProjectPaths) -> Path:
     return paths.runtime_config("merge")
 
@@ -575,8 +715,7 @@ def prepare_job(
 ) -> dict[str, Any]:
     async def select() -> tuple[str, list[dict[str, Any]]]:
         registry = await selected_registry_id(paths.root)
-        with pinned_registry(registry):
-            return registry, await select_inputs(paths, ids=ids)
+        return registry, await reviewed_inputs(paths, recipe, ids, registry)
 
     registry, selected = asyncio.run(select())
     return assemble_job(
@@ -635,8 +774,7 @@ async def prepare_async(
     else:
         ids = recipe.dataset_ids
     registry = await selected_registry_id(paths.root)
-    with pinned_registry(registry):
-        selected = await select_inputs(paths, ids=ids)
+    selected = await reviewed_inputs(paths, recipe, ids, registry)
     result = await joined_io(
         lambda: assemble_job(
             paths,
@@ -796,6 +934,11 @@ def assemble_job(
         "job_path": str(source),
         "inputs": selected,
         **({"requested_file_ids": recipe.dataset_ids} if isinstance(recipe, Recipe) else {}),
+        **(
+            {"requested_publication_ids": recipe.publication_ids}
+            if isinstance(recipe, Recipe) and recipe.publication_ids
+            else {}
+        ),
         "streams": streams,
         "stream_count": len(streams),
         "selected_file_count": len(selected),
@@ -990,13 +1133,14 @@ async def execute_async(
     *,
     tui: bool = False,
     standalone: bool = False,
+    engine_runner: EngineRunner | None = None,
     execution_directory: Path | None = None,
     historical: Path | None = None,
     executable: Path | None = None,
     lifecycle: Lifecycle = lambda _: None,
 ) -> dict[str, Any]:
     managed_started = time.monotonic()
-    if tui and not all(os.isatty(fd) for fd in (0, 1, 2)):
+    if tui and engine_runner is None and not all(os.isatty(fd) for fd in (0, 1, 2)):
         raise MarketForgeError("--tui requires an interactive terminal.")
     binary = executable or resolve(paths, "merge")
     directory = execution_directory or paths.runs_dir / f"merge-execute-{uuid4().hex}"
@@ -1029,7 +1173,13 @@ async def execute_async(
     elif not is_testing():
         raise MarketForgeError("Prepare this merge job again in production.")
     with pinned_registry(registry):
-        selected = await select_inputs(paths, job=job)
+        expected_publications = prepared.get("requested_publication_ids")
+        if expected_publications is None:
+            selected = await select_inputs(paths, job=job)
+        else:
+            selected = await select_inputs(
+                paths, job=job, expected_publications=expected_publications
+            )
     if prepared and (
         prepared.get("submitted_sha256") != submitted_sha
         or (
@@ -1135,11 +1285,12 @@ async def execute_async(
             str(engine_result_path),
             *(["--config-origin", origin] if tui else []),
         ]
-        code, interrupted = (
-            run_process(argv, paths.root, directory, tui=tui)
-            if standalone
-            else await supervise(argv, paths.root, directory)
-        )
+        if engine_runner is not None:
+            code, interrupted = await engine_runner(argv, paths.root, directory, tui)
+        elif standalone:
+            code, interrupted = run_process(argv, paths.root, directory, tui=tui)
+        else:
+            code, interrupted = await supervise(argv, paths.root, directory)
     except OSError as error:
         receipt.update(
             status="failed",

@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, LiteralString
+from typing import Any
 
 from psycopg import AsyncConnection
 from psycopg.pq import TransactionStatus
@@ -13,14 +13,24 @@ from psycopg.rows import TupleRow, dict_row
 from psycopg.types.json import Jsonb
 
 from forge.datasets import converted, parquet, timelines, views
+from forge.datasets.dataset import Dataset
+from forge.datasets.discovery import group, inventory
 from forge.datasets.inspection import contribution_counts, terminal_lineage
 from forge.datasets.migration import migrate
+from forge.datasets.physical import schema_fields, select
 from forge.datasets.registration import file_summaries
+from forge.datasets.sorting import LEGACY_FILES, REGISTERED_PUBLICATIONS, STREAMS, VIEWS
 from forge.historical.archives.storage.files import disk
 from forge.historical.engine.managed import checksum
-from forge.shared.database.connection import database_connection, database_dsn
+from forge.shared.database.connection import (
+    database_connection,
+    database_dsn,
+    database_purpose,
+    registry_id,
+)
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
+from forge.shared.sorting import ordered
 
 COLUMNS = """d.id,d.operation,d.data_type,d.storage_path,d.primary_file,d.file_sha256,
 d.status,d.storage_format,d.start_timestamp_ns,d.end_timestamp_ns,d.operation_details AS summary,
@@ -117,9 +127,211 @@ class DatasetRequest:
     output_ref: str | None = None
     target_quote: str | None = None
     search: str | None = None
-    sort: str = "id"
+    sort: str | None = None
+    order: str | None = None
     part: int | None = None
     timeline_reference: str | None = None
+    partition: str | None = None
+    partition_file: int = 1
+    row_group: int | None = None
+    row_groups: bool = False
+    instrument_id: int | None = None
+    stream_id: str | None = None
+
+
+async def open_registered(
+    connection: AsyncConnection[TupleRow],
+    args: DatasetRequest,
+) -> Dataset:
+    """Resolve a physical handle against an exact identity in the selected registry."""
+    context = f"{database_purpose()}:{await registry_id(connection)}"
+    identities = (args.id, args.publication_id, args.output_ref)
+    if sum(value is not None for value in identities) != 1:
+        raise MarketForgeError(
+            "Choose exactly one registered file, publication, or conversion output."
+        )
+    if any(
+        value is not None and (type(value) is not int or not 0 < value < 2**63)
+        for value in (args.id, args.publication_id)
+    ):
+        raise MarketForgeError("Use a positive signed-64-bit registry ID.")
+    if args.output_ref is not None:
+        if not re.fullmatch(r"[0-9a-f]{64}", args.output_ref):
+            raise MarketForgeError("Use the full lowercase 64-digit indexed output reference.")
+        outputs, capability, unavailable = await converted.indexed_outputs(
+            connection, args.output_ref
+        )
+        if capability == "unavailable":
+            raise MarketForgeError("The selected registry has no converted output index.")
+        if unavailable:
+            raise MarketForgeError("The indexed conversion manifest is missing or invalid.")
+        if not outputs:
+            raise MarketForgeError(
+                f"No conversion output {args.output_ref} in the selected registry."
+            )
+        row = outputs[0]
+        root = Path(row["storage_root"])
+        records: dict[Path, dict[str, Any]] = {}
+        expected = {root / item["path"] for item in row["files"]}
+    else:
+        async with connection.cursor(row_factory=dict_row) as cursor:
+            await cursor.execute(
+                "SELECT "
+                + COLUMNS
+                + """, s.state AS retired, i.publication_id AS invalidated
+                FROM historical.datasets d
+                JOIN historical.dataset_publications p ON p.id=d.publication_id
+                LEFT JOIN historical.publication_supersessions s ON s.publication_id=p.id
+                LEFT JOIN historical.publication_invalidations i ON i.publication_id=p.id
+                WHERE (%s::bigint IS NULL OR p.id=%s) AND (%s::bigint IS NULL OR d.id=%s)
+                    AND d.primary_file IS NOT NULL
+                ORDER BY d.primary_file""",
+                (args.publication_id, args.publication_id, args.id, args.id),
+            )
+            rows = await cursor.fetchall()
+        if not rows:
+            label = (
+                f"publication {args.publication_id}"
+                if args.publication_id is not None
+                else f"primary file {args.id}"
+            )
+            raise MarketForgeError(f"No {label} in the {database_purpose()} registry.")
+        row = rows[0]
+        label = f"Registry publication {row['publication_id']}"
+        if row["retired"] in {"retiring", "removed"}:
+            raise MarketForgeError(f"{label} is {row['retired']}.")
+        if row["invalidated"] is not None:
+            raise MarketForgeError(f"{label} has been invalidated.")
+        if any(r["status"] != "complete" for r in rows):
+            raise MarketForgeError(f"{label} has an incomplete or unavailable primary file.")
+        root = Path(row["storage_root"])
+        records = {Path(r["storage_path"]): {**r, "registry_context": context} for r in rows}
+        expected = set(records)
+
+    def read() -> Dataset:
+        if not root.is_absolute() or root.resolve() != root:
+            raise ValueError(f"Unsafe publication directory: {root}")
+        manifest = root / "manifest.json"
+        if manifest.resolve() != manifest or not manifest.is_file():
+            raise ValueError(f"Missing or unsafe publication manifest: {manifest}")
+        if row.get("manifest_sha256") and checksum(manifest) != row["manifest_sha256"]:
+            raise ValueError(
+                f"Publication manifest disagrees with the registry fingerprint: {manifest}"
+            )
+        files, issues = inventory(
+            root,
+            registry=records,
+            only=next(iter(expected)) if args.id is not None else None,
+            metadata_only=True,
+        )
+        for issue in issues:
+            if issue.code != "missing_identity":
+                raise ValueError(f"{issue.path}: {issue.message}")
+        if not files or {item.path for item in files} != expected:
+            raise ValueError(
+                f"Manifest and registry disagree on the selected primary files: {manifest}"
+            )
+        result = files[0] if args.id is not None else group(root, files)
+        return replace(
+            result,
+            registry_context=context,
+            output_ref=args.output_ref,
+            instrument_namespace=row.get("instrument_namespace"),
+        )
+
+    return await disk(read)
+
+
+def inspect_physical(dataset: Dataset, args: DatasetRequest) -> dict[str, Any]:
+    action = args.dataset_action
+    partition = dataset.partition(args.partition) if args.partition is not None else None
+    identity = {
+        "id": dataset.dataset_id,
+        "publication_id": dataset.publication_id,
+        "output_ref": dataset.output_ref,
+    }
+    if args.offset < 0:
+        raise ValueError("Partition offset must be nonnegative.")
+    if action == "partitions":
+        if args.row_groups:
+            if partition is None:
+                raise ValueError("Choose --partition to list its row groups.")
+            rows = partition.row_groups()
+            return {
+                **identity,
+                "partition": partition.info(),
+                "row_groups": rows[args.offset : args.offset + args.limit],
+                "total": len(rows),
+            }
+        items = (partition,) if partition is not None else dataset.partitions()
+        return {
+            **identity,
+            "partitions": [item.info() for item in items[args.offset : args.offset + args.limit]],
+            "total": len(items),
+        }
+    if args.row_group is not None and partition is None:
+        raise ValueError("Choose --partition to select a row group.")
+    if args.partition_file != 1 and args.row_group is None:
+        raise ValueError("--partition-file requires --row-group.")
+    if args.part is not None:
+        raise ValueError(
+            "Use either --part for legacy converted previews or --partition for physical inspection."
+        )
+    source = (
+        partition.row_group(args.row_group, file=args.partition_file)
+        if partition is not None and args.row_group is not None
+        else partition or dataset
+    )
+    result = {
+        **identity,
+        "partition": partition.info() if partition is not None else None,
+        "row_group": args.row_group,
+    }
+    if action == "schema":
+        return {**result, "columns": schema_fields(source)}
+    from itertools import islice
+
+    query = select(source, dataset.data_type, args.data_type, args.instrument_id, args.stream_id)
+    if args.column is None:
+        defaults = (
+            "event_timestamp_ns",
+            "exchange",
+            "instrument_id",
+            "symbol",
+            "stream_id",
+            "event_kind",
+            "timeline_sequence",
+        )
+        if args.data_type is not None:
+            defaults += (
+                ("price", "quantity", "quantity_base", "trade", "trade_target")
+                if args.data_type == "trades"
+                else ("price", "quantity", "side", "changes", "depth", "depth_target")
+            )
+        columns = (
+            [name for name in defaults if name in query.schema().names] if not args.wide else None
+        )
+    else:
+        columns = args.column
+    batches = query.batches(
+        columns=columns,
+        start=args.start,
+        end=args.end,
+        batch_size=min(args.limit, 256),
+        bounded=True,
+    )
+    rows: list[dict[str, Any]] = []
+    for batch in batches:
+        rows.extend(islice(batch.to_pylist(), args.limit - len(rows)))
+        if len(rows) == args.limit:
+            break
+    return {
+        **result,
+        "rows": rows,
+        "projection": query.projection(columns),
+        "precise": args.precise,
+        "compact": False,
+    }
 
 
 async def browse(
@@ -138,11 +350,39 @@ async def browse(
         "migrate-registration",
         "refresh-summary",
         "timeline",
+        "partitions",
     }:
         raise MarketForgeError(f"Unsupported dataset action: {action}.")
     if action == "migrate-registration":
         return await migrate(paths, dry_run=args.dry_run)
+    order = LEGACY_FILES.resolve().sql()
+    if action in SEARCH_ACTIONS:
+        capability = VIEWS[args.view] if args.view is not None else LEGACY_FILES
+        order = capability.resolve(args.sort, args.order).sql()
+    if action == "streams":
+        STREAMS.resolve(args.sort, args.order)
     async with database_connection(database_dsn(paths.root)) as c:
+        physical = action == "partitions" or (
+            action in {"head", "schema"}
+            and (
+                args.publication_id is not None
+                or args.partition is not None
+                or args.row_group is not None
+                or args.partition_file != 1
+                or args.instrument_id is not None
+                or args.stream_id is not None
+                or args.data_type is not None
+                or args.start is not None
+                or args.end is not None
+            )
+        )
+        if physical:
+            start_snapshot = c.info.transaction_status == TransactionStatus.IDLE
+            async with c.transaction():
+                if start_snapshot:
+                    await c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                dataset = await open_registered(c, args)
+                return await disk(inspect_physical, dataset, args)
         if (
             args.view is not None
             or args.publication_id is not None
@@ -187,7 +427,9 @@ async def browse(
                             AND (%(start)s::bigint IS NULL OR (s->>'end_timestamp_ns')::bigint >= %(start)s)
                             AND (%(end)s::bigint IS NULL OR (s->>'start_timestamp_ns')::bigint < %(end)s)
                        )
-                    ) ORDER BY d.id LIMIT %(limit)s OFFSET %(offset)s""",
+                    ) ORDER BY """
+                    + order
+                    + " LIMIT %(limit)s OFFSET %(offset)s",
                     {
                         **asdict(args),
                         "limit": args.limit if not detailed else args.limit + 1,
@@ -295,7 +537,7 @@ async def browse(
                 return {
                     "id": args.id,
                     "scope": row["summary"].get("membership_scope", "unresolved"),
-                    "streams": row["summary"].get("memberships", []),
+                    "streams": sort_streams(row["summary"].get("memberships", []), args),
                     **({"file": row} if detailed else {}),
                 }
             file = selected_path(row)
@@ -420,11 +662,48 @@ async def browse_projection(
             return {
                 "file": publication,
                 "scope": "primary-file membership across the publication",
-                "streams": stream_memberships(publication.get("memberships") or []),
+                "streams": sort_streams(
+                    stream_memberships(publication.get("memberships") or []), args
+                ),
             }
         files = await views.page(c, replace(args, view="files"), inspect=True)
         return {"publication": publication, "files": files}
     raise MarketForgeError("An explicit dataset view or inspection reference is required.")
+
+
+def sort_streams(members: list[dict[str, Any]], args: DatasetRequest) -> list[dict[str, Any]]:
+    ordering = STREAMS.resolve(args.sort, args.order)
+
+    def number(value: object) -> int | None:
+        return (
+            int(value)
+            if type(value) is int or isinstance(value, str) and value.lstrip("-").isdecimal()
+            else None
+        )
+
+    def identity(member: dict[str, Any]) -> tuple[str, int, int, str, str, str, str, str]:
+        return (
+            str(member.get("stream_id") or ""),
+            rank if (rank := number(member.get("stream_rank"))) is not None else 2**32,
+            number(member.get("source_publication_id")) or 0,
+            str(member.get("exchange") or ""),
+            str(member.get("instrument_id") or ""),
+            str(member.get("instrument_type") or ""),
+            str(member.get("market_category") or ""),
+            str(member.get("kind") or ""),
+        )
+
+    if ordering.field == "name":
+        return ordered(
+            members,
+            ordering,
+            lambda member: str(member["stream_id"]) if member.get("stream_id") else None,
+            identity,
+        )
+    key = {"rank": "stream_rank", "start": "start_timestamp_ns", "end": "end_timestamp_ns"}[
+        ordering.field
+    ]
+    return ordered(members, ordering, lambda member: number(member.get(key)), identity)
 
 
 def stream_memberships(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -465,7 +744,7 @@ async def inspect_converted(
         return {
             "file": row,
             "scope": "source publication",
-            "streams": stream_memberships(row["summary"]["memberships"]),
+            "streams": sort_streams(stream_memberships(row["summary"]["memberships"]), args),
         }
     if action == "lineage":
         return {"file": row, "publication_selection": row["indexed_result"]["input"]}
@@ -571,21 +850,20 @@ async def publications(
     filters: DatasetRequest | None = None,
     search: str = "",
     sort: str = "",
-    descending: bool = True,
+    descending: bool | None = None,
+    order: str | None = None,
+    reference_for: int | None = None,
 ) -> dict[str, Any]:
     """List retained publication evidence once per registry publication."""
     if not 1 <= limit <= 100 or offset < 0 or file_offset < 0:
         raise MarketForgeError("Invalid publication page.")
     query = filters or DatasetRequest("list")
-    orders: dict[str, LiteralString] = {
-        "Publication": "CASE WHEN p.engine_dataset_id ~ '^[0-9]+$' THEN p.engine_dataset_id::numeric END",
-        "Recorded size": "files.bytes",
-        "Files": "files.primary_file_count",
-        "Observed UTC": "files.latest",
-        "Operation": "p.operation",
-    }
-    order = orders.get(sort, "p.id")
-    direction: LiteralString = " DESC" if descending else " ASC"
+    ordering = REGISTERED_PUBLICATIONS.resolve(
+        sort,
+        order
+        if order is not None
+        else (None if descending is None else "desc" if descending else "asc"),
+    )
     async with database_connection(database_dsn(paths.root)) as connection:
         await connection.execute("SET statement_timeout = '5s'")
         async with connection.cursor(row_factory=dict_row) as cursor:
@@ -595,10 +873,14 @@ async def publications(
                     p.instrument_namespace,p.manifest_path,
                     p.evidence->>'manifest_sha256' AS manifest_sha256,
                     p.evidence->'manifest'->'streams' AS streams,
+                    CASE WHEN %(reference_for)s::bigint IS NOT NULL
+                         THEN p.evidence->'file_memberships' END AS reference_memberships,
+                    p.evidence->'manifest'->>'integrity_status' AS integrity,
                     p.evidence->'manifest'->'time_range' AS requested_interval,
                     files.earliest AS first_observed_ns,
                     files.latest AS last_observed_ns,
                     p.evidence->'execution' AS execution,
+                    coalesce(p.evidence->'generation',p.evidence->'execution'->'generation') AS generation,
                     p.evidence->'manifest'->'events_written' AS events,
                     files.bytes AS bytes_written,
                     files.primary_file_count,
@@ -608,11 +890,26 @@ async def publications(
                     SELECT COUNT(*) AS primary_file_count, MIN(d.id) AS first_file_id,
                         MIN(d.start_timestamp_ns) AS earliest,MAX(d.end_timestamp_ns) AS latest,
                         SUM(CASE WHEN d.operation_details->>'size_bytes' ~ '^[0-9]+$' THEN
-                            (d.operation_details->>'size_bytes')::numeric END) AS bytes
+                            (d.operation_details->>'size_bytes')::numeric END) AS bytes,
+                        CASE WHEN bool_and(coalesce(d.operation_details->>'size_bytes' ~ '^[0-9]+$',false))
+                             THEN SUM(CASE WHEN d.operation_details->>'size_bytes' ~ '^[0-9]+$' THEN
+                                 (d.operation_details->>'size_bytes')::numeric END) END AS complete_bytes
                     FROM historical.datasets d WHERE d.publication_id=p.id AND d.primary_file IS NOT NULL AND d.status='complete'
                 ) files ON files.primary_file_count>0
                 WHERE (%(identity)s::bigint IS NULL OR p.id=%(identity)s)
                     AND (%(operation)s::text IS NULL OR p.operation=%(operation)s)
+                    AND (%(reference_for)s::bigint IS NULL OR (
+                        p.id <> %(reference_for)s
+                        AND p.operation='merge'
+                        AND p.evidence->'manifest'->>'mode'='trades'
+                        AND p.instrument_namespace = (
+                            SELECT instrument_namespace FROM historical.dataset_publications
+                            WHERE id=%(reference_for)s AND operation='merge')
+                        AND NOT EXISTS (SELECT 1 FROM historical.publication_supersessions s
+                                        WHERE s.publication_id=p.id)
+                        AND NOT EXISTS (SELECT 1 FROM historical.publication_invalidations i
+                                        WHERE i.publication_id=p.id)
+                    ))
                     AND (%(publication)s::text IS NULL OR p.engine_dataset_id=%(publication)s OR p.id::text=%(publication)s)
                     AND EXISTS (
                         SELECT 1 FROM historical.datasets d
@@ -640,11 +937,11 @@ async def publications(
                           )
                     )
                 ORDER BY """
-                + order
-                + direction
-                + " NULLS LAST,p.id LIMIT %(limit)s OFFSET %(offset)s",
+                + ordering.sql()
+                + " LIMIT %(limit)s OFFSET %(offset)s",
                 {
                     "identity": identity,
+                    "reference_for": reference_for,
                     "instrument": query.instrument or instrument,
                     "operation": query.operation,
                     "publication": query.publication,
@@ -663,7 +960,23 @@ async def publications(
             if identity is not None and rows:
                 await cursor.execute(
                     """
+                    SELECT DISTINCT m AS member FROM historical.datasets d
+                    CROSS JOIN LATERAL jsonb_array_elements(
+                        CASE WHEN jsonb_typeof(d.operation_details->'memberships')='array'
+                             THEN d.operation_details->'memberships' ELSE '[]'::jsonb END
+                    ) m
+                    WHERE d.publication_id=%s AND d.primary_file IS NOT NULL AND d.status='complete'
+                    """,
+                    (identity,),
+                )
+                rows[0]["registered_memberships"] = [
+                    item["member"] for item in await cursor.fetchall()
+                ]
+                await cursor.execute(
+                    """
                     SELECT id AS registry_primary_file_id,primary_file,file_sha256,data_type,
+                           operation_details->'size_bytes' AS size_bytes,
+                           operation_details->'partition_id' AS partition_id,
                            start_timestamp_ns AS first_observed_ns,end_timestamp_ns AS last_observed_ns
                     FROM historical.datasets WHERE publication_id=%s AND primary_file IS NOT NULL
                     ORDER BY id LIMIT 51 OFFSET %s

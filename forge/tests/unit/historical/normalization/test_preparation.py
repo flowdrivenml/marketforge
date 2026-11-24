@@ -3,7 +3,7 @@
 import json
 import zipfile
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -370,6 +370,7 @@ archive_member="second.csv"
         "forge.historical.normalization.batch.registry_id",
         AsyncMock(return_value="registry-fixture"),
     )
+    monkeypatch.setattr("forge.cli.commands.normalization.cli_execution", lambda *_: nullcontext())
     monkeypatch.setattr("forge.historical.normalization.batch.database_connection", connect)
 
     def dsn(root: Path) -> str:
@@ -472,6 +473,7 @@ end=2026-10-28T00:00:00Z
         "forge.historical.normalization.batch.registry_id",
         AsyncMock(return_value="registry-fixture"),
     )
+    monkeypatch.setattr("forge.cli.commands.normalization.cli_execution", lambda *_: nullcontext())
     monkeypatch.setattr("forge.historical.normalization.batch.database_connection", connect)
     monkeypatch.setattr("forge.historical.normalization.batch.database_dsn", dsn)
     # Preparation reads persisted ranking evidence without refreshing it.

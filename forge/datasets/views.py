@@ -148,11 +148,11 @@ PUBLICATIONS = """
     FROM inventory ORDER BY {order} LIMIT %(limit)s OFFSET %(offset)s
 ), page AS (
     SELECT p.*, CASE WHEN p.operation='convert' THEN p.ref END AS output_ref,
-           (SELECT jsonb_agg(DISTINCT member) FROM units u
+           (SELECT jsonb_agg(DISTINCT member ORDER BY member) FROM units u
                 CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(u.members)='array'
                     THEN u.members ELSE '[]'::jsonb END) member
                 WHERE (u.operation,u.ref)=(p.operation,p.ref)) AS memberships,
-           (SELECT jsonb_agg(DISTINCT member) FROM matched m
+           (SELECT jsonb_agg(DISTINCT member ORDER BY member) FROM matched m
                 CROSS JOIN LATERAL jsonb_array_elements(m.matched_members) member
                 WHERE (m.operation,m.ref)=(p.operation,p.ref)) AS matching_memberships
     FROM selected_page p
@@ -161,7 +161,7 @@ PUBLICATIONS = """
 
 FILES = """
 , inventory AS (
-    SELECT m.id,m.operation,m.ref,m.publication_id,m.obj,m.target_quote,m.lo AS start_timestamp_ns,
+    SELECT m.id,m.operation,m.ref,m.publication_id,m.obj,m.target_quote,m.lo AS start_timestamp_ns,m.hi AS end_timestamp_ns,
            m.bytes AS size_bytes,m.matched_members AS matching_memberships,NULL::integer AS part
     FROM matched m WHERE m.id IS NOT NULL
     UNION ALL
@@ -169,12 +169,12 @@ FILES = """
            (m.obj-'files') || jsonb_build_object('size_bytes',f->'size_bytes','rows',f->'rows',
                'part',f->'part','storage_path',f->'storage_path','primary_file',f->'path',
                'start_timestamp_ns',NULL,'end_timestamp_ns',NULL),
-           m.target_quote,NULL::bigint,(f->>'size_bytes')::numeric,m.matched_members,(f->>'part')::integer
+           m.target_quote,NULL::bigint,NULL::bigint,(f->>'size_bytes')::numeric,m.matched_members,(f->>'part')::integer
     FROM matched m CROSS JOIN LATERAL jsonb_array_elements(m.obj->'files') f
     WHERE m.operation='convert'
 ), page AS (
-    SELECT *, row_number() OVER (ORDER BY {order}, part) AS position
-    FROM inventory ORDER BY {order}, part LIMIT %(limit)s OFFSET %(offset)s
+    SELECT *, row_number() OVER (ORDER BY {order}) AS position
+    FROM inventory ORDER BY {order} LIMIT %(limit)s OFFSET %(offset)s
 )
 """
 
@@ -222,17 +222,6 @@ COVERAGE = """
 )
 """
 
-ORDER: dict[str, LiteralString] = {
-    "id": "id ASC NULLS LAST",
-    "observed": "start_timestamp_ns DESC NULLS LAST",
-    "size": "size_bytes DESC NULLS LAST",
-    "stage": "CASE operation WHEN 'normalize' THEN 0 WHEN 'merge' THEN 1 ELSE 2 END",
-}
-COVERAGE_ORDER: LiteralString = (
-    "operation,exchange,symbol,instrument_namespace,instrument_id,instrument_type,"
-    "market_category,data_type,target_quote,variant,unresolved_namespace_output"
-)
-
 
 async def page(
     connection: AsyncConnection[TupleRow],
@@ -242,8 +231,10 @@ async def page(
     timeline_ref: timelines.TimelineReference | None = None,
 ) -> dict[str, Any]:
     from forge.datasets.query import COLUMNS, DATA_TYPES
+    from forge.datasets.sorting import VIEWS
 
     view = args.view or "publications"
+    order = VIEWS[view].resolve(args.sort, args.order).sql()
     is_timeline = view == "timelines"
     registry = await registry_id(connection) if is_timeline else ""
     if timeline_ref and timeline_ref.registry != registry:
@@ -259,22 +250,13 @@ async def page(
         if include_converted and (timeline_ref is None or timeline_ref.output is not None)
         else ([], "outside_filter", [])
     )
-    order: LiteralString
-    fragment: LiteralString
-    if is_timeline:
-        order = timelines.SORTS[args.sort]
-        fragment = OBSERVATIONS + timelines.SEGMENTS.replace(
-            "{order}", order + ",identity,start_timestamp_ns NULLS LAST,segment"
-        )
-    elif view == "coverage":
-        order = COVERAGE_ORDER
-        fragment = OBSERVATIONS + COVERAGE.replace("{order}", order)
-    elif view == "files":
-        order = ORDER[args.sort]
-        fragment = FILES.replace("{order}", order + ", operation, ref")
-    else:
-        order = ORDER[args.sort].replace("id ASC", "publication_id ASC")
-        fragment = PUBLICATIONS.replace("{order}", order + ", operation, ref")
+    fragments: dict[str, LiteralString] = {
+        "timelines": OBSERVATIONS + timelines.SEGMENTS,
+        "coverage": OBSERVATIONS + COVERAGE,
+        "files": FILES,
+        "publications": PUBLICATIONS,
+    }
+    fragment = fragments[view].replace("{order}", order)
     pattern = (
         "%" + args.search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         if args.search

@@ -69,6 +69,7 @@ def test_combined_filters_and_display_limit(
         symbol: str | None,
         limit: int,
         sort: str,
+        order: str | None,
         reference: str | None,
         base_asset: str | None,
         quote_asset: str | None,
@@ -90,6 +91,8 @@ def test_combined_filters_and_display_limit(
         base_asset: str | None,
         quote_asset: str | None,
         match: str | None,
+        sort: str,
+        order: str | None,
     ) -> dict[str, object]:
         assert (
             snapshot == SNAPSHOT

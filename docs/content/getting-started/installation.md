@@ -140,7 +140,7 @@ For a manual Forge environment, point `--python` at that environment’s interpr
 
 ## Verify and troubleshoot
 
-Run `mf normalize profiles list` to inspect the installed normalization catalogue locally. Before compiling a custom profile, check the managed normalizer with `mf engine status`. The [profile authoring guide](../workflows/catalogue/profiles.md) covers the draft and validation steps.
+Run `mf normalize profiles list` to inspect the installed normalization catalogue locally. Before compiling a custom profile, check the managed normalizer with `mf engine status`. The [profile authoring guide](../workflows/normalization/author-profile.md) covers the draft and validation steps.
 
 ```bash
 mf --help
@@ -155,7 +155,7 @@ use `mf database status --testing` and open `mf tui --testing`.
 
 - If `mf` is unavailable, use the absolute launcher path and check which installation your PATH selects.
 - If a selected local cluster is stopped or ambiguous, inspect it with the local administrator. Supply the intended connection and use `--skip-postgres`.
-- If a configured registry is rejected, check the credential key, database name, purpose, and migration history before retrying. See [database troubleshooting](../workflows/operations.md#find-the-failing-boundary).
+- If a configured registry is rejected, check the credential key, database name, purpose, and migration history before retrying. See [database troubleshooting](../maintenance/index.md#find-the-failing-boundary).
 - If a newer toolchain is required, update the active toolchain deliberately, then rerun. A verified binary with an unsupported runtime option needs a managed rebuild using the current checkout.
 
 Continue with the [Bybit quick start](quickstart.md).

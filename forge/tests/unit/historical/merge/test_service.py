@@ -98,6 +98,7 @@ async def test_selection_uses_registry_order_and_paths(
                 namespace,
                 details["manifest_sha256"],
                 None if mode == "missing" else details["manifest_path"],
+                db_id + 100,
             )
         )
         streams = [{"stream_id": "first"}]
@@ -194,6 +195,7 @@ async def test_two_file_ids_share_one_verified_publication(
             "ns",
             "manifest-sha",
             str(root / "manifest.json"),
+            780,
         )
         for i, name in enumerate(names[:2], 1)
     ]

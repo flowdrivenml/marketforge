@@ -24,7 +24,7 @@ flowchart TB
     DB -->|"Registry-backed inspection"| READ
 ```
 
-Forge requests archive listings and downloads over HTTP, stores managed copies, and verifies Engine output. It is the database client for these historical operations. The Engine reads job documents and committed inputs from disk. The Python dataset API can open a committed publication directly and can enrich its views when the caller supplies registry records. [CLI dispatch](https://github.com/flowdrivenml/marketforge/blob/main/forge/cli/main.py) · [Python dataset API](../reference/python-datasets.md)
+Forge requests archive listings and downloads over HTTP, stores managed copies, and verifies Engine output. It is the database client for these historical operations. The Engine reads job documents and committed inputs from disk. The Python dataset API can open a committed publication directly and can enrich its views when the caller supplies registry records. [CLI dispatch](https://github.com/flowdrivenml/marketforge/blob/main/forge/cli/main.py) · [Python dataset API](../research/python-api.md)
 
 | Boundary | Ownership and implementation |
 | --- | --- |
@@ -35,9 +35,38 @@ Forge requests archive listings and downloads over HTTP, stores managed copies, 
 | Historical processing | The Engine binaries dispatch into `engine/src/historical/` and reuse format, conversion and persistence code under `engine/src/shared/`. Engine errors surface through exit status and operation-specific diagnostics. |
 | Discovery and inspection | `forge/datasets/discovery.py` reads manifest inventories and physical evidence. Dataset operations use Arrow for exact batches and offer Polars previews or supported lazy projections. Registry-backed terminal inspection follows a separate CLI path. |
 
-The fixed historical pipeline runs acquisition, normalization, then merge. Normalize consumes pinned raw copies. Merge consumes normalized publications and Convert consumes an existing physical merge, with optional reference publications. The pipeline retains its plan and attempts and can resume a managed run from retained evidence. Quote conversion remains a separate operation. [Pipeline guide](../workflows/pipeline.md) · [Prepared contracts](../reference/prepared.md)
+The historical pipeline runs Acquisition, Normalization, and Merge with an optional Conversion stage. Normalize consumes pinned raw copies. Merge consumes registered normalized files. Conversion uses the exact registered merge with optional reference publications. The parent pipeline retains its plan and attempts and resumes from that evidence. [Pipeline guide](../workflows/pipeline.md) · [Prepared contracts](../reference/data-formats/prepared.md)
 
 The separate Live binary loads live exchange and format configuration and runs its own application and stream graph. The normal start path restores definitions from PostgreSQL. Static validation exercises configuration without restoring that graph or contacting exchanges. Follow the entry point into `engine/src/live/application/` for runtime wiring and `engine/src/live/stream/` for processing. Live and management tests use their own Cargo features. [Live entry point](https://github.com/flowdrivenml/marketforge/blob/main/engine/src/bin/marketforge-live.rs) · [Cargo features](https://github.com/flowdrivenml/marketforge/blob/main/engine/Cargo.toml)
+
+### Stage window boundary
+
+```mermaid
+flowchart LR
+    Parent["Parent Forge pipeline"] -->|"Live progress boundary"| Launcher["Ghostty adapter"]
+    Launcher --> Worker["Private stage worker"]
+    Worker --> Acquire["Acquisition service"]
+    Worker --> Engine["Pinned Engine invocation"]
+    Worker -->|"Retained outcome and notification"| Parent
+    Parent -->|"Verify and record Engine output"| Registry["Publication registry or work index"]
+```
+
+`PipelineRun` retains the run context and uses the existing services to prepare
+and claim work. The StageWindows coordinator in `historical/pipelines/terminal.py`
+opens one isolated Ghostty instance. The private `stage_worker` module validates
+the retained run and attempt, registry identity, and the prepared submission.
+The parent shares its workspace lock file descriptions over a private Unix
+socket. A bounded readiness and authorization exchange gates actual execution.
+
+Acquisition writes the pipeline checkpoint from the worker and registers its child
+under the existing parent run context. For Engine stages, the parent keeps the
+stage checkpoint and opens the window at the existing supervision boundary,
+after work reuse and recovery checks. The worker supervises the pinned command
+and retains a structured outcome. The parent verifies and records the result
+through the normal service, then releases the window. Socket closure signals
+cancellation. A lost outcome leaves the existing evidence available for
+reconciliation.
+
 
 ## Identity and evidence
 
@@ -63,6 +92,6 @@ stateDiagram-v2
     Committed --> Registered: Forge verifies and registers
 ```
 
-This diagram shows the publication and registration boundary for managed normalization and merge. A final directory and registered rows have separate commit points. Failure can leave diagnostic artifacts or staging, depending on the phase. A registration retry uses a supported retained receipt and verifies committed evidence again. See the operation-specific paths in [Historical operation lifecycles](operations.md) and the [publication format reference](../reference/publications.md).
+This diagram shows the publication and registration boundary for managed normalization and merge. A final directory and registered rows have separate commit points. Failure can leave diagnostic artifacts or staging, depending on the phase. A registration retry uses a supported retained receipt and verifies committed evidence again. See the operation-specific paths in [Historical operation lifecycles](operations.md) and the [publication format reference](../reference/data-formats/publications.md).
 
 Read the component chapters for implementation details. [Forge](forge.md) · [Normalization Engine](normalize.md) · [Merge Engine](merge.md) · [Conversion Engine](convert.md)

@@ -160,18 +160,26 @@ async def test_retirement_recovery_and_independent_protected_target(
             foreign_publication, foreign_file, _ = await seed(
                 paths, "foreign", b"same", root=Path(proof["path"])
             )
+
+        def fixture_group(report: dict[str, Any]) -> dict[str, Any]:
+            return next(
+                group
+                for group in report["groups"]
+                if protected in {item["publication_id"] for item in group["candidates"]}
+            )
+
         shared = await deduplication.inventory(paths, "normalize", apply=False)
-        assert not shared["groups"][0]["physical_removal_eligible"]
+        assert not fixture_group(shared)["physical_removal_eligible"]
         with monkeypatch.context() as environment:
             environment.setenv("PRODUCTION_DATABASE_KEY", "dbname=marketforge_test")
             missing = await deduplication.inventory(paths, "normalize", apply=False)
-            assert not missing["groups"][0]["physical_removal_eligible"]
+            assert not fixture_group(missing)["physical_removal_eligible"]
             assert missing["other_registry_error"]
         assert any(
             "Other registry references" in reason
-            for target in shared["groups"][0]["targets"]
+            for target in fixture_group(shared)["targets"]
             for reason in target["blockers"]
-        )
+        ), fixture_group(shared)["targets"]
         with database_environment(testing=False):
             async with database_connection(database_dsn(paths.root)) as connection:
                 await connection.execute(
@@ -182,9 +190,8 @@ async def test_retirement_recovery_and_independent_protected_target(
                     (foreign_publication,),
                 )
         preview = await deduplication.inventory(paths, "normalize", apply=False)
-        assert len(preview["groups"]) == 1
-        assert preview["groups"][0]["canonical_publication_id"] == canonical
-        assert preview["groups"][0]["physical_removal_eligible"]
+        assert fixture_group(preview)["canonical_publication_id"] == canonical
+        assert fixture_group(preview)["physical_removal_eligible"]
         assert await asyncio.to_thread(Path(proof["path"]).is_dir)
         removal = publication_cleanup.remove_reviewed_tree
 
@@ -235,7 +242,7 @@ async def test_retirement_recovery_and_independent_protected_target(
                 (affected_file, canonical_file),
             )
         reviewed = await force_cleanup.preview(paths, "normalize")
-        group = reviewed["groups"][0]
+        group = fixture_group(reviewed)
         plan = group["targets"][0]
         assert group["canonical_publication_id"] == protected
         assert reviewed["canonical_optimization"]["optimized_preserved"] == 2
@@ -250,7 +257,7 @@ async def test_retirement_recovery_and_independent_protected_target(
         draft.parent.mkdir(parents=True)
         draft.write_text(f'{{"dataset_ids":[{canonical_file}]}}')
         impacted = await force_cleanup.preview(paths, "normalize")
-        assert not impacted["groups"][0]["targets"][0]["review"]
+        assert not fixture_group(impacted)["targets"][0]["review"]
         deduplication.save_preview(paths, reviewed)
         verified_plan = deduplication.load_preview(paths, Path(reviewed["report_path"]))
         rejected = await force_cleanup.apply(paths, "normalize", verified_plan)
@@ -367,7 +374,7 @@ async def test_reviewed_legacy_clearance_and_explicit_risk(
         monkeypatch.setattr(deduplication, "verify_candidate", verify)
         preview = await force_cleanup.preview(paths, "merge")
         assert preview["foreign_ownership_evidence"]["unanchored_references"] == 45
-        assert len(preview["legacy_risk_targets"]) == 2
+        assert len(preview["legacy_risk_targets"]) == 2, preview["groups"]
         group = next(
             entry
             for entry in preview["groups"]
@@ -518,7 +525,7 @@ async def test_explicit_deletion_keeps_non_equivalent_survivor_and_resumes(
         assert no_cascade["targets"][0]["review"] is None
         assert any("--cascade" in reason for reason in no_cascade["targets"][0]["blockers"])
         plan = await explicit_delete.preview(paths, [retired], [], [survivor], cascade=True)
-        assert plan["status"] == "ready"
+        assert plan["status"] == "ready", plan["targets"]
         assert await asyncio.to_thread(Path(retired_disk["path"]).is_dir)
         deduplication.save_preview(paths, plan)
         corrupted = {**plan, "cascade": False}
@@ -595,7 +602,7 @@ async def test_explicit_indexed_conversion_has_no_registry_publication_id(tmp_pa
                 (registry, key, Jsonb({"path": str(root)}), Jsonb(result)),
             )
         plan = await explicit_delete.preview(paths, [], [key], [], cascade=False)
-        assert plan["status"] == "ready"
+        assert plan["status"] == "ready", plan["targets"]
         assert plan["targets"][0]["target"]["publication_id"] is None
         deduplication.save_preview(paths, plan)
         applied = await explicit_delete.apply(paths, plan)

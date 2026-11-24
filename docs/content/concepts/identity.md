@@ -1,40 +1,52 @@
 # Identity and provenance
 
-The provider distributes bytes. The execution venue supplies the market context. A recording can identify a product, publisher and native instrument ID even when many venues use the same symbol. In MarketForge, Bybit spot BTCUSDT and the Bybit linear perpetual BTCUSDT have different canonical identities. [Catalogue declarations](../configuration/catalogue.md)
-
-| Identifier | Scope and relationships |
-| --- | --- |
-| Source object key | Stable within the registered source and request scope. A managed archive row identifies the local copy and retained digest |
-| Canonical instrument ID | Qualified by instrument namespace. Effective-dated specifications determine quantity and contract interpretation |
-| Stream ID | Distinguishes instrument, content and source context. One logical stream can span parts. One combined part can contain many streams |
-| Stream rank | Integer tie-breaker or rank binding inside a prepared job and its output. Repeated parts of one stream can share its rank |
-| Engine job and publication IDs | Normalization carries separate job and dataset IDs. Physical merge identifies output through the merge job ID. Interpret each field at its wire boundary |
-| Registry publication ID | One database registration for the committed Engine publication and namespace |
-| Registry file dataset ID | One registered primary file. A publication can have several. Recipe selectors state which type they accept |
-
-Preserve native identity and effective historical evidence alongside canonical fields. A catalogue observation made today can be operationally applicable under an explicit inference policy without independently proving the historical specification. [Historical specifications](../workflows/catalogue/specifications.md) · [Inference policy](../configuration/markets.md#historical-metadata-inference)
-
-## Historical applicability
-
-An instrument identity survives changes in its trading terms. Suppose a contract’s lot size changes at midnight. A current catalogue tick size or quantity step applies to the observation collected today. A retained historical specification has its own provenance and applicability interval, which is what makes it usable for an archived record. A request that crosses a terms change may need separate processing inputs or specifications.
-
-Keep the native provider identifier and recorded interval with the canonical instrument. Use the [specifications guide](../workflows/catalogue/specifications.md) to record applicability or inspect inferred evidence before preparation.
-
-## Registry identity
-
-Numeric catalogue and file IDs belong to one PostgreSQL registry. Two environments can use the same integer for different objects. Use the registry that produced a recorded ID, and preserve the retained UUID for managed execution recovery. [Run evidence](../reference/prepared-forge.md)
-
+An identity is meaningful within its scope. Bybit BTCUSDT spot and Bybit BTCUSDT linear perpetual are separate instruments even though the displayed native symbols match. A vendor that distributes the recording can differ from the venue represented by the data.
 
 ## Inspection identifiers
 
-| Copy this value | Where to use it |
-| --- | --- |
-| Forge run ID | `mf runs show RUN_ID`, `logs` or `report`. A child run has its own run ID. |
-| Attempt number and UUID | Find the attempt and artifact pointers in `runs show RUN_ID`. The CLI has no standalone attempt selector. |
-| Engine job, execution or publication ID | Correlate prepared jobs, receipts and manifest evidence. `datasets find --engine-publication-id` filters registered publications by their exact Engine publication ID. |
-| Registry publication ID | `mf datasets show --publication-id PUBLICATION_ID` or `streams --publication-id PUBLICATION_ID` |
-| Registry primary-file ID | Positional `FILE_ID` for file inspection. Obtain it from publication inspection, the file view or an execution report’s registered outputs. |
-| Timeline reference | `mf datasets timeline show TIMELINE_REFERENCE`. Copy it from timeline `--wide` or explicit timeline JSON. It describes a grouping in one registry. |
-| Indexed conversion output reference | `mf datasets show --output-ref OUTPUT_REF`. The work key can identify a converted output without registry publication or file IDs. Use its one-based part number for file-level reads. |
+| Identifier | Identifies and scope | Where to find it or use it |
+| --- | --- | --- |
+| Venue code | Execution venue, such as `bybit` | Catalogue, recipe selections and stored instrument context |
+| Provider or source key | Registered distribution source or product scope | Acquisition and raw provenance reports; source selectors |
+| Native symbol | Venue- and product-specific text such as `BTCUSDT` | Provider records and symbol filters; combine it with the venue, market and type for identity |
+| Source-native instrument identity | Provider product, publisher or native instrument ID used to resolve the recording | Acquired/imported evidence and profile bindings |
+| Canonical instrument ID | Instrument in a namespace | Canonical rows, prepared jobs, historical authority and stream membership |
+| Catalog instrument ID | Catalogue row in a selected registry | Catalog detail. The historical instrument ID is a separate field |
+| Instrument reference | A command-specific textual instrument identity | Catalog and Markets display and selectors described below |
+| Family or archive scope | A provider grouping that can cover multiple concrete instruments | Discovery and historical family evidence. Normalize resolves actual membership rather than treating a family as a tradable instrument |
+| Source object key / raw local-copy ID | Remote object within a source context / registry record of a managed copy | Acquisition and Storage; explicit normalization input selectors use registered inputs |
+| Stream ID | Logical instrument/content stream in the resolved processing context | Prepared jobs and publication membership; merge rank overrides use the exact stream ID |
+| Stream rank | Ordering or identity binding within a job | Prepared inputs, diagnostics and canonical membership |
+| Engine job ID | Engine submission identity | Per-job documents and diagnostics |
+| Engine publication ID | Engine-side committed publication identity | Manifests and Engine provenance; dataset search can filter on the Engine publication ID. Merge derives the output ID from the job ID. Normalization has separate job and publication fields |
+| Registry publication ID | Registered publication in the selected registry | `datasets show --publication-id PUBLICATION_ID`; publication selection in merge and conversion recipes |
+| Registered primary-file ID | Registered physical primary in the selected registry | Positional file ID in dataset inspection; explicit file selectors in recipes |
+| Forge run ID | Logical orchestration operation | `runs show RUN_ID`, `runs report RUN_ID`, and `runs logs RUN_ID` |
+| Attempt UUID and number | One attempt within a Forge run | Run detail and artifact pointers; the run commands take a run ID |
+| Registry identity | Verified database UUID and environment | Retained submissions and recovery checks |
+| Timeline reference | Versioned grouping of retained contributors in one registry | `datasets timeline show TIMELINE_REFERENCE` |
+| Converted output reference | Durable work key for one indexed converted publication | `datasets show --output-ref OUTPUT_REF`; one-based part numbers identify files within it |
 
-A run can record a new output, reuse of an existing canonical publication, or a result with no publication. A publication can remain in a historical run report after retirement. Compare exact IDs and retained evidence when tracing the relationship. [Run workflow](../workflows/runs.md) · [Dataset workflow](../workflows/datasets.md)
+The labels above identify different objects even if two fields contain the same integer. Copy identities from the selected registry's output. The uppercase placeholders stand for your own IDs.
+
+## Instrument references and economic fields
+
+Catalog uses `exchange.instrument_type.market_category.symbol`, for example `bybit.perpetual.linear.BTCUSDT`. Markets commonly displays `exchange.market.symbol`. For a collision, copy its qualified `exchange.market.instrument_type.symbol` reference. Keep dots, hyphens, and other punctuation in the native symbol intact.
+
+| Field | Interpretation |
+| --- | --- |
+| Instrument type | Product form such as spot, perpetual, dated future, option, or equity |
+| Market category | Economic grouping, including linear or inverse contracts. This classifies the instrument; account margin settings and leverage are separate |
+| Base and quote assets | The asset whose amount is priced and the asset that denominates the price, where applicable |
+| Settlement asset | Asset used for settlement where defined |
+| Contract value and denomination | Economic amount per contract and the asset in which it is stated. Read together with quantity type and applicable specification |
+
+## Historical applicability
+
+Current catalogue metadata is useful for discovery. A historical record needs an applicable specification with provenance. If a contract's lot size changed at midnight, the preparation needs evidence covering the appropriate interval. Inferred applicability records a policy assumption with its source and scope. Verified historical specifications carry a separate evidence classification.
+
+Current collection, historical acquisition, profile support, and downstream Engine compatibility are separate capabilities. Consult their respective references for the product you need. [Catalogue and specifications](../workflows/catalogue/specifications.md) · [Markets discovery](../workflows/markets/instrument-discovery.md)
+
+## Registry identity
+
+Testing and production are separately guarded registries. File, publication, and catalogue integers can coincide across them. Retained jobs and recovery evidence can also pin the registry UUID. Use the original registry for exact inspection or recovery. [Run evidence](../reference/data-formats/prepared-forge.md)

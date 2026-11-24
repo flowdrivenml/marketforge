@@ -31,4 +31,4 @@ uv run --project forge --locked mf --json datasets lineage "$FILE_DATASET_ID" --
 uv run --project forge --locked mf --json engine status
 ```
 
-Keep exact filenames and submission hashes when reporting an issue. Use only the recovery commands the affected operation documents. A retry of execution and registration-only recovery affect different state. Never patch a committed manifest or overwrite registered files to pass a check. [Historical lifecycles](operations.md) · [Data and lineage inspection](../reference/cli/datasets.md) · [Python API](../reference/python-datasets.md)
+Keep exact filenames and submission hashes when reporting an issue. Use only the recovery commands the affected operation documents. A retry of execution and registration-only recovery affect different state. Never patch a committed manifest or overwrite registered files to pass a check. [Historical lifecycles](operations.md) · [Data and lineage inspection](../reference/cli/datasets.md) · [Python API](../research/python-api.md)

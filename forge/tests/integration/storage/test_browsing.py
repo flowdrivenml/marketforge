@@ -81,12 +81,29 @@ class RegistryFixture:
         )
         source = await cur.fetchone()
         assert source is not None
-        cur = await self.connection.execute(
-            """INSERT INTO historical.external_archives
-            (external_source_id,source_object_key,sha256,bytes_expected,identity_json,specifications_json,data_type,
-             declared_start_at,declared_end_at,normalization_readiness,import_provenance)
-            VALUES(%s,%s,%s,10,%s,%s,'order_book_l2',%s,%s,'requires_profile','{}') RETURNING id""",
+        object_cursor = await self.connection.execute(
+            """INSERT INTO historical.raw_objects
+               (acquisition_method,raw_source_id,venue_code,scope_key,scope_json,data_type,
+                source_object_key,filename,start_at,end_at,remote_status)
+               VALUES('local_copy',%s,'gateio',%s,'{}','order_book_l2',%s,'capture.bin',%s,%s,'unknown')
+               RETURNING id""",
             (
+                source[0],
+                symbol,
+                self.tag + source_key,
+                BASE if declared else None,
+                BASE + timedelta(days=2) if declared else None,
+            ),
+        )
+        raw = await object_cursor.fetchone()
+        assert raw is not None
+        cur = await self.connection.execute(
+            """INSERT INTO historical.raw_interpretations
+            (raw_object_id,external_source_id,source_object_key,sha256,bytes_expected,identity_json,specifications_json,data_type,
+             declared_start_at,declared_end_at,normalization_readiness,import_provenance)
+            VALUES(%s,%s,%s,%s,10,%s,%s,'order_book_l2',%s,%s,'requires_profile','{}') RETURNING id""",
+            (
+                raw[0],
                 source[0],
                 self.tag + source_key,
                 "b" * 64,
@@ -259,7 +276,7 @@ async def test_feed_variants_and_pagination_do_not_truncate_coverage(
         BASE,
     )
     remote, _ = await f.remote(request(symbol, gate=True))
-    # Force coverage to cross its 1000-record keyset boundary, all duplicate copies.
+    # Force coverage aggregation to account for more than a thousand duplicate local copies.
     await database.execute(
         """INSERT INTO historical.local_archives
         (remote_archive_id,storage_root_key,relative_path,status,bytes_written,sha256,downloaded_at)
@@ -294,7 +311,16 @@ async def test_feed_variants_and_pagination_do_not_truncate_coverage(
     second = await list_archives(database, f.root, StorageFilters(limit=2, offset=2))
     a = [int(str(obj(row)["id"])) for row in array(first["archives"])]
     b = [int(str(obj(row)["id"])) for row in array(second["archives"])]
-    assert a == sorted(a, reverse=True) and not set(a) & set(b)
+    assert not set(a) & set(b)
+    first_rows = [obj(row) for row in array(first["archives"])]
+    latest, prior = (row["start_at"] for row in first_rows)
+    assert isinstance(latest, datetime) and isinstance(prior, datetime) and latest > prior
+    smallest = await list_archives(
+        database, f.root, StorageFilters(sort="bytes_written", order="asc", limit=1)
+    )
+    assert obj(array(smallest["archives"])[0])["bytes_written"] == 10
+    largest_group = await coverage(database, f.root, StorageFilters(sort="files", limit=1))
+    assert obj(array(largest_group["coverage"])[0])["local_file_count"] == 1003
     assert obj(first["pagination"])["has_more"] is True
 
 
@@ -319,3 +345,114 @@ async def test_native_globs_treat_sql_wildcards_literally(
     assert [obj(row)["scope_identifier"] for row in array(suffix_result["coverage"])] == [
         f.tag + "ETHBTC"
     ]
+
+
+@pytest.mark.asyncio
+async def test_workspace_raw_groups_keep_source_windows_and_exact_archive_ids(
+    database: AsyncConnection[TupleRow], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from collections.abc import AsyncGenerator
+    from contextlib import asynccontextmanager
+
+    from forge.datasets import workspace_inventory as inventory
+    from forge.shared.paths import ProjectPaths
+
+    f = RegistryFixture(database, tmp_path / "raw", "WS" + uuid4().hex[:12].upper())
+    symbol = f.tag + "BTCUSDT"
+    await save_instrument(
+        database,
+        Instrument(
+            exchange="gateio",
+            market="linear",
+            instrument_type="perpetual",
+            symbol=symbol,
+            base="BTC",
+            quote="USDT",
+        ),
+        BASE,
+    )
+    _, first = await f.remote(request(symbol, gate=True), start=0, end=1)
+    _, adjacent = await f.remote(request(symbol, gate=True), start=1, end=2)
+    _, separated = await f.remote(request(symbol, gate=True), start=3, end=4)
+    _, snapshot = await f.remote(request(symbol, gate=True, snapshot=True), start=0, end=1)
+    external = await f.external(source_key="imported", symbol=symbol, declared=False)
+    second_symbol = f.tag + "ETHUSDT"
+    await save_instrument(
+        database,
+        Instrument(
+            exchange="gateio",
+            market="linear",
+            instrument_type="perpetual",
+            symbol=second_symbol,
+            base="ETH",
+            quote="USDT",
+        ),
+        BASE,
+    )
+    await database.execute(
+        """
+        WITH bindings AS (
+            INSERT INTO historical.raw_interpretations (
+                raw_object_id,external_source_id,source_object_key,sha256,bytes_expected,
+                identity_json,specifications_json,data_type,normalization_readiness,import_provenance,
+                binding_fingerprint
+            )
+            SELECT a.raw_object_id,a.external_source_id,a.source_object_key,a.sha256,a.bytes_expected,
+                a.identity_json || jsonb_build_object('symbol',candidate.symbol),
+                a.specifications_json,a.data_type,a.normalization_readiness,
+                '{"binding":{"readiness":{"normalization_handoff":"ready"}}}'::jsonb,
+                encode(sha256(convert_to(candidate.symbol,'UTF8')),'hex')
+            FROM historical.local_archives l JOIN historical.raw_interpretations a
+                ON a.id=l.external_archive_id
+            CROSS JOIN unnest(%s::text[]) candidate(symbol)
+            WHERE l.id=%s
+            RETURNING id
+        )
+        INSERT INTO historical.raw_bindings(local_archive_id,interpretation_id)
+            SELECT %s,id FROM bindings
+        """,
+        ([symbol, second_symbol], external, external),
+    )
+
+    @asynccontextmanager
+    async def fixture_connection(_: ProjectPaths) -> AsyncGenerator[AsyncConnection[TupleRow]]:
+        yield database
+
+    monkeypatch.setattr(inventory, "readonly", fixture_connection)
+    paths = ProjectPaths(tmp_path, tmp_path)
+    rows, more = await inventory.stage_page(paths, "Raw", 0)
+    assert not more and len(rows) == 4
+    window = next(row for row in rows if row["file_count"] == 2)
+    assert window["archives"] == [f"local:{first}", f"local:{adjacent}"]
+    assert (
+        window["exchange"],
+        window["symbol"],
+        window["instrument_type"],
+        window["market_category"],
+        window["data_type"],
+        window["feed"],
+    ) == (
+        "gateio",
+        symbol,
+        "perpetual",
+        "linear",
+        "order_book_l2",
+        "incremental",
+    )
+    assert window["instrument"] and window["source"] == "marketforge.exchange.gateio"
+    assert (window["start"], window["finish"], window["recorded_bytes"], window["state"]) == (
+        BASE,
+        BASE + timedelta(days=2),
+        20,
+        "complete",
+    )
+    by_archive = {ref: row for row in rows for ref in row["archives"]}
+    assert by_archive[f"local:{separated}"]["file_count"] == 1
+    assert by_archive[f"local:{snapshot}"]["feed"] == "snapshot"
+    multi = by_archive[f"local:{external}"]
+    assert multi["start"] is None and multi["symbol"] == "Multiple (2)"
+    assert {item["symbol"] for item in multi["instruments"]} == {symbol, second_symbol}
+    assert (multi["file_count"], multi["recorded_bytes"]) == (1, 10)
+    records = await inventory.archive_group(paths, [first, adjacent])
+    assert [row["local_id"] for row in records] == window["archives"]
+    assert all(row["sha256"] == "a" * 64 and row["resolved_path"] for row in records)

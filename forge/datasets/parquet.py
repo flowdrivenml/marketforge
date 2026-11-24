@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -106,6 +106,41 @@ def _expression(predicates: Sequence[Predicate], table_schema: Any) -> Any:
     return expression
 
 
+def eligible_groups(
+    item: Footer, predicates: Sequence[Predicate], indices: Sequence[int] | None = None
+) -> tuple[int, ...]:
+    """Exclude groups only when exact scalar footer statistics prove no match."""
+    result: list[int] = []
+    for index in range(item.metadata.num_row_groups) if indices is None else indices:
+        group = item.metadata.row_group(index)
+        pending = {name for name, _, _ in predicates}
+        stats: dict[str, Any] = {}
+        for position in range(group.num_columns):
+            chunk = group.column(position)
+            name = chunk.path_in_schema
+            if name in pending:
+                stats[name] = chunk.statistics
+                pending.remove(name)
+                if not pending:
+                    break
+        for name, op, value in predicates:
+            stat = stats.get(name)
+            if stat is None or not stat.has_min_max:
+                continue
+            lo, hi = stat.min_raw, stat.max_raw
+            if type(value) is not int or type(lo) is not int or type(hi) is not int:
+                continue
+            if (
+                (op == "=" and not lo <= value <= hi)
+                or (op == ">=" and hi < value)
+                or (op == "<" and lo >= value)
+            ):
+                break
+        else:
+            result.append(index)
+    return tuple(result)
+
+
 def batches(
     files: Sequence[Path],
     *,
@@ -113,6 +148,8 @@ def batches(
     batch_size: int = 65_536,
     predicates: Sequence[Predicate] = (),
     input_rows: int | None = None,
+    row_groups: Mapping[Path, Sequence[int]] | None = None,
+    bounded: bool = False,
 ) -> Iterator[Any]:
     """Yield exact Arrow batches. A budget clips a physical prefix before filtering."""
     if batch_size < 1 or (input_rows is not None and input_rows < 0):
@@ -122,7 +159,7 @@ def batches(
     for path in files:
         if remaining == 0:
             return
-        if predicates and remaining is None:
+        if predicates and remaining is None and row_groups is None and not bounded:
             ds: Any = import_module("pyarrow.dataset")
 
             file = ds.dataset(str(path), format="parquet")
@@ -135,7 +172,12 @@ def batches(
                 use_threads=False,
             )
             continue
-        with pq.ParquetFile(path) as file:
+        with pq.ParquetFile(path, pre_buffer=False) as file:
+            indices = row_groups.get(path) if row_groups is not None else None
+            if predicates and remaining is None:
+                indices = eligible_groups(
+                    Footer(path, file.schema_arrow, file.metadata, 0), predicates, indices
+                )
             projected = (
                 list(dict.fromkeys([*columns, *(p[0] for p in predicates)]))
                 if columns is not None
@@ -144,6 +186,7 @@ def batches(
             expression = _expression(predicates, file.schema_arrow)
             for batch in file.iter_batches(
                 columns=projected,
+                row_groups=indices,
                 batch_size=min(batch_size, remaining) if remaining is not None else batch_size,
             ):
                 if remaining is not None:
@@ -206,6 +249,7 @@ def preview(
     predicates: Sequence[Predicate] = (),
     input_rows: int | None = None,
     footers: Sequence[Footer] = (),
+    row_groups: Mapping[Path, Sequence[int]] | None = None,
 ) -> Any:
     """Return a bounded physical-order Polars preview with exact Decimal256 strings."""
     if n < 0:
@@ -223,7 +267,9 @@ def preview(
         for batch in batches(
             files,
             columns=columns,
-            batch_size=min(n, 65_536),
+            batch_size=min(max(n, 256) if predicates else n, 65_536),
+            bounded=True,
+            row_groups=row_groups,
             predicates=predicates,
             input_rows=input_rows,
         ):
@@ -238,6 +284,11 @@ def preview(
             array = _display_array(table.column(index).combine_chunks(), field.type, display, pa)
             table = table.set_column(index, field.with_type(display), array)
     return pl.from_arrow(table)
+
+
+def native_columns(arrow_schema: Any) -> list[str]:
+    pa, _ = arrow_modules()
+    return [field.name for field in arrow_schema if _display_type(field.type, pa) == field.type]
 
 
 def scan(
@@ -260,14 +311,14 @@ def scan(
             + ", ".join(unsupported)
             + ". Select other columns or use .batches() for exact Arrow values."
         )
-    query = pl.scan_parquet([str(path) for path in files])
+    query = pl.scan_parquet([str(path) for path in files], hive_partitioning=False)
     for name, op, value in predicates:
         dtype = available.field(name).type
         field = pl.col(name)
         if pa.types.is_timestamp(dtype):
             if dtype.unit != "ns":
                 raise ValueError("Time predicates require nanosecond timestamps.")
-            field = field.cast(pl.Int64)
+            value = pl.lit(value, dtype=pl.Int64).cast(pl.Datetime("ns", dtype.tz))
         query = query.filter(
             field == value if op == "=" else field >= value if op == ">=" else field < value
         )

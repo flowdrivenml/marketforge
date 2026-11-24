@@ -19,6 +19,7 @@ from forge.historical.normalization.service import write_job
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import acquire_file_lock
 from forge.shared.paths import ProjectPaths, require_migrated
+from forge.shared.sorting import NAMES, ordered
 
 PATTERN = re.compile(
     r"[a-z][a-z0-9_]*\.(spot|perpetual|future|option|equity)\.(spot|linear|inverse|option|equity)\.(trades|depth)"
@@ -85,17 +86,21 @@ def inspect(path: Path) -> dict[str, Any]:
     }
 
 
-def discover(paths: ProjectPaths, **filters: str | None) -> list[dict[str, Any]]:
+def discover(
+    paths: ProjectPaths, *, sort: str | None = None, order: str | None = None, **filters: str | None
+) -> list[dict[str, Any]]:
     root = require_safe_path(paths, catalogue(paths))
     legacy = paths.config_dir / "historical/profiles"
     for kind in ("trades", "depth"):
         for path in sorted((legacy / kind).glob("*.toml")):
             if PATTERN.fullmatch(path.stem):
                 require_migrated(root / kind / path.name, path)
-    return discover_at(root, **filters)
+    return discover_at(root, sort=sort, order=order, **filters)
 
 
-def discover_at(root: Path, **filters: str | None) -> list[dict[str, Any]]:
+def discover_at(
+    root: Path, *, sort: str | None = None, order: str | None = None, **filters: str | None
+) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     if root.is_symlink():
         raise MarketForgeError(f"Profile catalogue symlinks are unsupported: {root}")
@@ -115,7 +120,11 @@ def discover_at(root: Path, **filters: str | None) -> list[dict[str, Any]]:
             )
             if all(value is None or fields[key] == value for key, value in filters.items()):
                 result.append(entry)
-    return sorted(result, key=lambda entry: tuple(entry["id"].split(".")))
+
+    def identity(entry: dict[str, Any]) -> str:
+        return str(entry["id"])
+
+    return ordered(result, NAMES.resolve(sort, order), identity, identity)
 
 
 def create_draft(paths: ProjectPaths, profile_id: str) -> Path:
@@ -208,8 +217,10 @@ def validate(paths: ProjectPaths, path: Path) -> dict[str, Any]:
         }
 
 
-async def register(paths: ProjectPaths, profile_id: str, source: Path) -> dict[str, Any]:
-    """Check the testing venue before installing a standalone profile."""
+async def register(
+    paths: ProjectPaths, profile_id: str, source: Path, *, expected_sha256: str | None = None
+) -> dict[str, Any]:
+    """Check the selected registry venue before installing a standalone profile."""
     from forge.catalog.service import exchange
     from forge.historical.archives.storage.files import disk
     from forge.shared.database.connection import database_connection, database_dsn
@@ -217,12 +228,16 @@ async def register(paths: ProjectPaths, profile_id: str, source: Path) -> dict[s
     code = identity(profile_id).split(".", 1)[0]
     async with database_connection(database_dsn(paths.root)) as connection:
         await exchange(connection, code)
-    return await disk(_install, paths, profile_id, source)
+    return await disk(_install, paths, profile_id, source, expected_sha256=expected_sha256)
 
 
-def _install(paths: ProjectPaths, profile_id: str, source: Path) -> dict[str, Any]:
+def _install(
+    paths: ProjectPaths, profile_id: str, source: Path, *, expected_sha256: str | None = None
+) -> dict[str, Any]:
     identity(profile_id)
     entry = inspect(source)
+    if expected_sha256 is not None and entry["sha256"] != expected_sha256:
+        raise MarketForgeError("Profile draft changed since review.")
     if entry["id"] != profile_id:
         raise MarketForgeError("Requested profile ID differs from submitted definition.")
     lock = acquire_file_lock(paths.root / ".marketforge-profiles.lock")

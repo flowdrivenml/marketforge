@@ -11,7 +11,10 @@ from uuid import uuid4
 import pytest
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
+from psycopg.types.json import Jsonb
 
+from forge.catalog.models import Specification
+from forge.catalog.service import add_specification
 from forge.historical.archives.config import (
     AcquisitionConfig,
     AcquisitionInterval,
@@ -21,14 +24,41 @@ from forge.historical.archives.config import (
 from forge.historical.archives.models import DiscoveredArchive
 from forge.historical.archives.registry import register_remote_archive
 from forge.historical.archives.storage.acquire import root_key
+from forge.historical.engine.managed import checksum
+from forge.historical.metadata.policy import NAMESPACE, POLICY_VERSION
+from forge.historical.metadata.resolution import profile_fingerprints
 from forge.historical.normalization.batch import plan_batch, publish_batch
+from forge.historical.normalization.service import write_job
 from forge.markets.models import Instrument, array, obj
 from forge.markets.repository import save_instrument
+from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 ROOT = Path(__file__).resolve().parents[5]
 BASE = datetime(2026, 10, 27, tzinfo=UTC)
+
+
+async def declare(
+    database: AsyncConnection[TupleRow],
+    name: str,
+    *,
+    tick: str,
+    contract: int | None = None,
+) -> None:
+    await add_specification(
+        database,
+        Specification(
+            instrument=name,
+            valid_from=BASE,
+            valid_to=BASE + timedelta(days=3),
+            tick_size=Decimal(tick),
+            quantity_type="contracts" if contract else "base",
+            contract_value=str(contract) if contract else None,
+            contract_value_asset="BTC" if contract else None,
+            provenance="Historical specification for the synthetic raw interval",
+        ),
+    )
 
 
 @pytest.mark.asyncio
@@ -50,6 +80,7 @@ async def test_two_forge_jobs_three_tasks_deduplicated_and_no_engine(
         ),
         BASE,
     )
+    await declare(database, f"bybit.spot.spot.{symbol}", tick="0.0100")
     requests = [
         ArchiveRequest(
             exchange="bybit",
@@ -86,7 +117,14 @@ async def test_two_forge_jobs_three_tasks_deduplicated_and_no_engine(
             await database.execute(
                 """INSERT INTO historical.local_archives(remote_archive_id,storage_root_key,relative_path,
                 status,bytes_written,sha256,downloaded_at) VALUES(%s,%s,%s,'complete',%s,%s,%s)""",
-                (remote.id, root_key(paths.raw_dir), relative, file.stat().st_size, "a" * 64, BASE),
+                (
+                    remote.id,
+                    root_key(paths.raw_dir),
+                    relative,
+                    file.stat().st_size,
+                    checksum(file),
+                    BASE,
+                ),
             )
     recipe = AcquisitionConfig(
         interval=AcquisitionInterval(start=BASE, end=BASE + timedelta(days=3)),
@@ -115,7 +153,6 @@ async def test_two_forge_jobs_three_tasks_deduplicated_and_no_engine(
         assert all(t["base_asset"] == "BTC" and t["quote_asset"] == "USDT" for t in tasks)
         assert all(
             not {
-                "instrument_id",
                 "format_profile",
                 "profile_fingerprint",
                 "archive_member",
@@ -124,6 +161,7 @@ async def test_two_forge_jobs_three_tasks_deduplicated_and_no_engine(
             & t.keys()
             for t in tasks
         )
+        assert type(tasks[0]["instrument_id"]) is int
         assert obj(tasks[0]["instrument"])["tick_size"] == "0.0100"
         assert "streams" not in job
         assert all(t["stream_rank"] == 1 for t in tasks)
@@ -133,13 +171,18 @@ async def test_two_forge_jobs_three_tasks_deduplicated_and_no_engine(
         assert "resources" not in job and "integrity_policy" not in job
     assert len(ids) == 4
     report = obj(json.loads(json.dumps(plan.report, default=str)))
-    publish_batch(paths, plan, report)
-    assert sorted(p.name for p in plan.run.iterdir()) == [
-        "normalize-batch.json",
-        "prepare-report.json",
-    ]
+    runtime = paths.runtime_config("normalize")
+    runtime.parent.mkdir(parents=True, exist_ok=True)
+    runtime.write_bytes(
+        (ROOT / "engine/src/shared/historical/config/fixtures/runtime.toml").read_bytes()
+    )
+    with pytest.raises(MarketForgeError, match="Managed engine normalize: missing"):
+        publish_batch(paths, plan, report)
+    assert not plan.run.exists()
+    # Simulate retained prepared artifacts for the allocation collision check.
+    write_job(plan.run / "normalize-batch.json", plan.batch)
     wrapper = obj(json.loads((plan.run / "normalize-batch.json").read_text()))
-    assert wrapper["kind"] == "normalization_batch" and wrapper["schema_version"] == 3
+    assert wrapper["kind"] == "normalization_batch" and wrapper["schema_version"] == 4
     assert array(wrapper["jobs"]) == list(plan.jobs.values())
     # Published IDs are unreserved but a later batch avoids their on-disk collisions.
     next_plan = await plan_batch(database, paths, recipe)
@@ -154,12 +197,14 @@ async def test_two_forge_jobs_three_tasks_deduplicated_and_no_engine(
 
 
 @pytest.mark.asyncio
-async def test_family_assets_use_consensus_without_contract_specs(
+async def test_family_assets_use_persisted_members_and_historical_specs(
     database: AsyncConnection[TupleRow],
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     paths = ProjectPaths(root=tmp_path, data_root=tmp_path / "data")
     family = "MF_FAMILY_" + uuid4().hex
+    symbols = [f"{family}-{index}" for index in range(2)]
     for index in range(2):
         await save_instrument(
             database,
@@ -167,7 +212,7 @@ async def test_family_assets_use_consensus_without_contract_specs(
                 exchange="okx",
                 market="linear",
                 instrument_type="future",
-                symbol=f"{family}-{index}",
+                symbol=symbols[index],
                 base="BTC",
                 quote="USD",
                 tick_size=Decimal(str(index + 1)),
@@ -178,6 +223,23 @@ async def test_family_assets_use_consensus_without_contract_specs(
             ),
             BASE,
         )
+        await declare(
+            database,
+            f"okx.future.linear.{symbols[index]}",
+            tick=str(index + 1),
+            contract=index + 10,
+        )
+    profile_path = ProjectPaths.resolve(root=ROOT)
+    fingerprints = await profile_fingerprints(profile_path, None, None)
+    profile_id = "okx.future.linear.trades"
+    assert profile_id in fingerprints
+
+    async def profiles(*_: object) -> dict[str, str]:
+        return fingerprints
+
+    # The fixture's workspace has no installation. Use the compiled source
+    # catalogue while exercising the real historical evidence queries.
+    monkeypatch.setattr("forge.historical.metadata.resolution.profile_fingerprints", profiles)
     request = ArchiveRequest(
         exchange="okx",
         instrument_type="future",
@@ -199,10 +261,54 @@ async def test_family_assets_use_consensus_without_contract_specs(
     with zipfile.ZipFile(file, "w") as z:
         z.writestr("first-contract.csv", "first")
         z.writestr("second-contract.csv", "second")
+    archive = await (
+        await database.execute(
+            """INSERT INTO historical.local_archives(remote_archive_id,storage_root_key,relative_path,
+            status,bytes_written,sha256,downloaded_at) VALUES(%s,%s,%s,'complete',%s,%s,%s)
+            RETURNING id""",
+            (
+                remote.id,
+                root_key(paths.raw_dir),
+                file.name,
+                file.stat().st_size,
+                checksum(file),
+                BASE,
+            ),
+        )
+    ).fetchone()
+    assert archive is not None
+    family_row = await (
+        await database.execute(
+            """INSERT INTO historical.family_authority(namespace,exchange,instrument_type,market_category,identifier)
+               VALUES(%s,'okx','future','linear',%s) RETURNING id""",
+            (NAMESPACE, family),
+        )
+    ).fetchone()
+    assert family_row is not None
     await database.execute(
-        """INSERT INTO historical.local_archives(remote_archive_id,storage_root_key,relative_path,
-        status,bytes_written,sha256,downloaded_at) VALUES(%s,%s,%s,'complete',%s,%s,%s)""",
-        (remote.id, root_key(paths.raw_dir), file.name, file.stat().st_size, "b" * 64, BASE),
+        """INSERT INTO historical.family_membership_evidence
+           (family_id,namespace,instrument_id,method,fingerprint,definition)
+           SELECT %s,namespace,instrument_id,'archive_derived',repeat('a',64),'{}'
+           FROM historical.instrument_authority WHERE namespace=%s AND identity_key=ANY(%s)""",
+        (family_row[0], NAMESPACE, [f"okx/future/linear/{symbol}" for symbol in symbols]),
+    )
+    members = [
+        {"symbol": symbol, "archive_member": member}
+        for symbol, member in zip(
+            symbols, ("first-contract.csv", "second-contract.csv"), strict=True
+        )
+    ]
+    await database.execute(
+        """INSERT INTO historical.archive_identity_evidence
+           (local_archive_id,input_sha256,profile_fingerprint,policy_version,definition)
+           VALUES(%s,%s,%s,%s,%s)""",
+        (
+            archive[0],
+            checksum(file),
+            fingerprints[profile_id],
+            POLICY_VERSION,
+            Jsonb({"symbols": symbols, "members": members}),
+        ),
     )
     recipe = AcquisitionConfig(
         interval=AcquisitionInterval(start=BASE, end=BASE + timedelta(days=1)),
@@ -215,7 +321,13 @@ async def test_family_assets_use_consensus_without_contract_specs(
     tasks = array(job["tasks"])
     assert len(tasks) == 1
     task = obj(tasks[0])
-    assert task["scope"] == {"kind": "family", "identifier": family}
+    scope = obj(task["scope"])
+    assert scope["kind"] == "family" and scope["identifier"] == family
+    assert [member["archive_member"] for member in scope["members"]] == [
+        "first-contract.csv",
+        "second-contract.csv",
+    ]
+    assert len(array(plan.batch["instruments"])) == 2
     assert task["symbol"] is None and task["instrument"] is None
     assert task["base_asset"] == "BTC" and task["quote_asset"] == "USD"
     assert task["stream_rank"] == 1
@@ -268,6 +380,8 @@ async def test_bitget_pair_preserves_provenance_and_uses_resolved_ranking(
         ),
         BASE,
     )
+    await declare(database, f"bitget.spot.spot.{native}", tick="0.0100")
+    await declare(database, f"bitget.spot.spot.{exact}", tick="0.1")
     requests = [
         ArchiveRequest(
             exchange="bitget",
@@ -299,7 +413,7 @@ async def test_bitget_pair_preserves_provenance_and_uses_resolved_ranking(
                 root_key(paths.raw_dir),
                 str(file.relative_to(paths.raw_dir)),
                 file.stat().st_size,
-                "c" * 64,
+                checksum(file),
                 BASE,
             ),
         )
@@ -316,7 +430,7 @@ async def test_bitget_pair_preserves_provenance_and_uses_resolved_ranking(
     )
     plan = await plan_batch(database, paths, recipe)
     assert calls == ["resolved"]
-    assert plan.report["status"] == "prepared" and plan.batch["schema_version"] == 3
+    assert plan.report["status"] == "prepared" and plan.batch["schema_version"] == 4
     tasks = [obj(t) for t in array(next(iter(plan.jobs.values()))["tasks"])]
     assert len(tasks) == 2
     # The fallback stream ranks ahead of the lexically earlier unranked stream.
@@ -328,13 +442,16 @@ async def test_bitget_pair_preserves_provenance_and_uses_resolved_ranking(
     report = obj(json.loads(json.dumps(plan.report, default=str)))
     selected = obj(array(obj(array(report["requests"])[0])["selected_archives"])[0])
     assert selected["instrument_id"] == resolved_id
-    assert selected["identity_resolution"] == {
+    identity = obj(selected["identity_resolution"])
+    assert identity["specification_evidence"]["kind"] == "historical_declaration"
+    assert {
+        key: identity[key]
+        for key in ("archive_identifier", "method", "resolved_symbol", "parsed_assets")
+    } == {
         "archive_identifier": historical,
         "method": "bitget_spot_asset_pair",
         "resolved_symbol": native,
         "parsed_assets": {"base_asset": base.swapcase(), "quote_asset": "uSdT"},
     }
-    publish_batch(paths, plan, report)
-    saved = obj(json.loads((plan.run / "prepare-report.json").read_text()))
-    assert saved == report
+    assert obj(array(obj(array(report["requests"])[0])["selected_archives"])[0]) == selected
     assert "identity_resolution" not in tasks[0]

@@ -214,6 +214,8 @@ async def prepare(
     *,
     dry_run: bool = False,
     embedded: bool = False,
+    executable: Path | None = None,
+    runtime_path: Path | None = None,
     lifecycle: Lifecycle = lambda _: None,
 ) -> dict[str, Any]:
     directory = paths.runs_dir / f"convert-prepare-{uuid4().hex}"
@@ -254,7 +256,7 @@ async def prepare(
         snapshot = catalog_snapshot([*sources, *([external] if external else [])])
         artifact_pins: dict[str, Any] = {}
         if isinstance(upstream, PublicationSource):
-            artifact_pins["publication_source"] = upstream.model_dump(mode="json")
+            sources[0]["publication_source"] = upstream.model_dump(mode="json")
         compatibility: list[str] = []
         snapshot_data = json_bytes(snapshot.model_dump())
         installed_catalog = catalog_pin(paths, snapshot)
@@ -267,7 +269,7 @@ async def prepare(
         )
         binary = None
         try:
-            binary = resolve(paths, "convert")
+            binary = executable or resolve(paths, "convert")
             artifact_pins["executable"] = {"path": str(binary), "sha256": checksum(binary)}
         except (MarketForgeError, OSError) as error:
             compatibility.append(str(error))
@@ -275,7 +277,7 @@ async def prepare(
             compatibility.append(
                 "The current Rust converter supports atomic publication only on Linux."
             )
-        runtime = paths.runtime_config("convert")
+        runtime = runtime_path or paths.runtime_config("convert")
         runtime_data = runtime.read_bytes()
         settings = load_runtime(runtime, runtime_data)
         requested = recipe.resources.model_dump()
@@ -519,6 +521,16 @@ def retained_collection(source: Path) -> tuple[Path, dict[str, Any], dict[str, A
             "Expected a retained Forge conversion collection or its exact per-job document."
         )
     return collection, document, report
+
+
+def collection_publication_source(document: dict[str, Any]) -> PublicationSource | None:
+    sources = document["sources"]
+    bound = [source["publication_source"] for source in sources if "publication_source" in source]
+    if not bound:
+        return None
+    if len(sources) != 1:
+        raise MarketForgeError("A publication-bound collection must have exactly one source.")
+    return PublicationSource.model_validate(bound[0])
 
 
 def validate_reference(paths: ProjectPaths, source: Path) -> dict[str, Any]:

@@ -1,5 +1,6 @@
 """Explicit Forge actions and form fields shared by workspace screens."""
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from shlex import join
 from typing import Literal
@@ -19,6 +20,12 @@ class Field:
     default: Value = ""
     required: bool = False
     option: str = ""
+    group: str = ""
+    help: str = ""
+    required_when: Callable[[Mapping[str, Value]], bool] | None = None
+    visible_when: Callable[[Mapping[str, Value]], bool] | None = None
+    placeholder: str = ""
+    documentation_url: str = ""
 
     def parse(self, value: Value) -> Value:
         if value == "":
@@ -46,6 +53,8 @@ class Action:
     def command(self, values: Values, *, testing: bool = False) -> str:
         cmd = ["mf", *self.key.split()]
         for field in self.fields:
+            if field.key == "catalogue_quote":
+                continue
             value = values.get(field.key, field.default)
             if value == "" or value is False:
                 continue
@@ -70,7 +79,11 @@ class Action:
                 cmd.append(field.option)
             if field.key != "route":
                 cmd.append(str(value))
-        if self.testing or self.key in {"database backup", "database restore"}:
+        if (
+            self.testing
+            or self.key in {"database backup", "database restore"}
+            or (self.key == "convert new" and values.get("route") == "publication")
+        ):
             cmd.append("--testing" if testing else "--production")
         if self.key == "acquisition plan":
             cmd.append("--cache-only")
@@ -162,22 +175,31 @@ ALL = flag("all", "All snapshots")
 APPLY = flag("apply", "Apply reviewed selection")
 ACT = Action
 
+STAGE_TERMINAL = opt("stage_terminal", "Stage execution", choices=("inline", "window"))
+
 ACTIONS = (
+    *(ACT(f"{family} list", "Workflows") for family in ("pipeline", "normalize", "merge")),
+    *(ACT(f"{family} show", "Workflows", (REF,)) for family in ("normalize", "merge")),
+    *(
+        ACT(f"{family} edit", "Workflows", (REF,), "editor")
+        for family in ("normalize", "merge", "convert")
+    ),
     ACT("pipeline new", "Workflows", (NAME,), "write"),
     ACT("pipeline validate", "Workflows", (NAME,)),
     ACT("pipeline plan", "Workflows", (NAME,), testing=True),
     ACT(
         "pipeline run",
         "Workflows",
-        (NAME, opt("stop_after", "Stop after", choices=("normalize.prepare",))),
+        (NAME, opt("stop_after", "Stop after", choices=("normalize.prepare",)), STAGE_TERMINAL),
         "engine",
         True,
     ),
-    ACT("pipeline resume", "Runs", (RUN,), "engine", True),
+    ACT("pipeline resume", "Runs", (RUN, STAGE_TERMINAL), "engine", True),
     ACT("pipeline status", "Runs", (RUN,)),
-    ACT("acquisition list", "Recipes & Profiles"),
+    ACT("acquisition list", "Workflows"),
+    ACT("acquisition sources", "Workflows"),
     ACT("acquisition new", "Workflows", (NAME,), "editor"),
-    ACT("acquisition edit", "Recipes & Profiles", (NAME,), "editor"),
+    ACT("acquisition edit", "Workflows", (NAME,), "editor"),
     ACT("acquisition validate", "Workflows", (NAME,)),
     ACT(
         "acquisition plan",
@@ -221,15 +243,21 @@ ACTIONS = (
     ),
     ACT(
         "normalize profiles list",
-        "Recipes & Profiles",
+        "Catalogue",
         tuple(
             opt(k, k.replace("_", " ").title())
             for k in ("type", "exchange", "instrument_type", "market_category")
         ),
     ),
     ACT(
+        "normalize profiles new",
+        "Catalogue",
+        (Field("reference", "New profile ID", required=True),),
+        "write",
+    ),
+    ACT(
         "normalize profiles sample",
-        "Recipes & Profiles",
+        "Catalogue",
         (
             Field("file", "Raw file", required=True, option="--file"),
             opt("member", "Archive member"),
@@ -238,18 +266,18 @@ ACTIONS = (
     ),
     ACT(
         "normalize profiles inspect",
-        "Recipes & Profiles",
+        "Catalogue",
         (Field("reference", "Profile ID", required=True),),
     ),
     ACT(
         "normalize profiles validate",
-        "Recipes & Profiles",
+        "Catalogue",
         (Field("reference", "Installed profile ID"), opt("file", "Profile TOML")),
     ),
     *(
         ACT(
             f"normalize profiles {x}",
-            "Recipes & Profiles",
+            "Catalogue",
             (Field("reference", "Profile ID", required=True), SRC),
             "write",
             True,
@@ -293,7 +321,7 @@ ACTIONS = (
     ),
     ACT("merge new", "Workflows", (NAME, opt("from_normalize", "Normalization recipe")), "write"),
     ACT("merge validate", "Workflows", (REF,)),
-    ACT("merge prepare", "Workflows", (REF,), "write", True),
+    ACT("merge prepare", "Workflows", (REF, DRY), "write", True),
     ACT("merge run", "Workflows", (REF,), "engine", True),
     ACT(
         "merge register",
@@ -308,10 +336,28 @@ ACTIONS = (
         (
             NAME,
             Field(
-                "route", "Source route", "choice", ("merge", "normalize", "acquisition"), "merge"
+                "route",
+                "Source route",
+                "choice",
+                ("merge", "normalize", "acquisition", "publication"),
+                "merge",
+                required=True,
+                group="Source publication",
             ),
-            SRC,
-            Field("quote", "Target quote", required=True, option="--target-quote"),
+            Field(
+                "source",
+                "Publication ID or recipe reference",
+                required=True,
+                option="--from",
+                group="Source publication",
+            ),
+            Field(
+                "quote",
+                "Target quote",
+                required=True,
+                option="--target-quote",
+                group="Conversion policy",
+            ),
         ),
         "write",
     ),
@@ -341,10 +387,40 @@ ACTIONS = (
         testing=True,
     ),
     ACT(
+        "datasets partitions",
+        "Data",
+        (
+            Field("id", "Primary-file ID", "integer"),
+            Field(
+                "publication_id", "Registry publication ID", "integer", option="--publication-id"
+            ),
+            opt("output_ref", "Indexed conversion reference"),
+            opt("partition", "Physical partition reference"),
+            flag("row_groups", "Row groups"),
+            LIMIT,
+            integer("offset", "Partition offset"),
+        ),
+        testing=True,
+    ),
+    ACT(
         "datasets head",
         "Data",
         (
-            ID,
+            Field("id", "Primary-file ID", "integer"),
+            Field(
+                "publication_id", "Registry publication ID", "integer", option="--publication-id"
+            ),
+            opt("output_ref", "Indexed conversion reference"),
+            opt("partition", "Physical partition reference"),
+            Field("row_group", "Zero-based row group", "integer", option="--row-group"),
+            Field(
+                "partition_file", "One-based partition file", "integer", option="--partition-file"
+            ),
+            opt("data_type", "Data kind", choices=("trades", "depth")),
+            Field("instrument_id", "Instrument ID", "integer", option="--instrument-id"),
+            opt("stream_id", "Exact stream ID"),
+            opt("start", "Start UTC, inclusive"),
+            opt("end", "End UTC, exclusive"),
             LIMIT,
             opt("column", "Columns, comma separated"),
             flag("wide", "All columns"),
@@ -441,7 +517,7 @@ ACTIONS = (
     *(
         ACT(
             f"catalog {model} {x}",
-            "Catalog",
+            "Catalogue",
             (
                 Field(
                     "source",
@@ -468,10 +544,10 @@ ACTIONS = (
         )
         for x in ("list", "show", "logs", "report")
     ),
-    ACT("engine status", "System"),
+    ACT("engine status", "Workspace tools"),
     ACT(
         "engine runtime",
-        "System",
+        "Workspace tools",
         (
             Field(
                 "reference",
@@ -483,7 +559,7 @@ ACTIONS = (
     ),
     ACT(
         "engine build",
-        "System",
+        "Workspace tools",
         (
             Field("reference", "Engine target", "choice", ("normalize", "merge", "convert")),
             DRY,
@@ -492,18 +568,18 @@ ACTIONS = (
         ),
         "engine",
     ),
-    ACT("database status", "System", testing=True),
-    ACT("database migrate", "System", effect="write", testing=True),
+    ACT("database status", "Workspace tools", testing=True),
+    ACT("database migrate", "Workspace tools", effect="write", testing=True),
     ACT(
         "database backup",
-        "System",
+        "Workspace tools",
         (Field("reference", "New backup directory", required=True),),
         "write",
         True,
     ),
     ACT(
         "database restore",
-        "System",
+        "Workspace tools",
         (
             Field("reference", "Verified backup directory", required=True),
             Field("destination", "Disposable database name", required=True, option="--destination"),
@@ -511,9 +587,9 @@ ACTIONS = (
         "write",
         True,
     ),
-    ACT("init", "System", effect="network", testing=True),
-    ACT("doctor", "System", testing=True),
-    ACT("config show", "System"),
+    ACT("init", "Workspace tools", effect="network", testing=True),
+    ACT("doctor", "Workspace tools", testing=True),
+    ACT("config show", "Workspace tools"),
 )
 BY_KEY = {action.key: action for action in ACTIONS}
 
@@ -522,3 +598,27 @@ def read_only(action: Action, values: Values) -> bool:
     return action.effect == "read" or (
         bool(values.get("dry_run")) and not values.get("from_acquisition")
     )
+
+
+WORKFLOW_CONTROLS = {
+    "acquisition": ("validate", "plan", "map", "download"),
+    "acquisition import": ("validate", "plan", "run"),
+    "acquisition register": ("validate", "plan", "run"),
+    "normalize": ("validate", "prepare", "run"),
+    "merge": ("validate", "prepare", "run"),
+    "convert": ("validate", "prepare", "run"),
+    "pipeline": ("validate", "plan", "run"),
+}
+
+EXECUTION_ACTIONS = frozenset(
+    {
+        "acquisition download",
+        "normalize execute",
+        "normalize run",
+        "merge run",
+        "convert run",
+        "pipeline run",
+        "pipeline resume",
+        "acquisition import run",
+    }
+)

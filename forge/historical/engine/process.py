@@ -5,15 +5,21 @@ import contextlib
 import os
 import signal
 import subprocess
+import sys
 import threading
-from collections.abc import Callable, Generator
+from collections.abc import Awaitable, Callable, Generator
 from pathlib import Path
 
 from forge.historical.archives.storage.files import disk as joined_io
 from forge.shared.errors import MarketForgeError
 
 Lifecycle = Callable[[str], None]
+EngineRunner = Callable[[list[str], Path, Path, bool], Awaitable[tuple[int, bool]]]
 PreparationObserver = Callable[[Path, Path], None]
+
+
+class EngineOutcomeUnknown(MarketForgeError):
+    """Keep the work claim for reconciliation when an Engine may have run."""
 
 
 def ignore_preparation(_job: Path, _report: Path) -> None:
@@ -27,16 +33,19 @@ async def supervise(
     *,
     grace: float = 10,
     log_prefix: str = "engine",
+    tui: bool = False,
+    foreground: bool = False,
 ) -> tuple[int, bool]:
     """Keep process groups and log readers within the lifetime of the caller."""
     launch = asyncio.create_task(
         asyncio.create_subprocess_exec(
             *argv,
+            *(["--tui"] if tui else []),
             cwd=root,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
+            stdin=None if tui else asyncio.subprocess.DEVNULL,
+            stdout=None if tui else asyncio.subprocess.PIPE,
+            stderr=None if tui else asyncio.subprocess.PIPE,
+            start_new_session=not tui,
         )
     )
     interrupted = False
@@ -56,6 +65,11 @@ async def supervise(
             except OSError as error:
                 failure = error
             while chunk := await stream.read(65536):
+                if foreground:
+                    display = sys.stderr.buffer if "stderr" in name else sys.stdout.buffer
+                    with contextlib.suppress(OSError):
+                        display.write(chunk)
+                        display.flush()
                 if remaining and output is not None and failure is None:
                     try:
                         remaining -= output.write(chunk[:remaining])
@@ -67,17 +81,23 @@ async def supervise(
             if output is not None:
                 output.close()
 
-    assert process.stdout is not None and process.stderr is not None
+    streams = ((process.stdout, "stdout"), (process.stderr, "stderr"))
     readers = asyncio.gather(
-        capture(process.stdout, f"{log_prefix}-stdout.log"),
-        capture(process.stderr, f"{log_prefix}-stderr.log"),
+        *(
+            capture(stream, f"{log_prefix}-{name}.log")
+            for stream, name in streams
+            if stream is not None
+        ),
         return_exceptions=True,
     )
     waiting = asyncio.create_task(process.wait())
 
     def signal_group(number: int) -> None:
         with contextlib.suppress(ProcessLookupError):
-            os.killpg(process.pid, number)
+            if tui:
+                process.send_signal(number)
+            else:
+                os.killpg(process.pid, number)
 
     try:
         if not interrupted:
@@ -99,7 +119,13 @@ async def supervise(
         if isinstance(error, OSError):
             raise error
     code = waiting.result()
-    return code, interrupted or code in {130, -signal.SIGINT, -signal.SIGTERM, -signal.SIGKILL}
+    return code, interrupted or code in {
+        130,
+        -signal.SIGINT,
+        -signal.SIGTERM,
+        -signal.SIGKILL,
+        -signal.SIGHUP,
+    }
 
 
 async def check(

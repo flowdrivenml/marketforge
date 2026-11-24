@@ -1,3 +1,4 @@
+/* Base palette mirrors forge.shared.terminal.palette. */
 $forge-bg: #1a1b26;
 $forge-fg: #c0caf5;
 $forge-blue: #7aa2f7;
@@ -6,9 +7,18 @@ $forge-green: #9ece6a;
 $forge-yellow: #e0af68;
 $forge-red: #f7768e;
 $forge-muted: #565f89;
-$forge-selected: #292f44;
-$forge-surface: #212333;
+/* Layer and interaction surfaces, shared by the shell and standalone screens. */
+$forge-secondary: #a1aacf;
+$forge-surface: #202231;
+$forge-navigation: #181923;
+$forge-field: #24283b;
+$forge-stripe: #1d1f2c;
+$forge-outline: #363c57;
+$forge-selected: #2a3047;
+$forge-focused: #343e5b;
+$forge-overlay: #101119;
 
+/* Shared controls use one row. Focus has a brighter surface and a text cue. */
 Screen { background: $forge-bg; color: $forge-fg; }
 Button {
     color: $forge-fg;
@@ -19,41 +29,102 @@ Button {
     width: auto;
     padding: 0 1;
 }
-Button:hover, Button:focus { background: $forge-selected; color: $forge-cyan; }
-Button:focus { text-style: underline; }
-Button:disabled { color: $forge-muted; }
-Button.-primary, Button.active { color: $forge-blue; background: $forge-selected; text-style: bold; }
-Button.-warning, Button.-error { color: $forge-yellow; background: $forge-selected; }
-Button.-error { color: $forge-red; }
-Input, Select, SelectCurrent, SelectOverlay, OptionList, Checkbox, TextArea, Collapsible {
-    color: $forge-fg; background: $forge-surface;
+Button:hover { background: $forge-selected; }
+Button.-primary, Button.primary {
+    color: $forge-blue; background: $forge-selected; text-style: bold;
 }
-Input { border: none; height: 1; padding: 0 1; }
-Input:focus, Select:focus, Checkbox:focus { color: $forge-cyan; background: $forge-selected; }
-Input > .input--placeholder { color: $forge-muted; }
-Input > .input--selection, TextArea > .text-area--selection { background: $forge-selected; }
-OptionList > .option-list--option-highlighted { color: $forge-cyan; background: $forge-selected; }
-Checkbox { height: 1; border: none; }
-Checkbox > .toggle--button { color: $forge-cyan; background: $forge-surface; }
-Footer, FooterKey { background: $forge-surface; color: $forge-fg; }
-FooterKey > .footer-key--key { color: $forge-cyan; background: $forge-surface; }
-Toast { background: $forge-surface; color: $forge-fg; border: solid $forge-muted; }
-DataTable { color: $forge-fg; background: $forge-bg; }
-DataTable > .datatable--header { color: $forge-blue; background: $forge-surface; text-style: bold; }
-DataTable > .datatable--cursor { color: $forge-fg; background: $forge-selected; }
-DataTable:focus > .datatable--header-cursor { color: $forge-cyan; }
+Button.-warning { color: $forge-yellow; background: $forge-selected; }
+Button.-error { color: $forge-red; background: $forge-selected; text-style: bold; }
+Button.tertiary { background: transparent; color: $forge-secondary; }
+Button:focus { background: $forge-focused; text-style: underline; }
+Button:disabled { color: $forge-muted; background: transparent; text-style: none; }
 
-#workspace-header, .screen-heading { height: 1; padding: 0 1; background: $forge-surface; color: $forge-blue; text-style: bold; }
+Input, SelectCurrent, SelectOverlay, OptionList, Checkbox, Switch, TextArea {
+    color: $forge-fg; background: $forge-field;
+}
+Input { border: none; border-left: tall $forge-outline; height: 1; padding: 0 1; }
+Input:focus { border-left: tall $forge-cyan; background: $forge-focused; }
+Input:disabled { color: $forge-secondary; background: $forge-navigation; }
+Input > .input--placeholder { color: $forge-secondary; }
+Input > .input--selection, TextArea > .text-area--selection { background: $forge-focused; }
+Input > .input--cursor, TextArea > .text-area--cursor { color: $forge-bg; background: $forge-cyan; }
+Select > SelectCurrent { background: $forge-field; }
+Select:focus > SelectCurrent, Select.-expanded > SelectCurrent {
+    color: $forge-cyan; background: $forge-focused; text-style: underline;
+}
+Select > SelectOverlay { background: $forge-surface; border: round $forge-blue; }
+SelectOverlay > .option-list--option-highlighted,
+OptionList > .option-list--option-highlighted { color: $forge-fg; background: $forge-focused; text-style: bold; }
+OptionList > .option-list--option-hover { background: $forge-selected; }
+Checkbox { height: 1; border: none; }
+Checkbox:focus, Switch:focus { color: $forge-cyan; background: $forge-focused; text-style: underline; }
+Checkbox > .toggle--button { color: $forge-cyan; background: $forge-field; }
+Collapsible { background: $forge-surface; border: none; padding: 0; }
+CollapsibleTitle { color: $forge-secondary; background: $forge-surface; }
+CollapsibleTitle:focus { color: $forge-cyan; background: $forge-focused; text-style: underline; }
+
+Footer, FooterKey { background: $forge-navigation; color: $forge-secondary; }
+FooterKey > .footer-key--key { color: $forge-cyan; background: $forge-navigation; text-style: bold; }
+ToastRack { margin-bottom: 3; max-height: 8; }
+Toast { width: 45; max-width: 62%; padding: 0 1; background: $forge-surface; color: $forge-fg; border: none; }
+Toast.-information { border-left: tall $forge-cyan; }
+Toast.-warning { border-left: tall $forge-yellow; }
+Toast.-error { border-left: tall $forge-red; }
+Toast.-information > .toast--title { color: $forge-cyan; }
+Toast.-warning > .toast--title { color: $forge-yellow; }
+Toast.-error > .toast--title { color: $forge-red; }
+
+DataTable { color: $forge-fg; background: $forge-bg; }
+DataTable:focus { background-tint: transparent; }
+DataTable > .datatable--header { color: $forge-cyan; background: $forge-field; text-style: bold; }
+DataTable > .datatable--even-row { background: $forge-stripe; }
+DataTable > .datatable--odd-row { background: $forge-bg; }
+DataTable > .datatable--hover { background: $forge-selected; }
+DataTable > .datatable--cursor { color: $forge-fg; background: $forge-selected; text-style: none; }
+DataTable:focus > .datatable--cursor { color: $forge-fg; background: $forge-focused; text-style: bold; }
+DataTable:focus > .datatable--header-cursor { color: $forge-cyan; background: $forge-focused; }
+Scrollbar { color: $forge-muted; background: $forge-navigation; }
+
+#workspace-header, .screen-heading {
+    height: 1; padding: 0 1; background: $forge-field; color: $forge-cyan; text-style: bold;
+}
 #workspace-body, #resource-body { height: 1fr; }
-#navigation { width: 19; background: $forge-surface; padding: 0 1; }
-#navigation Button { width: 100%; content-align: left middle; }
+#navigation { width: 19; background: $forge-navigation; padding: 1 1 0 0; }
+#navigation Button {
+    width: 100%; content-align: left middle; border-left: tall $forge-navigation;
+    background: $forge-navigation; color: $forge-secondary;
+}
+#navigation Button:hover { background: $forge-selected; color: $forge-fg; }
+#navigation Button.active {
+    border-left: tall $forge-blue; color: $forge-blue; background: $forge-selected; text-style: bold;
+}
+#navigation Button:focus { background: $forge-focused; text-style: underline; }
+#navigation Button.active:focus { text-style: bold underline; }
+#navigation Button:disabled { color: $forge-muted; }
 #main { width: 1fr; padding: 0 1; }
 #views, #context-actions, .section-tabs, .screen-footer { height: 1; }
-#views, .section-tabs { overflow-x: auto; }
-#context-actions, .screen-footer { background: $forge-surface; }
+#views, .section-tabs, #workspace-stage-tabs { overflow-x: auto; scrollbar-size-horizontal: 0; background: $forge-surface; }
+#views Button, .section-tabs Button, #workspace-stage-tabs Button {
+    border-left: tall $forge-surface; color: $forge-secondary;
+}
+#views Button.active, .section-tabs Button.active, #workspace-stage-tabs Button.active {
+    border-left: tall $forge-blue; background: $forge-selected; color: $forge-blue; text-style: bold;
+}
+#views Button:focus, .section-tabs Button:focus, #workspace-stage-tabs Button:focus {
+    background: $forge-focused; text-style: underline;
+}
+#views Button.active:focus, .section-tabs Button.active:focus,
+#workspace-stage-tabs Button.active:focus { text-style: bold underline; }
+.summary-stacked #views Button { padding: 0 0 0 1; }
+.narrow #views Button { padding: 0; }
+#context-actions, .screen-footer, .configuration-actions { background: $forge-surface; overflow-x: auto; scrollbar-size-horizontal: 0; }
 #filter { height: 1; }
-#results { height: 1fr; width: 1fr; border: solid $forge-muted; }
-#results:focus { border: solid $forge-blue; }
+#results { height: 1fr; width: 1fr; }
+#resource-state { width: 1fr; height: 1fr; padding: 1 1; color: $forge-secondary; }
+#resource-state.-error { color: $forge-red; }
+#query-state { color: $forge-secondary; }
+#query-state.-loading { color: $forge-cyan; }
+#operation.-idle { display: none; }
 #query-state, #operation { height: 1; padding: 0 1; }
 #operation { color: $forge-cyan; background: $forge-surface; }
 #operation.failed, #query-state.-error, #form-error { color: $forge-red; }
@@ -62,19 +133,23 @@ DataTable:focus > .datatable--header-cursor { color: $forge-cyan; }
 .narrow #navigation, .nav-hidden #navigation { display: none; }
 .narrow.nav-open #navigation { display: block; }
 #inspection-scroll, #inspection-rows, #operation-scroll { height: 1fr; padding: 0 1; }
-#inspection-fields { border: solid $forge-muted; padding: 0 1; }
+#inspection-fields { height: auto; padding: 0 1; background: $forge-surface; }
 #operation-dashboard { height: auto; }
-ModalScreen { align: center middle; background: #11111b 75%; }
-.dialog, .menu { width: 66; max-width: 96%; height: auto; max-height: 92%; border: solid $forge-muted; padding: 0 1; background: $forge-bg; }
-.dialog-title, .section-title { color: $forge-blue; text-style: bold; height: 1; }
+ModalScreen { align: center middle; background: $forge-overlay 82%; }
+.dialog, .menu { width: 66; max-width: 96%; height: auto; max-height: 92%; border: round $forge-outline; padding: 0 1; background: $forge-surface; }
+.dialog-title, .section-title {
+    color: $forge-cyan; text-style: bold; height: auto; width: 100%;
+    padding: 0 1; background: $forge-field;
+}
 .fields { height: auto; max-height: 65vh; }
 #form-error { height: auto; max-height: 2; }
 .form-field { height: auto; }
-.buttons { height: 1; }
+.buttons, .dialog-buttons { height: 1; overflow-x: auto; scrollbar-size-horizontal: 0; background: $forge-field; }
 .buttons Button { margin-right: 1; }
-.detail { height: 88%; width: 93%; }
-#detail-text { height: 1fr; border: solid $forge-muted; }
-.confirmation { width: 58; height: auto; padding: 0 1; }
+.detail { max-height: 88%; width: 85; }
+#detail-text { height: auto; max-height: 72vh; border: none; background: $forge-bg; }
+.confirmation { width: 70; height: auto; padding: 0 1; }
+.confirm-scope { height: auto; max-height: 65vh; }
 .path-field { height: 1; }
 .path-field Input { width: 1fr; }
 #path-tree { height: 1fr; }
@@ -83,35 +158,62 @@ ModalScreen { align: center middle; background: #11111b 75%; }
 
 .inspect-operation { display: none; height: 1; padding: 0 1; color: $forge-cyan; background: $forge-surface; }
 
-.overview-only { display: none; }
-.overview .overview-only { display: block; }
-.overview #views, .overview #browse-tools, .overview #query-state, .overview #resource-body, .overview #operation { display: none; }
+.workspace-monitor { height: 1; padding: 0 1; background: $forge-navigation; }
+.overview #views, .overview #browse-tools, .overview #query-state,
+.overview #resource-body, .overview #operation, .overview #context-actions { display: none; }
 #overview-scroll { display: none; height: 1fr; }
 .overview #overview-scroll { display: block; }
-#overview-status, #overview-history-note, #inventory-scope { height: 1; padding: 0 1; }
-#overview-status { background: $forge-surface; }
-#overview-current, #overview-attention, .inventory-stat, #overview-results, #inventory-stages, #inventory-markets {
-    border: solid $forge-muted; height: auto;
-}
-#overview-results:focus, #inventory-stages:focus, #inventory-markets:focus { border: solid $forge-blue; }
-#overview-current, #overview-attention, .inventory-stat { padding: 0 1; }
-#overview-current { max-height: 5; }
-#overview-attention { max-height: 5; }
-#overview-primary { width: 16; }
-#inventory-panels { height: auto; }
-#inventory-stats { layout: grid; grid-size: 4 1; grid-rows: 4; height: 4; }
-.narrow #inventory-stats { grid-size: 2 2; grid-rows: 3; height: 6; }
-.narrow .inventory-stat { height: 3; }
-.inventory-stat { height: 4; }
-#inventory-body { layout: vertical; height: auto; }
-.wide #inventory-body { layout: horizontal; }
-#inventory-stages, #inventory-markets { width: 1fr; height: auto; }
-.wide #inventory-stages { width: 55%; }
-.wide #inventory-markets { width: 45%; }
-
-.overview #context-menu { width: 15; }
-
+WorkspaceDashboard { height: auto; }
+.workspace-pair { height: auto; align-vertical: top; }
+.workspace-column { width: 1fr; height: auto; }
+.summary-stacked .workspace-column { width: 100%; }
+#workflow-actions { height: 1; overflow-x: auto; scrollbar-size-horizontal: 0; }
+#workflow-actions .validate { color: $forge-fg; }
+#workflow-actions .prepare { color: $forge-fg; }
+#workflow-actions .run { color: $forge-blue; background: $forge-selected; text-style: bold; }
+#workflow-actions .run:focus { background: $forge-focused; text-style: bold underline; }
+#workflow-actions Button:disabled { color: $forge-muted; }
+.summary-stacked .workspace-pair { layout: vertical; }
+.workspace-panel { border: round $forge-outline; width: 100%; height: auto; padding: 0 1; border-title-color: $forge-cyan; background: $forge-surface; }
+.workspace-panel:focus-within { border: round $forge-blue; }
+#workspace-stage-tabs, #workspace-stage-message, #overview-history-note { height: 1; }
+#workspace-inventory, #overview-results { width: 1fr; height: 2; }
 #browse-tools { height: 1; }
 #browse-tools #filter { width: 1fr; }
 
 #query-state { height: auto; max-height: 2; }
+
+#main > ConfigurationEditor { display: none; }
+.configs #main > ConfigurationEditor { display: block; }
+.configs #browse-tools, .configs #query-state, .configs #resource-body,
+.configs #context-actions { display: none; }
+#configuration-title { color: $forge-cyan; text-style: bold; }
+#configuration-search:focus { color: $forge-cyan; }
+.configs #views Button.pending { color: $forge-yellow; }
+.configs #views Button.active { color: $forge-blue; text-style: bold underline; }
+
+
+.workflow-form { width: 86; }
+.workflow-form .fields { max-height: 66vh; }
+.form-heading { height: auto; color: $forge-cyan; text-style: bold; margin-top: 1; }
+.form-label { height: auto; }
+.form-label Label { width: 1fr; height: auto; color: $forge-secondary; }
+.form-field.-required .form-label Label { color: $forge-fg; }
+.form-label Button { color: $forge-cyan; }
+.field-error { height: auto; color: $forge-red; }
+.form-field.-changed Input { border-left: tall $forge-yellow; }
+.form-field.-validated Input { border-left: tall $forge-green; }
+.form-field.-invalid Input { border-left: tall $forge-red; }
+.form-field.-invalid SelectCurrent { color: $forge-red; }
+.form-field.-invalid .form-label Label { color: $forge-red; }
+#form-progress { height: 1; color: $forge-yellow; }
+#form-progress.-validated { color: $forge-green; }
+.workflow-form .buttons { overflow-x: auto; }
+.entity-picker { width: 86; }
+.entity-picker #entity-status { height: auto; color: $forge-cyan; }
+.stream-order { height: 75%; width: 86; }
+.stream-order OptionList { height: 1fr; }
+/* A one-row toolbar keeps its controls visible when the viewport scrolls. */
+#views, .section-tabs, .screen-footer, .workflow-form .buttons {
+    scrollbar-size-horizontal: 0;
+}

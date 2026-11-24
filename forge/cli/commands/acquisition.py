@@ -15,7 +15,7 @@ from rich.console import Console
 
 from forge.historical.archives.config import load_acquisition
 from forge.historical.archives.operation import run_acquisition
-from forge.historical.archives.sources.capabilities import source_capabilities
+from forge.historical.archives.sources.capabilities import CAPABILITIES, source_capabilities
 from forge.historical.archives.templates import write_acquisition_template
 from forge.shared.config.library import list_config_names
 from forge.shared.config.loader import ConfigurationLoadError
@@ -29,6 +29,7 @@ from forge.shared.presentation.acquisition import (
     ConfigurationResult,
     configuration_inventory,
 )
+from forge.shared.sorting import NAMES
 from forge.shared.terminal.acquisition import AcquisitionDisplay
 from forge.shared.terminal.acquisition_result import (
     render_inventory,
@@ -112,8 +113,10 @@ def new_acquisition(
     reference(console, "Configuration reference", ACQUISITION_CONFIGURATION)
 
 
-def show_acquisition_sources(console: Console, *, as_json: bool) -> None:
-    capabilities = source_capabilities()
+def show_acquisition_sources(
+    console: Console, *, as_json: bool, sort: str | None = None, order: str | None = None
+) -> None:
+    capabilities = source_capabilities(sort=sort, order=order)
     if as_json:
         print(
             json.dumps(
@@ -122,7 +125,9 @@ def show_acquisition_sources(console: Console, *, as_json: bool) -> None:
             )
         )
     else:
-        render_sources(console, capabilities)
+        render_sources(
+            console, capabilities, ordering=CAPABILITIES.resolve(sort, order).description
+        )
 
 
 def edit_acquisition(
@@ -143,9 +148,11 @@ def list_acquisition_configs(
     *,
     console: Console,
     as_json: bool = False,
+    sort: str | None = None,
+    order: str | None = None,
 ) -> None:
     """List saved acquisition configurations."""
-    names = list_config_names(directory)
+    names = list_config_names(directory, sort=sort, order=order)
 
     if as_json:
         print(
@@ -159,7 +166,11 @@ def list_acquisition_configs(
         )
         return
 
-    render_inventory(console, configuration_inventory(directory, names))
+    render_inventory(
+        console,
+        configuration_inventory(directory, names),
+        ordering=NAMES.resolve(sort, order).description,
+    )
 
 
 def execute_acquisition(

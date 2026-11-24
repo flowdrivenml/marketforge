@@ -10,12 +10,14 @@ from pydantic import BaseModel, ConfigDict
 
 from forge.cli.commands.markets import emit
 from forge.cli.environment import add_database_options
+from forge.cli.sorting import add_sorting
 from forge.historical.archives.config import load_acquisition
 from forge.historical.archives.planning import plan
 from forge.orchestration import run_delete
 from forge.orchestration.registry import list_index
 from forge.orchestration.registry_maintenance import MaintenanceEvidence, index_legacy, reconcile
 from forge.orchestration.runs import inspect_run_evidence
+from forge.orchestration.sorting import RUNS
 from forge.shared.config.library import resolve_config_file
 from forge.shared.database.backup import backup, restore
 from forge.shared.database.connection import database_connection, database_dsn, database_purpose
@@ -120,12 +122,21 @@ def configure_runs(parser: argparse.ArgumentParser) -> None:
         if action in {"list", "index-legacy", "reconcile"}:
             child.add_argument("--offset", type=int, default=0)
         if action == "list":
+            add_sorting(
+                child,
+                RUNS,
+                notes="time is the recorded run start. Sorting is global before paging.",
+            )
             child.add_argument(
                 "--operation", choices=[str(operation) for operation in RunOperation]
             )
             for key in ("action", "status", "recipe", "start", "end"):
                 child.add_argument(f"--{key}")
         elif action in {"index-legacy", "reconcile"}:
+            if action == "reconcile":
+                child.add_argument(
+                    "--run-id", help="Review the latest attempt of one exact indexed run."
+                )
             mode = child.add_mutually_exclusive_group()
             mode.add_argument(
                 "--dry-run", action="store_true", help="Preview without writing (default)."
@@ -213,7 +224,14 @@ def run_history(
         names = ("operation", "action", "status", "recipe", "start", "end")
         filters = {name: getattr(arguments, name) for name in names}
         value = asyncio.run(
-            list_index(context.paths, limit=options.limit, offset=arguments.offset, **filters)
+            list_index(
+                context.paths,
+                limit=options.limit,
+                offset=arguments.offset,
+                sort=arguments.sort,
+                order=arguments.order,
+                **filters,
+            )
         )
         if console is not None:
             view = run_views.inventory(
@@ -221,12 +239,16 @@ def run_history(
                 tuple((name, val) for name, val in filters.items() if val is not None),
                 environment,
                 options.limit,
+                sort=arguments.sort,
+                order=arguments.order,
             )
             run_terminal.render_inventory(console, view, environment)
     elif action in {"index-legacy", "reconcile"}:
         service = index_legacy if action == "index-legacy" else reconcile
         collected = MaintenanceEvidence() if console is not None else None
-        extra = {"evidence": collected} if collected is not None else {}
+        extra: dict[str, Any] = {"evidence": collected} if collected is not None else {}
+        if action == "reconcile":
+            extra["run_id"] = arguments.run_id
         if arguments.apply:
             with WorkspaceOwnership(context.paths):
                 value = asyncio.run(
@@ -288,6 +310,13 @@ def run_history(
                 )
     if options.as_json:
         emit(context, value, True)
+    if action == "reconcile" and arguments.run_id is not None:
+        return int(
+            any(
+                item["status"] not in {"reconciled", "already_reconciled", "retained_outcome"}
+                for item in value["outcomes"]
+            )
+        )
     return 0
 
 

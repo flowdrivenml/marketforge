@@ -41,7 +41,7 @@ SUMMARIES = {
     "normalize": "Prepare and normalize historical trades and order-book data.",
     "merge": "Combine normalized streams into ordered datasets.",
     "convert": "Convert historical datasets into a target quote currency.",
-    "pipeline": "Run acquisition, normalization and merge from one recipe.",
+    "pipeline": "Run acquisition, normalization, merge and optional conversion from one recipe.",
     "datasets": "Discover and inspect registered historical datasets.",
     "storage": "Inspect managed raw archives, coverage and storage state.",
     "markets": "Explore exchange instruments, observations and rankings.",

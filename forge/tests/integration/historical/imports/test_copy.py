@@ -30,7 +30,7 @@ def config(root: Path) -> ImportConfig:
         files=["record.bin"],
         data_type="trades",
         identity=ImportIdentity(
-            exchange="external", market_category="spot", instrument_type="spot", symbol="CUSTOM"
+            exchange="bybit", market_category="spot", instrument_type="spot", symbol="CUSTOM"
         ),
         specifications=HistoricalSpecs(
             as_of=datetime(2026, 1, 1, tzinfo=UTC),
@@ -128,12 +128,23 @@ async def test_publication_recovers_through_fresh_connection_without_copying(
     finally:
         async with testing_connection(dsn) as c, c.transaction():
             await c.execute(
+                """DELETE FROM historical.raw_bindings WHERE local_archive_id IN (
+                   SELECT l.id FROM historical.local_archives l
+                   JOIN historical.raw_interpretations a ON a.id=l.external_archive_id
+                   JOIN historical.raw_sources s ON s.id=a.external_source_id WHERE s.source_key=%s)""",
+                (selected.source_key,),
+            )
+            await c.execute(
                 """DELETE FROM historical.local_archives WHERE external_archive_id IN
                 (SELECT a.id FROM historical.external_archives a JOIN historical.external_sources s ON s.id=a.external_source_id WHERE s.source_key=%s)""",
                 (selected.source_key,),
             )
             await c.execute(
                 "DELETE FROM historical.external_archives WHERE external_source_id IN (SELECT id FROM historical.external_sources WHERE source_key=%s)",
+                (selected.source_key,),
+            )
+            await c.execute(
+                "DELETE FROM historical.raw_objects WHERE raw_source_id IN (SELECT id FROM historical.raw_sources WHERE source_key=%s)",
                 (selected.source_key,),
             )
             await c.execute(

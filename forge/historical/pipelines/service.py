@@ -6,18 +6,25 @@ import json
 import os
 import shutil
 import tempfile
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from rich.text import Text
+
 from forge.historical.archives.operation import OperationReport, run_acquisition
 from forge.historical.archives.progress import ProgressSnapshot
 from forge.historical.archives.selection import ArchiveSelection, ArchiveSelectionError
 from forge.historical.archives.storage.files import contained
-from forge.historical.engine.managed import checksum, resolve
-from forge.historical.engine.process import PreparationObserver, joined_io
+from forge.historical.conversion import recipes as conversion_recipes
+from forge.historical.conversion import service as conversion
+from forge.historical.conversion.evidence import inspect_publication_source
+from forge.historical.conversion.execution import execute as execute_conversion
+from forge.historical.engine.managed import checksum, inventory, resolve
+from forge.historical.engine.process import EngineRunner, PreparationObserver, joined_io, supervise
 from forge.historical.engine.runtime import compose_pipeline
 from forge.historical.merge import service as merge
 from forge.historical.normalization import execution as normalize
@@ -34,13 +41,22 @@ from forge.historical.normalization.batch import (
 from forge.historical.normalization.service import default_output_paths, write_job
 from forge.historical.pipelines.config import PipelineRecipe, load_recipe
 from forge.historical.pipelines.progress import Activity, PipelineSnapshot, StageSnapshot
+from forge.historical.pipelines.terminal import (
+    STAGE_LABELS,
+    EngineRequest,
+    StageWindows,
+    WindowCompletion,
+    WindowLost,
+    WindowUnavailable,
+)
 from forge.orchestration.artifacts import RunArtifacts
-from forge.orchestration.registry import begin, complete_call, show_index
+from forge.orchestration.registry import begin, complete_call, show_index, status_of
 from forge.shared.config.models import AppSettings
 from forge.shared.database.connection import (
     DatabaseError,
     database_connection,
     database_dsn,
+    database_environment,
     database_purpose,
     pinned_registry,
     require_registry,
@@ -49,9 +65,8 @@ from forge.shared.database.connection import (
 from forge.shared.errors import MarketForgeError
 from forge.shared.identity import RunOperation, new_attempt_id, new_run_id, parse_run_id
 from forge.shared.paths import ProjectPaths
+from forge.shared.terminal.acquisition import AcquisitionDisplay
 from forge.startup.context import ApplicationContext
-
-STAGES = ("acquire", "normalize", "merge")
 
 
 class Blocked(MarketForgeError):
@@ -95,7 +110,10 @@ async def registry_identity(paths: ProjectPaths) -> str:
 
 
 def artifacts_for(paths: ProjectPaths, run_id: str) -> RunArtifacts:
-    identity = parse_run_id(run_id)
+    try:
+        identity = parse_run_id(run_id)
+    except ValueError as error:
+        raise Blocked("Expected a retained pipeline run ID.") from error
     if identity.operation not in {None, RunOperation.PIPELINE}:
         raise Blocked("Expected a pipeline run reference.")
     return RunArtifacts.for_run(paths, identity)
@@ -106,6 +124,45 @@ def status(paths: ProjectPaths, run_id: str) -> dict[str, Any]:
     if report.get("kind") != "historical_pipeline" or report.get("schema_version") != 1:
         raise Blocked("Expected a version 1 historical pipeline report.")
     return report
+
+
+def retained_recipe_metadata(paths: ProjectPaths, report: dict[str, Any]) -> dict[str, Any]:
+    """Read the fingerprinted resolved plan for human inspection when available."""
+    if not report.get("resolved_sha256"):
+        return {}
+    try:
+        artifacts = artifacts_for(paths, report["run_id"])
+        return read(retained(artifacts.resolved_plan, report["resolved_sha256"])).get("recipe", {})
+    except (MarketForgeError, OSError, KeyError):
+        return {}
+
+
+async def execution_index(paths: ProjectPaths, result: dict[str, Any]) -> str:
+    """Inspect bookkeeping without replacing the retained processing outcome."""
+    if result.get("execution_registry_status") == "finalized":
+        return "Finalized"
+    if result.get("execution_registry_warning"):
+        return "reconciliation required"
+    purpose = result.get("environment")
+    if purpose not in {"testing", "production"} or not result.get("registry_id"):
+        return "Registry identity unavailable"
+    try:
+        with (
+            database_environment(testing=purpose == "testing"),
+            pinned_registry(result["registry_id"]),
+        ):
+            record = await show_index(paths, result["run_id"])
+    except (MarketForgeError, OSError):
+        return "Registry unavailable"
+    if record is None:
+        return "Run absent from the selected index"
+    if record["status"] == "running" and result["state"] != "running":
+        return "reconciliation required"
+    if record["status"] == "running":
+        return "Running"
+    if record["status"] != status_of(result, record["action"]):
+        return f"Indexed · {record['status']} (differs from retained processing state)"
+    return f"Finalized · {record['status']}"
 
 
 class PipelineRun:
@@ -123,19 +180,32 @@ class PipelineRun:
         self.recipe = recipe
         self.acquisition: ProgressSnapshot | None = None
         self.interrupting = False
+        self.windows: StageWindows | None = None
+        self.stage_window = False
+        self.window_stage: str | None = None
+        self.window_completion: WindowCompletion | None = None
+        self.window_task: asyncio.Task[dict[str, Any]] | None = None
+        self.acquisition_display: AcquisitionDisplay | None = None
         self.historical = artifacts.root / "historical"
 
     def snapshot(self) -> PipelineSnapshot:
-        report = self.report
+        report = read(self.artifacts.report) if self.window_stage == "acquire" else self.report
         stages: list[StageSnapshot] = []
-        for name in STAGES:
-            stage = self.stage(name)
+        for name, stage in report["stages"].items():
             counts = stage.get("result", {}).get("counts", {})
             verified = (
                 (counts["verified_publications"], counts["requested"])
                 if ("verified_publications" in counts and "requested" in counts)
                 else None
             )
+            terminal = "Closed" if stage.get("terminal_outcome") else None
+            if self.windows and self.window_stage == name:
+                launcher = self.windows.launcher.name
+                terminal = (
+                    f"{launcher} window"
+                    if self.windows.started_stage == name
+                    else f"Opening {launcher}"
+                )
             stages.append(
                 StageSnapshot(
                     name,
@@ -145,6 +215,7 @@ class PipelineRun:
                     stage.get("finished_at"),
                     stage.get("summary", ""),
                     verified,
+                    terminal,
                 )
             )
         return PipelineSnapshot(
@@ -158,7 +229,7 @@ class PipelineRun:
             report["started_at"],
             report.get("finished_at"),
             tuple(stages),
-            report.get("active_stage"),
+            self.window_stage or report.get("active_stage"),
             tuple(
                 Activity(item["stage"], item["phase"], item["state"]) for item in report["recent"]
             ),
@@ -196,6 +267,10 @@ class PipelineRun:
             stage.pop("finished_at", None)
         stage.setdefault("started_at", timestamp)
         stage.update(phase=phase, state=state, **evidence)
+        if self.stage_window and (name != "acquire" or state != "running"):
+            self.context.error_console.print(
+                Text(f"{STAGE_LABELS[name]} · {phase.replace('_', ' ')} · {state}")
+            )
         self.report["active_stage"] = name
         event = {"timestamp": timestamp, "stage": name, "phase": phase, "state": state}
         activity = self.report["recent"]
@@ -234,7 +309,9 @@ class PipelineRun:
                 raise Blocked(f"Profile changed during the snapshot: {source}")
             snapshots[str(target)] = item["sha256"]
         engines: dict[str, Any] = {}
-        for name in ("normalize", "merge"):
+        installations = {item["target"]: item for item in inventory(self.paths)["targets"]}
+        targets = [name for name in self.recipe.stage_order() if name != "acquire"]
+        for name in targets:
             source = resolve(self.paths, name)
             target = self.artifacts.root / source.name
             digest = checksum(source)
@@ -242,12 +319,22 @@ class PipelineRun:
             target.chmod(0o755)
             if checksum(target) != digest:
                 raise Blocked(f"Managed {name} executable changed during the snapshot.")
-            engines[name] = {"path": str(target), "sha256": digest}
+            engines[name] = {
+                "path": str(target),
+                "sha256": digest,
+                "monitor_tui": "monitor-tui"
+                in installations[name]["installation"].get("features", []),
+            }
         runtime = compose_pipeline(
             self.paths,
             self.historical,
-            {name: Path(item["path"]) for name, item in engines.items()},
+            {name: Path(engines[name]["path"]) for name in ("normalize", "merge")},
         )
+        if self.recipe.convert is not None:
+            source = self.paths.runtime_config("convert")
+            data = source.read_bytes()
+            conversion.load_runtime(source, data)
+            (self.historical / "convert.toml").write_bytes(data)
         for name in engines:
             path = self.historical / f"{name}.toml"
             snapshots[str(path)] = checksum(path)
@@ -364,6 +451,8 @@ class PipelineRun:
 
     def observe_acquisition(self, snapshot: ProgressSnapshot) -> None:
         self.acquisition = snapshot
+        if self.acquisition_display:
+            self.acquisition_display.update(snapshot)
 
     def save_acquisition_reference(self, child: Path) -> None:
         stage = self.stage("acquire")
@@ -577,6 +666,8 @@ class PipelineRun:
             executable=self.engine(name),
             lifecycle=self.on_engine(name),
             expected_raw=expected,
+            tui=self.stage_monitor(name),
+            engine_runner=self.engine_runner(name),
         )
         return self.finish(name, result)
 
@@ -670,11 +761,241 @@ class PipelineRun:
             historical=self.historical,
             executable=self.engine(name),
             lifecycle=self.on_engine(name),
+            tui=self.stage_monitor(name),
+            engine_runner=self.engine_runner(name),
         )
         if original_intent := result.get("execution_intent_reference"):
             stage["execution_intent"] = original_intent
             stage["execution_intent_sha256"] = checksum(Path(original_intent))
         self.finish(name, result)
+
+    def stage_monitor(self, name: str) -> bool:
+        return self.windows is not None and self.report["engines"][name].get("monitor_tui", False)
+
+    async def convert(self) -> None:
+        name = "convert"
+        stage = self.stage(name)
+        options = self.recipe.convert
+        assert options is not None
+        publications = self.stage("merge")["result"].get("publications", {})
+        if len(publications) != 1:
+            raise Blocked("Conversion requires exactly one registered upstream merge publication.")
+        publication_id = next(iter(publications.values()))["publication_id"]
+        self.transition(name, "prepare", "running")
+        if "prepared" in stage:
+            source = self.inspect_preparation(stage)
+        else:
+            binding = await inspect_publication_source(self.paths, publication_id)
+            recipe = conversion_recipes.Recipe(
+                version=1,
+                source=binding,
+                interval=binding.interval,
+                selection=conversion_recipes.Selection(whole_publication=True),
+                conversion=conversion_recipes.Policy.model_validate(
+                    options.model_dump(
+                        exclude={"reference_stream_ids", "reference_publication_id", "resources"}
+                    )
+                ),
+                reference_stream_ids=options.reference_stream_ids,
+                reference_publication_id=options.reference_publication_id,
+                resources=options.resources,
+            )
+            path = self.historical / "conversion-recipe.toml"
+            path.write_text(
+                conversion_recipes.dumps(recipe.model_dump(mode="json", exclude_none=True))
+            )
+            result = await conversion.prepare(
+                self.paths,
+                path,
+                executable=self.engine(name),
+                runtime_path=self.historical / "convert.toml",
+                lifecycle=lambda phase: self.transition(name, phase, "running"),
+            )
+            if result["status"] == "complete" and result.get("disposition") == "reused":
+                self.finish_conversion(result)
+                return
+            if result.get("compatibility") != "validated":
+                raise Blocked(
+                    f"Conversion preparation did not validate; inspect {result.get('report_path')}."
+                )
+            self.save_preparation(stage, result, "job_path")
+            source = self.inspect_preparation(stage)
+        self.new_attempt(name).mkdir(parents=True)
+        result = await execute_conversion(
+            self.paths,
+            source,
+            executable=self.engine(name),
+            tui=self.stage_monitor(name),
+            engine_runner=self.engine_runner(name),
+            lifecycle=lambda phase: self.transition(name, phase, "running"),
+        )
+        self.finish_conversion(result)
+
+    def finish_conversion(self, result: dict[str, Any]) -> None:
+        stage = self.stage("convert")
+        stage["result"] = result
+        if stage.get("attempts"):
+            stage["attempts"][-1]["execution_report"] = result.get("report_path")
+        self.save()
+        if result["status"] == "interrupted":
+            raise asyncio.CancelledError
+        if result["status"] != "complete":
+            jobs = result.get("jobs", ())
+            detail = next((job["error"] for job in jobs if job.get("error")), None)
+            raise Blocked(
+                detail or f"Conversion did not complete; inspect {result.get('report_path')}."
+            )
+        self.transition(
+            "convert",
+            "index",
+            "complete",
+            summary="Reused verified output"
+            if result.get("disposition") == "reused"
+            else "Verified output indexed",
+        )
+
+    async def acquire_with_display(self) -> ArchiveSelection:
+        with AcquisitionDisplay(
+            self.context.error_console,
+            download=True,
+            name=self.report["name"],
+            interval=self.recipe.interval,
+        ) as display:
+            self.acquisition_display = display
+            return await self.acquire()
+
+    async def acquire_stage(self) -> ArchiveSelection:
+        windows = self.windows
+        if windows is None or self.stage("acquire")["state"] == "complete":
+            return await self.acquire()
+        self.window_stage = "acquire"
+        self.report["active_stage"] = "acquire"
+        try:
+            outcome = await windows.dispatch(
+                self.report,
+                self.artifacts.report,
+                "acquire",
+                save=self.save,
+            )
+        except WindowUnavailable as error:
+            if not windows.fallback:
+                raise Blocked(str(error)) from error
+            windows.diagnostic(f"{error} Continuing inline.")
+            self.windows = None
+            outcome = None
+        finally:
+            self.window_stage = None
+            self.report = status(self.paths, self.report["run_id"])
+        if outcome is not None:
+            self.stage("acquire")["terminal_outcome"] = outcome["outcome_path"]
+            self.save()
+            if outcome["state"] == "blocked":
+                raise Blocked(outcome["error"])
+            if outcome["state"] == "interrupted":
+                raise asyncio.CancelledError
+            if outcome["state"] == "failed":
+                raise MarketForgeError(outcome["error"])
+            if self.stage("acquire")["state"] != "complete":
+                raise Blocked("The acquisition worker did not retain a complete stage checkpoint.")
+        return await self.acquire()
+
+    def engine_runner(self, name: str) -> EngineRunner | None:
+        windows = self.windows
+        if windows is None:
+            return None
+
+        async def run(argv: list[str], root: Path, directory: Path, tui: bool) -> tuple[int, bool]:
+            self.window_stage = name
+            completion = WindowCompletion(
+                asyncio.get_running_loop().create_future(), asyncio.Event()
+            )
+            self.window_completion = completion
+            request = EngineRequest(
+                argv, str(directory), checksum(directory / "execution-intent.json"), tui
+            )
+            self.window_task = task = asyncio.create_task(
+                windows.dispatch(
+                    self.report,
+                    self.artifacts.report,
+                    name,
+                    save=self.save,
+                    engine=request,
+                    completion=completion,
+                )
+            )
+            try:
+                done, _ = await asyncio.wait(
+                    {completion.result, task}, return_when=asyncio.FIRST_COMPLETED
+                )
+                result = task.result() if task in done else completion.result.result()
+                self.stage(name)["terminal_outcome"] = result["outcome_path"]
+                self.save()
+                return result["exit_code"], result["interrupted"]
+            except WindowUnavailable as error:
+                self.window_task = None
+                self.window_completion = None
+                self.window_stage = None
+                if not windows.fallback:
+                    # The existing engine services release a claim on launch failure.
+                    raise OSError(str(error)) from error
+                windows.diagnostic(f"{error} Continuing inline.")
+                self.windows = None
+                return await supervise(argv, root, directory)
+            except asyncio.CancelledError:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+                if not completion.result.done():
+                    raise WindowLost(
+                        "Stage interrupted without a retained worker outcome. Resume to reconcile its work claim."
+                    ) from None
+                self.stage(name)["terminal_outcome"] = completion.result.result()["outcome_path"]
+                self.save()
+                return 130, True
+
+        return run
+
+    async def close_stage_window(self) -> None:
+        task, completion = self.window_task, self.window_completion
+        try:
+            if task is None or completion is None or task.cancelled():
+                return
+            completion.release.set()
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                with suppress(WindowUnavailable, WindowLost, asyncio.CancelledError):
+                    await task
+                raise
+            except (WindowUnavailable, WindowLost):
+                # The execution boundary has already checked the worker outcome.
+                pass
+        finally:
+            self.window_task = None
+            self.window_completion = None
+            self.window_stage = None
+
+    async def execute_engine_stage[T](self, name: str, call: Callable[[], Awaitable[T]]) -> T:
+        try:
+            return await call()
+        except BaseException as error:
+            if self.window_stage == name:
+                state = (
+                    "interrupted"
+                    if isinstance(error, (asyncio.CancelledError, KeyboardInterrupt))
+                    else "blocked"
+                    if isinstance(error, (Blocked, DatabaseError))
+                    else "failed"
+                )
+                self.transition(
+                    name,
+                    self.stage(name).get("phase", "execute"),
+                    state,
+                    summary=str(error) or state,
+                )
+            raise
+        finally:
+            await self.close_stage_window()
 
     async def run(self, *, stop: bool = False) -> dict[str, Any]:
         identity = parse_run_id(self.report["run_id"])
@@ -684,6 +1005,13 @@ class PipelineRun:
             and any(stage["state"] != "pending" for stage in self.report["stages"].values())
         ):
             raise Blocked("The pipeline requires its original database environment and identity.")
+        if self.report.get("state") == "complete":
+            if prior is None:
+                raise Blocked(
+                    "The original registry identity is unavailable for this completed pipeline."
+                )
+            require_registry(self.report, await registry_identity(self.paths))
+            return self.report
         # A prior registration may have committed just before the initial report update.
         indexed = (
             await show_index(self.paths, str(identity))
@@ -723,15 +1051,25 @@ class PipelineRun:
             for path, digest in self.report["settings_files"].items():
                 retained(Path(path), digest)
             with pinned_registry(identity):
-                selection = await self.acquire()
-                files = await self.normalize(selection, stop=stop)
+                selection = await self.acquire_stage()
+                files = await self.execute_engine_stage(
+                    "normalize",
+                    lambda: self.normalize(selection, stop=stop),
+                )
                 if files is not None:
-                    await self.merge(files)
+                    await self.execute_engine_stage("merge", lambda: self.merge(files))
+                    if (
+                        self.recipe.convert is not None
+                        and self.stage("convert")["state"] != "complete"
+                    ):
+                        await self.execute_engine_stage("convert", self.convert)
             self.report["state"] = "stopped" if stop else "complete"
         except (asyncio.CancelledError, KeyboardInterrupt):
             self.end_error(
                 "interrupted", "Interrupted. Resume this run to reconcile any committed output."
             )
+        except WindowLost as error:
+            self.end_error("interrupted" if self.interrupting else "failed", str(error))
         except (Blocked, ArchiveSelectionError, DatabaseError) as error:
             self.end_error("blocked", str(error))
         except (MarketForgeError, OSError, ValueError, KeyError, TypeError) as error:
@@ -745,7 +1083,7 @@ class PipelineRun:
         self.report.update(state=state, error=message)
         name = self.report.get("active_stage")
         if name is not None and self.stage(name)["state"] != "complete":
-            self.transition(name, self.stage(name)["phase"], state)
+            self.transition(name, self.stage(name).get("phase", "terminal"), state)
 
 
 def new(
@@ -779,7 +1117,7 @@ def new(
         "event_log": str(artifacts.events),
         "submitted_sha256": hashlib.sha256(submitted).hexdigest(),
         "resolved_sha256": checksum(artifacts.resolved_plan),
-        "stages": {stage: {"state": "pending", "phases": {}} for stage in STAGES},
+        "stages": {stage: {"state": "pending", "phases": {}} for stage in recipe.stage_order()},
         "recent": [],
     }
     pipeline = PipelineRun(context, artifacts, report, recipe)

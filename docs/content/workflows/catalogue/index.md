@@ -15,5 +15,5 @@ The linked files use an AAPL-shaped equity identity at a fictional venue and two
 
 - [Exchange and instrument](exchanges-and-instruments.md)
 - [Current and historical specifications](specifications.md)
-- [Trades and L2 depth profiles](profiles.md)
+- [Trades and L2 depth profiles](../normalization/author-profile.md)
 - [Register external archives](../acquisition/external-data.md)

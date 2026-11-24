@@ -6,12 +6,13 @@ import os
 import shlex
 import shutil
 import subprocess
-from contextlib import nullcontext
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager, nullcontext
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import ValidationError
@@ -1168,9 +1169,7 @@ def test_new_argument_diagnostics(paths: ProjectPaths, capsys: pytest.CaptureFix
     assert "--target-quote" in json.loads(capsys.readouterr().out)["error"]["message"]
 
 
-def publication_declaration(
-    paths: ProjectPaths, source: dict[str, Any]
-) -> recipes.PublicationSource:
+def publication_declaration(source: dict[str, Any]) -> recipes.PublicationSource:
     root = Path(source["root"])
     return recipes.PublicationSource(
         registry_id="fb19f358-fcab-4bf7-98ed-5835ff24b455",
@@ -1303,6 +1302,125 @@ def test_publication_preparation_keeps_standalone_job_and_work_key(
         work_keys.append(convert_key(binding.registry_id, key, job.model_dump(mode="json")))
     assert work_keys[0] == work_keys[1]
     _, collection, _ = service.retained_collection(Path(via_publication["job_path"]))
-    assert collection["pins"]["publication_source"] == binding.model_dump()
+    assert collection["sources"][0]["publication_source"] == binding.model_dump()
     assert "upstream_snapshot" not in collection["pins"]
     assert not Path(via_publication["job_path"]).with_name("upstream.toml").exists()
+    Path(via_publication["artifacts"]["catalog_snapshot"]["path"]).unlink()
+    assert (
+        service.validate_reference(paths, Path(via_publication["job_path"]))["validation_layers"][
+            "engine"
+        ]
+        == "passed"
+    )
+    canonical = {
+        "publication": {"manifest": "/fixture/canonical/manifest.json"},
+        "registration": "not_available",
+        "status": "complete",
+        "execution": "complete",
+        "compatibility": "validated",
+        "result_path": "/fixture/results/execution-result.json",
+    }
+    monkeypatch.setattr(
+        execution.WorkIndex, "peek", AsyncMock(return_value={work_keys[0]: ("old", {}, canonical)})
+    )
+    verify = AsyncMock(return_value=canonical["publication"])
+    monkeypatch.setattr(execution, "verify_reused_conversion", verify)
+    with database_environment(testing=True):
+        reused = asyncio.run(service.prepare(paths, direct))
+    assert reused["disposition"] == "reused"
+    assert reused["execution"] == "not_started"
+    assert reused["jobs"][0]["publication"] == canonical["publication"]
+    verify.assert_awaited_once()
+    assert not (paths.datasets_dir / "converted").exists()
+
+    connection = MagicMock()
+    connection.execute = AsyncMock()
+
+    @asynccontextmanager
+    async def connect(_: str) -> AsyncGenerator[registry.Connection]:
+        yield cast(registry.Connection, connection)
+
+    root = Path(source["root"])
+    record = registry.Publication(
+        binding.registry_publication_id,
+        binding.engine_publication_id,
+        "namespace",
+        root,
+        root / "manifest.json",
+        {},
+    )
+    recheck = AsyncMock(return_value=record)
+    monkeypatch.setattr(execution, "database_dsn", fixture_dsn)
+    monkeypatch.setattr(execution, "database_connection", connect)
+    monkeypatch.setattr(execution, "resolve", resolve_binary)
+    monkeypatch.setattr(execution, "resolve_binding", recheck)
+    monkeypatch.setattr(
+        execution, "selected_registry_id", AsyncMock(return_value=binding.registry_id)
+    )
+    monkeypatch.setattr(execution, "require_live_prepared_inputs", AsyncMock())
+    monkeypatch.setattr(execution.WorkIndex, "recover_committed", AsyncMock())
+    monkeypatch.setattr(
+        execution.WorkIndex,
+        "acquire",
+        AsyncMock(return_value={work_keys[0]: ("old", {}, canonical)}),
+    )
+    with database_environment(testing=True):
+        executed = asyncio.run(execution.execute(paths, Path(via_publication["job_path"])))
+    recheck.assert_awaited_once_with(connection, binding, check_files=True)
+    assert executed["disposition"] == "reused"
+    assert executed["jobs"][0]["engine_execution_skipped"]
+    assert not (paths.datasets_dir / "converted").exists()
+
+
+def fixture_dsn(_: Path) -> str:
+    return "fixture"
+
+
+@pytest.mark.asyncio
+async def test_publication_discovery_requires_normalized_parent_verification(
+    paths: ProjectPaths,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = publication(paths, combined=False)
+    write_trade_publication(source)
+    binding = publication_declaration(source)
+    recipe_path = Path(
+        str(recipes.create_bound(paths, "direct", binding, binding.interval, "USDT")["path"])
+    )
+    recipe, declaration, _ = recipes.load_recipe(paths, recipe_path, retain=False)
+    root = Path(source["root"])
+    record = registry.Publication(
+        binding.registry_publication_id,
+        binding.engine_publication_id,
+        "namespace",
+        root,
+        root / "manifest.json",
+        {"manifest": json.loads((root / "manifest.json").read_bytes())},
+    )
+    connection = MagicMock()
+    connection.execute = AsyncMock()
+
+    @asynccontextmanager
+    async def connect(_: str) -> AsyncGenerator[registry.Connection]:
+        yield cast(registry.Connection, connection)
+
+    monkeypatch.setattr(discovery, "database_connection", connect)
+    monkeypatch.setattr(discovery, "database_dsn", fixture_dsn)
+    resolve = AsyncMock(return_value=record)
+    monkeypatch.setattr(discovery, "resolve_binding", resolve)
+    monkeypatch.setattr(
+        discovery, "prove_source", AsyncMock(side_effect=AssertionError("No upstream TOML"))
+    )
+    parent_rows = [{"id": 21, "instrument_namespace": "namespace"}]
+    select_parents = AsyncMock(return_value=parent_rows)
+    monkeypatch.setattr(discovery, "parents", select_parents)
+    verify = AsyncMock(return_value=source)
+    monkeypatch.setattr(discovery, "verify_publication", verify)
+    result = await discovery.discover(paths, recipe, declaration)
+    resolve.assert_awaited_once_with(connection, binding)
+    select_parents.assert_awaited_once_with(connection, record)
+    verify.assert_awaited_once_with(connection, paths, record, parent_rows)
+    assert result["sources"][0]["lineage"] == {"selection": "bound_registry_publication"}
+    verify.side_effect = MarketForgeError("Normalized parent fingerprint changed")
+    with pytest.raises(MarketForgeError, match="Normalized parent fingerprint changed"):
+        await discovery.discover(paths, recipe, declaration)

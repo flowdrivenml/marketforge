@@ -10,8 +10,10 @@ from textual.message import Message
 from textual.widgets import DataTable
 
 from forge.orchestration.run_summary import when
+from forge.shared.terminal.palette import CYAN, FG, GREEN, RED, YELLOW
 from forge.tui.actions import Action, Values
 from forge.tui.controller import document
+from forge.tui.design import SECONDARY
 
 Kind = Literal["publication", "file", "stream", "archive", "instrument", "recipe", "run", "other"]
 
@@ -99,15 +101,30 @@ def status(value: object) -> Text:
     label = display(value)
     state = label.removeprefix("Last recorded ").lower()
     color = (
-        "#9ece6a"
-        if state in {"complete", "verified", "published", "registered", "installed", "ready"}
-        else "#f7768e"
-        if state in {"failed", "corrupt", "missing", "error"}
-        else "#e0af68"
+        GREEN
+        if state
+        in {
+            "complete",
+            "completed",
+            "valid",
+            "validated",
+            "verified",
+            "reused",
+            "published",
+            "registered",
+            "installed",
+            "ready",
+            "rust validated",
+        }
+        else RED
+        if state in {"failed", "corrupt", "missing", "error", "invalid"}
+        else YELLOW
         if state in {"blocked", "partial", "stale", "interrupted", "stopped", "pending"}
-        else "#7dcfff"
+        else CYAN
         if state in {"running", "executing", "interrupting"}
-        else "#c0caf5"
+        else SECONDARY
+        if state in {"waiting", "skipped", "unknown", "unavailable", "—"}
+        else FG
     )
     return Text(label, style=color, no_wrap=True, overflow="ellipsis")
 
@@ -163,14 +180,17 @@ def columns(view: str, name: str, kind: str, state: str, value: object) -> tuple
             c("Recorded size", r.get("bytes_written"), 13, 0, True),
             c(
                 "Observed UTC",
-                interval(r.get("first_observed_ns"), r.get("last_observed_ns")),
+                interval(
+                    r.get("first_observed_ns", r.get("start_timestamp_ns")),
+                    r.get("last_observed_ns", r.get("end_timestamp_ns")),
+                ),
                 24,
                 1,
             ),
             c("Publication", r.get("engine_dataset_id"), 20, 1),
             c("Evidence", "Registered", 10, 1, state=True),
         )
-    if view == "Primary files":
+    if view in {"Files", "Primary files"}:
         return (
             c("Primary file", r.get("primary_file", name), 36),
             c("Content", r.get("data_type", kind), 10),
@@ -185,21 +205,45 @@ def columns(view: str, name: str, kind: str, state: str, value: object) -> tuple
             c("Rows", document(r.get("summary")).get("rows"), 12, 2, True),
             c("Bytes", document(r.get("summary")).get("size_bytes"), 12, 2, True),
         )
+    if view == "Timelines":
+        return (
+            c("Instrument", name, 18),
+            c("Exchange", r.get("exchange"), 12),
+            c("Stage", r.get("operation"), 12),
+            c("Publications", r.get("publication_count"), 13, 0, True),
+            c(
+                "Observed UTC",
+                interval(r.get("start_timestamp_ns"), r.get("end_timestamp_ns")),
+                25,
+                1,
+            ),
+            c("Status", state, 12, state=True),
+        )
+    if view == "Indexed":
+        return (
+            c("Operation", r.get("operation"), 14),
+            c("Action", r.get("action"), 10),
+            c("Status", state, 12, state=True),
+            c("Recipe", r.get("recipe"), 16),
+            c("Started UTC", r.get("started_at"), 20, 1),
+            c("Duration", r.get("duration_seconds"), 12, 1),
+            c("Run ID", name, 28, 1),
+        )
     if view == "Converted":
         return (
             c("Output", name, 24),
             c("State", state, 18, state=True),
             c("Registration", r.get("registration"), 16),
             c("Physical rows", document(r.get("publication")).get("events"), 15, 1, True),
-            c("Stream kinds", r.get("content_type"), 16, 1),
+            c("Stream kinds", r.get("content_type", r.get("data_type")), 16, 1),
             c(
                 "Observed UTC",
                 interval(r.get("first_observed_ns"), r.get("last_observed_ns")),
                 22,
                 1,
             ),
-            c("Recorded size", r.get("bytes_written"), 13, 1, True),
-            c("Manifest", r.get("manifest"), 35, 2),
+            c("Recorded size", r.get("bytes_written", r.get("size_bytes")), 13, 1, True),
+            c("Manifest", r.get("manifest", r.get("manifest_path")), 35, 2),
         )
     if view in {"Raw", "Raw storage"}:
         return (
@@ -314,9 +358,18 @@ def visible(cells: tuple[Cell, ...], width: int) -> tuple[Cell, ...]:
 class Results(DataTable[Text]):
     """Single-line resource table with keyboard and pointer selection."""
 
+    def on_mount(self) -> None:
+        self.zebra_stripes = True
+        self.cursor_foreground_priority = "renderable"
+
     recipe_links = False
 
     class ContextRequested(Message):
+        def __init__(self, identity: str) -> None:
+            super().__init__()
+            self.identity = identity
+
+    class BasketRequested(Message):
         def __init__(self, identity: str) -> None:
             super().__init__()
             self.identity = identity
@@ -330,18 +383,28 @@ class Results(DataTable[Text]):
                 self.move_cursor(row=row)
                 self.post_message(self.ContextRequested(key.value))
                 event.stop()
+                event.prevent_default()
                 return
-            if self.recipe_links and event.button == 1:
+            if event.button == 1 and key.value is not None:
                 self.move_cursor(row=row)
-                if self.ordered_columns[column].key.value == "Recipe":
+                if column == 0:
+                    self.post_message(self.BasketRequested(key.value))
+                elif event.chain == 2 or (
+                    self.recipe_links and self.ordered_columns[column].key.value == "Recipe"
+                ):
                     self.post_message(self.RowSelected(self, row, key))
                 event.stop()
+                event.prevent_default()
                 return
 
-    def mark(self, previous: str | None, selected: str | None) -> None:
+    def mark(self, previous: str | None, selected: str | None, basket: set[str]) -> None:
         for key in dict.fromkeys(x for x in (previous, selected) if x is not None):
             if any(row.value == key for row in self.rows):
-                self.update_cell(key, "mark", Text("›" if key == selected else "", style="#7dcfff"))
+                self.update_cell(
+                    key,
+                    "mark",
+                    Text("✓" if key in basket else "›" if key == selected else "", style=CYAN),
+                )
 
 
 def cell_text(cell: Cell) -> Text:

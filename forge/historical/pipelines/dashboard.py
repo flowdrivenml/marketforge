@@ -13,6 +13,7 @@ from rich.text import Text
 
 from forge.historical.pipelines.progress import PipelineSnapshot
 from forge.historical.pipelines.service import PipelineRun
+from forge.historical.pipelines.terminal import STAGE_LABELS
 from forge.shared.terminal import palette
 
 COLORS = {
@@ -42,9 +43,7 @@ def render(run: PipelineSnapshot, width: int, height: int) -> RenderableType:
 
     header = Text("MarketForge / Pipeline", style=f"bold {palette.BLUE}")
     header.append(f"  {run.state.upper()}", style=COLORS.get(run.state, palette.FG))
-    name = Text(
-        f"{run.name} · {run.run_id[:8]} · {run.environment}", overflow="ellipsis", no_wrap=True
-    )
+    name = Text(f"{run.name} · {run.run_id} · {run.environment}", overflow="ellipsis", no_wrap=True)
     duration = elapsed(run.started_at, run.finished_at)
     window = Text(f"{utc(run.interval[0])} – {utc(run.interval[1])} · {duration}", overflow="fold")
     stages = Table(box=None, expand=True, padding=(0, 1), header_style=palette.BLUE)
@@ -54,15 +53,19 @@ def render(run: PipelineSnapshot, width: int, height: int) -> RenderableType:
     stages.add_column("Elapsed", no_wrap=True)
     if width >= 72:
         stages.add_column("Output")
+    if width >= 88:
+        stages.add_column("Terminal")
     for stage in run.stages:
         cells = [
-            Text(stage.name.capitalize()),
+            Text(STAGE_LABELS[stage.name]),
             Text(stage.state, style=COLORS.get(stage.state, palette.FG)),
             Text(stage.phase.replace("_", " "), overflow="ellipsis"),
             Text(elapsed(stage.started_at, stage.finished_at)),
         ]
         if width >= 72:
             cells.append(Text(stage.summary or "—", overflow="ellipsis"))
+        if width >= 88:
+            cells.append(Text(stage.terminal or "—"))
         stages.add_row(*cells)
 
     details: list[Text] = []
@@ -96,7 +99,9 @@ def render(run: PipelineSnapshot, width: int, height: int) -> RenderableType:
                 )
             )
     elif active:
-        details.append(Text(f"{active.name.capitalize()} · {active.phase.replace('_', ' ')}"))
+        details.append(Text(f"{STAGE_LABELS[active.name]} · {active.phase.replace('_', ' ')}"))
+        if active.terminal:
+            details.append(Text(f"Separate {active.terminal} window"))
         if active.verified_jobs is not None:
             done, total = active.verified_jobs
             details.append(Text(f"{done} / {total} jobs verified"))

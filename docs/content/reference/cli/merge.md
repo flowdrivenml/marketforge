@@ -1,6 +1,8 @@
 # Merge commands
 
-Use the [merge guide](../../workflows/merge.md) for a complete recipe-first workflow. See the [recipe fields](../../configuration/merge.md), [runtime settings](../../configuration/merge-runtime.md), and [prepared job contract](../prepared-merge.md) for their respective schemas.
+Recipe listings default to ascending name and accept `--order desc`. See [collection sorting](sorting.md).
+
+Use the [merge guide](../../workflows/merge.md) for a complete recipe-first workflow. See the [recipe fields](../configuration/merge.md), [runtime settings](../configuration/merge-runtime.md), and [prepared job contract](../data-formats/prepared-merge.md) for their respective schemas.
 
 <a id="command-reference"></a><a id="recipe-names-and-paths"></a>
 <a id="which-commands-change-state"></a><a id="why-does-new-require-a-managed-name"></a>
@@ -91,7 +93,7 @@ mf merge prepare first_merge --testing --dry-run | cpout
 mf merge prepare first_merge --testing | cpout
 ```
 
-Preparation resolves source selection, registered file and publication identities, checksums and stream ownership. It derives ranks and ordering and checks observed bounds. Persisted preparation writes evidence and asks the managed Rust Engine to validate the job. See [preparation evidence](../prepared-merge.md#preparation-evidence).
+Preparation resolves source selection, registered file and publication identities, checksums and stream ownership. It derives ranks and ordering and checks observed bounds. Persisted preparation writes evidence and asks the managed Rust Engine to validate the job. See [preparation evidence](../data-formats/prepared-merge.md#preparation-evidence).
 
 | Status | Meaning |
 | --- | --- |
@@ -157,11 +159,11 @@ mf merge register PATH_TO_EXECUTION_INTENT --testing | cpout
 
 Replace the operand with the retained `execution-intent.json`. Use the original environment and registry. Intent recovery checks registry identity, the submitted job fingerprint, input lineage and the expected committed output. A committed publication directory or its `manifest.json` selects all eligible primary files, and a canonical primary Parquet path selects that file. A Forge run ID and staging directory are not registration references.
 
-Forge uses the managed Engine to validate existing output, checks the physical provenance, and writes registration receipts. It can reuse existing matching registry records. Registration does not rerun the merger. If no verified committed output exists, correct the execution failure and prepare a new attempt. See [publication identities](../publication-merge.md#identities-and-counts).
+Forge uses the managed Engine to validate existing output, checks the physical provenance, and writes registration receipts. It can reuse existing matching registry records. Registration does not rerun the merger. If no verified committed output exists, correct the execution failure and prepare a new attempt. See [publication identities](../data-formats/publication-merge.md#identities-and-counts).
 
 ## Engine runtime configuration
 
-Every leaf operates on the base `data/.config/engine/merge.toml` and takes no database option. Sections are `resources`, `parquet` and `partitioning`. See the [runtime reference](../../configuration/merge-runtime.md) for types, defaults, validation, precedence and safe editing.
+Every leaf operates on the base `data/.config/engine/merge.toml` and takes no database option. Sections are `resources`, `parquet` and `partitioning`. See the [runtime reference](../configuration/merge-runtime.md) for types, defaults, validation, precedence and safe editing.
 
 | Command after `mf merge config` | Purpose | Example after `mf merge config` |
 | --- | --- | --- |
@@ -188,7 +190,7 @@ Place global `--json` before `merge`. Stdout contains the structured result, whi
 mf --json merge run first_merge --testing > merge-result.json
 ```
 
-Check `status`, `execution`, `verification`, and `registration`. Registered primary-file IDs are the values of `catalogue_dataset_ids`, keyed by output path. Use them with [dataset inspection](../../workflows/datasets.md). See [run inspection](runs.md) for the logical Forge run record.
+Check `status`, `execution`, `verification`, and `registration`. Registered primary-file IDs are the values of `catalogue_dataset_ids`, keyed by output path. Use them with [dataset inspection](../../workflows/inspection/datasets.md). See [run inspection](runs.md) for the logical Forge run record.
 
 | Exit | Meaning |
 | --- | --- |

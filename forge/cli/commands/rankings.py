@@ -10,12 +10,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from forge.cli.commands.markets import emit
 from forge.cli.environment import add_database_options
 from forge.cli.market_filters import configure_identity_filters
+from forge.cli.sorting import add_sorting
 from forge.markets.models import MarketDataError, array, obj
 from forge.markets.ranking.coordination import ranking_lock
 from forge.markets.ranking.deletion import delete_snapshots
 from forge.markets.ranking.policy import TEMPLATE, load_policy, policy_document
 from forge.markets.ranking.service import build, latest_snapshot, list_snapshots, show
 from forge.markets.ranking.workflow import refresh_and_publish
+from forge.markets.sorting import ENTRIES, SNAPSHOTS
 from forge.shared.config.library import resolve_config_file
 from forge.shared.database.connection import database_connection, database_dsn
 from forge.shared.ownership import WorkspaceOwnership
@@ -39,6 +41,8 @@ class Options(BaseModel):
     match: str | None = None
     silent: bool = False
     as_json: bool = False
+    sort: str | None = None
+    order: str | None = None
     limit: int = Field(default=50, ge=1, le=10000)
     all_entries: bool = False
     excluded: bool = False
@@ -75,6 +79,14 @@ def configure(parser: argparse.ArgumentParser) -> None:
                 "--apply",
                 action="store_true",
                 help="Re-resolve and delete eligible snapshots transactionally.",
+            )
+        if action in {"list", "show"}:
+            add_sorting(
+                child,
+                SNAPSHOTS if action == "list" else ENTRIES,
+                notes="time means snapshot creation."
+                if action == "list"
+                else "time means retained source observation. Volume entries sort within each base asset; exclusions remain separate.",
             )
         if action == "show":
             child.add_argument("ranking_id", help="Policy name or published snapshot UUID.")
@@ -127,6 +139,13 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
                 limit=None if o.all_entries else o.limit,
                 excluded=o.excluded,
                 conversion=o.conversion,
+                show_observed=o.rank_action == "show"
+                and ENTRIES.resolve(o.sort, o.order).field == "observed",
+                ordering=(SNAPSHOTS if o.rank_action == "list" else ENTRIES)
+                .resolve(o.sort, o.order)
+                .description
+                if o.rank_action in {"list", "show"}
+                else "",
             )
 
     directory = context.paths.config_dir / "markets" / "rankings"
@@ -195,7 +214,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
         async with database_connection(database_dsn(context.paths.root)) as c:
             async with ranking_lock(c, shared=True):
                 if o.rank_action == "list":
-                    rows = await list_snapshots(c, o.limit + 1)
+                    rows = await list_snapshots(c, o.limit + 1, sort=o.sort, order=o.order)
                     return {"rankings": rows[: o.limit], "truncated": len(rows) > o.limit}
                 if o.ranking_id is None:
                     raise ValueError("Ranking ID is required.")
@@ -209,6 +228,8 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
                         c,
                         snapshot,
                         instrument_type=o.instrument_type,
+                        sort=o.sort,
+                        order=o.order,
                         base_asset=o.base_asset,
                         quote_asset=o.quote_asset,
                         match=o.match,

@@ -38,4 +38,4 @@ PY
 
 This fixture expects one registered output file. Use a fresh isolated fixture workspace and registry when exercising the example. Use the printed ID with `mf datasets head ID --testing` and compare the trade with the original CSV. Run `mf datasets lineage ID --testing --publication` to see the selected input. The example creates the recipe exclusively. To use it again, review the existing recipe and reuse it if its file ID is still correct.
 
-If prepare reports a job parse error after a code update, check [managed Engine compatibility](../../configuration/merge-runtime.md#managed-engine-troubleshooting) and retry persisted preparation. If the engine reports no active stream, check the selected interval and stream coverage. The example's bounds contain exactly the supplied trade timestamp.
+If prepare reports a job parse error after a code update, check [managed Engine compatibility](../../reference/configuration/merge-runtime.md#managed-engine-troubleshooting) and retry persisted preparation. If the engine reports no active stream, check the selected interval and stream coverage. The example's bounds contain exactly the supplied trade timestamp.

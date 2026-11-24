@@ -79,9 +79,16 @@ def entries(console: Console, rows: Iterator[tuple[str, str]]) -> None:
 
 
 def render_inventory(
-    console: Console, profiles: list[dict[str, Any]], installed: int, filters: dict[str, str | None]
+    console: Console,
+    profiles: list[dict[str, Any]],
+    installed: int,
+    filters: dict[str, str | None],
+    *,
+    ordering: str = "",
 ) -> None:
     console.print("MarketForge · Acquisition Profiles", style="mf.heading")
+    if ordering:
+        console.print(Text(ordering, style="mf.secondary"))
     active = ", ".join(
         f"{key.replace('_', '-')}={value}" for key, value in filters.items() if value is not None
     )

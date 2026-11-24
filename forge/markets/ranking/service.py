@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Literal, LiteralString
+from typing import Literal
 from uuid import UUID, uuid4
 
 from psycopg import AsyncConnection
@@ -29,6 +29,7 @@ from forge.markets.ranking.policy import RankingPolicy, currency, policy_documen
 from forge.markets.ranking.volume import ALGORITHM as VOLUME_ALGORITHM
 from forge.markets.ranking.volume import evaluate_volume, measure
 from forge.markets.repository import iter_instruments, json_value
+from forge.markets.sorting import ENTRIES, SNAPSHOTS
 from forge.shared.database.connection import database_flag
 
 
@@ -490,20 +491,18 @@ async def list_snapshots(
     search: str = "",
     currency: str | None = None,
     universe: str | None = None,
-    sort: str = "",
-    descending: bool = True,
+    sort: str | None = None,
+    descending: bool | None = None,
+    order: str | None = None,
 ) -> list[dict[str, object]]:
     if not 1 <= limit <= 10001:
         raise MarketDataError("Ranking limit must be 1..10001.")
-    orders: dict[str, LiteralString] = {
-        "Policy": "policy_name",
-        "Currency": "comparison_currency",
-        "Ranked": "included_count",
-        "Published UTC": "created_at",
-        "Universe": "universe_count",
-    }
-    direction: LiteralString = " DESC" if descending else " ASC"
-    order = orders.get(sort, "created_at")
+    ordering = SNAPSHOTS.resolve(
+        sort,
+        order
+        if order is not None
+        else (None if descending is None else "desc" if descending else "asc"),
+    )
     async with c.cursor(row_factory=dict_row) as cur:
         await cur.execute(
             """SELECT id,policy_name,created_at,comparison_currency,partial_universe,universe_count,included_count
@@ -511,9 +510,8 @@ async def list_snapshots(
               AND (%s::text IS NULL OR lower(comparison_currency)=lower(%s))
               AND (%s::text IS NULL OR partial_universe=(%s='partial'))
             ORDER BY """
-            + order
-            + direction
-            + " NULLS LAST,id LIMIT %s OFFSET %s",
+            + ordering.sql()
+            + " LIMIT %s OFFSET %s",
             (f"%{search}%", f"%{search}%", currency, currency, universe, universe, limit, offset),
         )
         return list(await cur.fetchall())
@@ -548,9 +546,12 @@ async def show(
     base_asset: str | None = None,
     quote_asset: str | None = None,
     match: str | None = None,
+    sort: str | None = None,
+    order: str | None = None,
 ) -> dict[str, object]:
     if instrument_type not in {None, "spot", "perpetual", "future"}:
         raise MarketDataError("Unknown catalogue instrument type.")
+    ordering = ENTRIES.resolve(sort, order)
     async with c.cursor(row_factory=dict_row) as cur:
         await cur.execute(
             "SELECT * FROM ranking.snapshots WHERE id=%s AND status='published'", (snapshot,)
@@ -600,7 +601,13 @@ async def show(
               AND (%s::text IS NULL OR lower(COALESCE(r.base_asset,metadata.value->>'base',i.base_asset))=lower(%s))
               AND (%s::text IS NULL OR lower(COALESCE(metadata.value->>'quote',i.quote_asset))=lower(%s))
               AND (%s::text IS NULL OR COALESCE(metadata.value->>'symbol',i.symbol) ILIKE %s ESCAPE '!')
-            ORDER BY r.position NULLS LAST,r.instrument_reference""",
+            ORDER BY (r.position IS NULL), """
+            + (
+                "COALESCE(r.base_asset,metadata.value->>'base',i.base_asset) ASC NULLS LAST, "
+                if header["algorithm_version"] == VOLUME_ALGORITHM
+                else ""
+            )
+            + ordering.sql(),
             (
                 snapshot,
                 instrument_type,

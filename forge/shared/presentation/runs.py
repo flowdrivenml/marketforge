@@ -13,6 +13,7 @@ from forge.orchestration.registry import rows, status_of
 from forge.orchestration.registry_maintenance import MaintenanceEvidence
 from forge.orchestration.run_summary import mapping, when
 from forge.orchestration.runs import RunInspection
+from forge.orchestration.sorting import RUNS
 from forge.shared.identity import RunOperation
 from forge.shared.presentation.merge import MergeView
 from forge.shared.presentation.normalization import (
@@ -151,6 +152,7 @@ class RunLine:
     recipe: str
     status: str
     started: str
+    finished: str
     elapsed: str
     outcome: str
     liveness: str
@@ -194,6 +196,7 @@ def run_line(row: Document) -> RunLine:
         scalar(row.get("recipe")),
         scalar(row.get("status")) or "unknown",
         timestamp(row.get("started_at")),
+        timestamp(row.get("finished_at")),
         duration(row.get("started_at"), row.get("finished_at")),
         hint,
         scalar(row.get("liveness")),
@@ -206,9 +209,20 @@ class RunInventory:
     offset: int
     filters: Fields
     next_command: str
+    ordering: str
+    sort_field: str
 
 
-def inventory(payload: Document, filters: Fields, environment: str, limit: int) -> RunInventory:
+def inventory(
+    payload: Document,
+    filters: Fields,
+    environment: str,
+    limit: int,
+    *,
+    sort: str | None = None,
+    order: str | None = None,
+) -> RunInventory:
+    ordering = RUNS.resolve(sort, order)
     offset = payload.get("offset")
     offset = offset if type(offset) is int else 0
     args = [
@@ -223,11 +237,17 @@ def inventory(payload: Document, filters: Fields, environment: str, limit: int) 
     ]
     for name, value in filters:
         args.extend((f"--{name}", value))
+    if sort is not None:
+        args.extend(("--sort", sort))
+    if order is not None:
+        args.extend(("--order", order))
     return RunInventory(
         tuple(run_line(row) for row in rows(payload.get("runs"))),
         offset,
         filters,
         shlex.join(args) if payload.get("more") else "",
+        ordering.description,
+        ordering.field,
     )
 
 
@@ -240,6 +260,7 @@ RESOURCE_LABELS: dict[str, tuple[str, str]] = {
     "engine_publication": ("Outputs", "Engine publication ID"),
     "primary_file_dataset": ("Outputs", "Registry primary-file ID"),
     "conversion_output": ("Outputs", "Converted output directory"),
+    "conversion_output_ref": ("Outputs", "Indexed conversion output reference"),
     "prepared_batch": ("Prepared artifacts", "Prepared batch"),
     "prepared_job": ("Prepared artifacts", "Prepared job"),
     "engine_execution": ("Execution artifacts", "Engine execution reference"),
@@ -469,7 +490,12 @@ def logs(inspection: RunInspection) -> LogView:
     )
 
 
-PIPELINE_STAGES = (("acquire", "Acquisition"), ("normalize", "Normalization"), ("merge", "Merge"))
+PIPELINE_STAGES = (
+    ("acquire", "Acquisition"),
+    ("normalize", "Normalization"),
+    ("merge", "Merge"),
+    ("convert", "Conversion"),
+)
 REPORT_TITLES = {
     "acquisition": "Acquisition Report",
     "normalize": "Normalization Report",
@@ -838,6 +864,8 @@ def pipeline(document: Document, root: Path) -> tuple[TableView, TableView]:
         )
         if path := path_label(stage.get("child_report"), root):
             paths.append((title, path))
+        if path := path_label(stage.get("terminal_outcome"), root):
+            paths.append((f"{title} terminal", path))
     return (
         table(
             "Stages", ("Stage", "State", "Recorded phase", "Child run ID", "Outcome"), state_rows
@@ -1074,6 +1102,7 @@ DECISIONS = {
         "Recoverable",
         "A validated retained outcome can finalize registry metadata.",
     ),
+    "already_reconciled": ("Already reconciled", "The indexed attempt matches retained evidence."),
     "reconciled": ("Reconciled", "Retained outcome was applied to the registry."),
     "invalid_or_conflicting_outcome": (
         "Blocked",
@@ -1123,7 +1152,7 @@ def maintenance(
         if status == "indexed":
             decision = "Indexed (new or existing)" if applying else "Already indexed"
         decisions[decision] += 1
-        row = (scalar(item.get("run_id")) or "—", decision, reason)
+        row = (scalar(item.get("run_id")) or "—", decision, scalar(item.get("reason")) or reason)
         if not legacy:
             attempt_id = scalar(item.get("attempt_id"))
             row = (row[0], attempt_id or "—", *row[1:])

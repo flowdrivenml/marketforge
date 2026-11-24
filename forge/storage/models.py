@@ -25,8 +25,9 @@ class StorageFilters(BaseModel):
     start: AwareDatetime | None = None
     end: AwareDatetime | None = None
     limit: int = Field(default=100, ge=1, le=10000)
-    sort: Literal["id", "relative_path", "bytes_written", "start_at", "status"] = "id"
-    descending: bool = True
+    sort: str | None = None
+    order: Literal["asc", "desc"] | None = None
+    descending: bool | None = None
     offset: int = Field(default=0, ge=0, le=2**63 - 1)
 
     @model_validator(mode="after")

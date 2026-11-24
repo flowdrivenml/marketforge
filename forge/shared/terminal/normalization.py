@@ -48,8 +48,12 @@ def _table(
         )
 
 
-def render_inventory(console: Console, recipes: tuple[RecipeView, ...]) -> None:
+def render_inventory(
+    console: Console, recipes: tuple[RecipeView, ...], *, ordering: str = ""
+) -> None:
     header(console, "Normalization Recipes")
+    if ordering:
+        console.print(Text(ordering, style="mf.secondary"))
     if not recipes:
         empty_state(console, "No normalization recipes found.")
         return

@@ -1,6 +1,8 @@
 # Normalization commands
 
-Start with [Normalize historical data](../../workflows/normalize.md). Use this reference for command effects and options. See [recipe fields](../../configuration/normalization.md) and the [prepared batch contract](../prepared-normalization.md) for input formats.
+Recipe and profile listings default to ascending name and accept `--order desc`. See [collection sorting](sorting.md).
+
+Start with [Normalize historical data](../../workflows/normalization/index.md). Use this reference for command effects and options. See [recipe fields](../configuration/normalization.md) and the [prepared batch contract](../data-formats/prepared-normalization.md) for input formats.
 
 <a id="important-normalization-options"></a>
 <a id="-testing"></a>
@@ -73,7 +75,7 @@ mf normalize config schema --field resources.workers | cpout
 mf normalize config set resources.workers 12 | cpout
 ```
 
-`set` and `unset` preview by default and require `--apply` to save. `edit` validates a draft before asking for confirmation. See [Normalization runtime configuration](../../configuration/normalization-runtime.md) for field semantics, defaults, and integrity acknowledgement.
+`set` and `unset` preview by default and require `--apply` to save. `edit` validates a draft before asking for confirmation. See [Normalization runtime configuration](../configuration/normalization-runtime.md) for field semantics, defaults, and integrity acknowledgement.
 
 ## Preparation
 
@@ -86,7 +88,7 @@ mf normalize prepare my_dataset --testing --dry-run | cpout
 mf normalize prepare my_dataset --testing | cpout
 ```
 
-A dry run resolves registry and local-file evidence and previews job, task and stream counts. It can use the Engine to check an external source's profile fingerprint. It skips Rust batch validation and returns prospective batch and report locations. Persisted preparation writes the batch and report and, for a `prepared` plan, runs the production Rust batch validator. A saved `partial` plan is diagnostic and cannot be submitted. See [preparation results](../prepared-normalization.md#preparation-status).
+A dry run resolves registry and local-file evidence and previews job, task and stream counts. It can use the Engine to check an external source's profile fingerprint. It skips Rust batch validation and returns prospective batch and report locations. Persisted preparation writes the batch and report and, for a `prepared` plan, runs the production Rust batch validator. A saved `partial` plan is diagnostic and cannot be submitted. See [preparation results](../data-formats/prepared-normalization.md#preparation-status).
 
 `prepare NAME --from-acquisition SOURCE` first creates a managed copy and opens the editor, then prepares the saved recipe. Even with `--dry-run`, this shortcut still creates and edits that recipe. Use a new managed name for this mode.
 
@@ -113,7 +115,7 @@ Accepts a managed recipe name or explicit TOML path. It performs persisted prepa
 
 ### `mf normalize run`
 
-`run` can execute a recipe like `execute`, or submit a prepared JSON batch without repeating recipe selection. Submitted JSON still goes through Rust batch validation, raw-input checks, execution, verification and registration. Use a directory-qualified path to resolve an ambiguity between a local file and a managed recipe name. Existing explicit files are identified as JSON from their opening content, rather than by filename suffix alone. See [manual batch submission](../prepared-normalization.md#manual-batch-submission) for a complete example.
+`run` can execute a recipe like `execute`, or submit a prepared JSON batch without repeating recipe selection. Submitted JSON still goes through Rust batch validation, raw-input checks, execution, verification and registration. Use a directory-qualified path to resolve an ambiguity between a local file and a managed recipe name. Existing explicit files are identified as JSON from their opening content, rather than by filename suffix alone. See [manual batch submission](../data-formats/prepared-normalization.md#manual-batch-submission) for a complete example.
 
 <a id="inspect-the-normalization-result"></a>
 <a id="what-should-you-look-for"></a>
@@ -150,7 +152,7 @@ Engine completion, output commit, verification, and registry registration are se
 
 For `execute` and `run`, the default withholds automatic registration when any job fails, even if other jobs committed valid outputs. `--allow-partial` permits automatic registration of successful jobs only when the Engine returns definitive outcomes for the whole batch, at least one output is verified, and registration succeeds. A verification failure still blocks registration. The resulting overall status is `partial`. This flag does not permit partial preparation or incomplete staging output.
 
-The result points to the retained execution report, Engine outcome and execution intent. Use the [run history](runs.md) for the logical run ID, [publication evidence](../publication-normalized.md) for integrity and lineage, and [dataset inspection](../../workflows/datasets.md) for registered file IDs.
+The result points to the retained execution report, Engine outcome and execution intent. Use the [run history](runs.md) for the logical run ID, [publication evidence](../data-formats/publication-normalized.md) for integrity and lineage, and [dataset inspection](../../workflows/inspection/datasets.md) for registered file IDs.
 
 <a id="recover-a-completed-publication-without-rerunning"></a>
 <a id="why-is-registration-only-recovery-useful"></a>
@@ -178,11 +180,11 @@ Use the original registry. Registration verifies existing committed output and w
 mf normalize register PATH_TO_EXECUTION_INTENT --testing | cpout
 ```
 
-Replace the path with the retained `execution-intent.json` shown by the result. An explicit registration retry can register a verified subset of committed jobs. Inspect which outputs survived before recovery. When no usable publication was committed, fix the execution problem and prepare a fresh attempt. Registration recovery can reuse existing matching registrations. See [publication recovery](../publication-normalized.md#publication-recovery-and-registration).
+Replace the path with the retained `execution-intent.json` shown by the result. An explicit registration retry can register a verified subset of committed jobs. Inspect which outputs survived before recovery. When no usable publication was committed, fix the execution problem and prepare a fresh attempt. Registration recovery can reuse existing matching registrations. See [publication recovery](../data-formats/publication-normalized.md#publication-recovery-and-registration).
 
 ## Profile commands
 
-A normalization profile describes source interpretation. A normalization recipe selects registered inputs. Use the [profile authoring guide](../../workflows/catalogue/profiles.md) and [profile reference](../profiles.md) for authoring, validation, and installation. Run `mf normalize profiles --help` for the full subcommand inventory.
+A normalization profile describes source interpretation. A normalization recipe selects registered inputs. Use the [profile authoring guide](../../workflows/normalization/author-profile.md) and [profile reference](../../workflows/normalization/author-profile.md) for authoring, validation, and installation. Run `mf normalize profiles --help` for the full subcommand inventory.
 
 ```bash
 mf normalize profiles list | cpout
@@ -231,7 +233,7 @@ Place global `--json` before `normalize`. It emits the command's structured resu
 | Symptom | First check |
 | --- | --- |
 | Missing inputs or a gap | Compare recipe scope, archive dates and statuses in [managed storage](../../workflows/acquisition/managing-acquisitions.md). |
-| Missing specification or incompatible profile | Read the archive's preparation diagnostics and check [specification applicability](../../workflows/catalogue/specifications.md) and [installed profiles](../profiles.md). |
+| Missing specification or incompatible profile | Read the archive's preparation diagnostics and check [specification applicability](../../workflows/catalogue/specifications.md) and [installed profiles](../../workflows/normalization/author-profile.md). |
 | Invalid or changed batch | Review the Rust diagnostics and reprepare against the intended registry and runtime. |
-| Failed Engine job or unexpected output | Compare the retained execution report and [publication integrity evidence](../publication-normalized.md#integrity-evaluation). For Engine setup and resource configuration, see [runtime settings](../runtime.md). |
+| Failed Engine job or unexpected output | Compare the retained execution report and [publication integrity evidence](../data-formats/publication-normalized.md#integrity-evaluation). For Engine setup and resource configuration, see [runtime settings](../runtime.md). |
 | Verified output with pending registration | Recover from the retained intent against the original registry. |
