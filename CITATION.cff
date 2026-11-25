@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use MarketForge in your research, please cite this software."
+type: software
+title: MarketForge
+authors:
+  - given-names: Pavlo
+    family-names: Vanat
+repository-code: https://github.com/flowdrivenml/marketforge
+url: https://flowdrivenml.github.io/marketforge/
+license: Apache-2.0
+version: "0.1.0"
+date-released: 2026-11-25
