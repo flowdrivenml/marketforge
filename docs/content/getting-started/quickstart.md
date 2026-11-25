@@ -17,25 +17,7 @@ Follow the [installation guide](installation.md) for supported platforms and set
 The [canonical pipeline TOML](../examples/bybit/pipeline.toml) requests trades and L2 order-book depth for the Bybit BTCUSDT linear perpetual. It covers October 27, 28, and 29, 2026, in UTC. The end timestamp is exclusive. Forge runs acquisition, normalization, and merge using the installed defaults.
 
 ```toml
-version = 2
-
-[interval]
-start = 2026-10-27T00:00:00Z
-end = 2026-10-30T00:00:00Z
-
-[[requests]]
-exchange = "bybit"
-instrument_type = "perpetual"
-market_category = "linear"
-data_type = "trades"
-scope = { kind = "instrument", identifier = "BTCUSDT" }
-
-[[requests]]
-exchange = "bybit"
-instrument_type = "perpetual"
-market_category = "linear"
-data_type = "order_book_l2"
-scope = { kind = "instrument", identifier = "BTCUSDT" }
+--8<-- "examples/bybit/pipeline.toml"
 ```
 
 Copy the recipe to Forge's managed library. The command reports an existing destination and leaves it in place.

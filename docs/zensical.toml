@@ -125,6 +125,10 @@ pymdownx.superfences.custom_fences = [
   { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
 ]
 
+[project.markdown_extensions.pymdownx.snippets]
+base_path = ["content"]
+check_paths = true
+
 [project.theme]
 logo = "assets/branding/logo_small.png"
 favicon = "assets/branding/logo_small.png"
