@@ -12,6 +12,8 @@ On Linux or macOS, install the contributor environment and select it for the
 export UV_PROJECT_ENVIRONMENT="$PWD/.install/dev"
 ```
 
+The development installer selects testing for provisioning, migrations, and market initialization. It verifies Rustfmt and Clippy and installs pinned Zensical in `.install/docs`. The development and standard installations can coexist. Forge commands still default to production. Pass `--testing` for testing registry commands, including `mf tui --testing`.
+
 For manual setup, use Python 3.12 or newer, uv, Neovim, and Rust/Cargo 1.89 or newer. The repository has no checked-in Rust toolchain pin or declared Cargo minimum Rust version. Cargo.lock pins dependencies. Managed Engine builds target the host and reject a configured foreign target. Conversion's atomic no-replace publication implementation is Linux-only.
 
 ```bash
@@ -46,14 +48,15 @@ Use `merge` or `convert` as the explicit target when that stage changes. The def
 
 ## Set up the testing registry when needed
 
-Follow [installation and database setup](../getting-started/installation.md#prepare-the-testing-registry) to create a PostgreSQL database named `marketforge_test` and configure its role. Use a nonblank `TEST_DATABASE_KEY` or the same key in the checkout's `.secrets/postgres.env`. Forge reads that file as data. Keep the URL out of commands, reports, and Git.
+Create a dedicated PostgreSQL database named `marketforge_test`. Give its intended role the privileges to own its objects and apply migrations. See [PostgreSQL setup](../getting-started/installation.md#postgresql-credentials) for connection configuration. Use a nonblank `TEST_DATABASE_KEY` or the same key in the checkout's `.secrets/postgres.env`. Forge reads that file as data. Keep the URL out of commands, reports, and Git.
 
 ```bash
 uv run --project forge --locked mf database migrate --testing
 uv run --project forge --locked mf database status --testing
+uv run --project forge --locked mf doctor --testing
 ```
 
-Migration writes to the selected database. Verify purpose `testing` and review pending migrations in the status output. Testing workflows check both the database name and the purpose marker. Some pytest fixtures require the environment variable explicitly even when a CLI would use the file. See [Testing database](testing.md#testing-database-and-artifacts) for fixture behavior. Schema setup needs no provider metadata download. Use the separate [Bybit Quick Start](../getting-started/quickstart.md) when you intend to populate market metadata and acquire archives.
+Migration writes to the selected database. Verify purpose `testing` and review pending migrations in the status output. Testing workflows check both the database name and the purpose marker. Some pytest fixtures require the environment variable explicitly even when a CLI would use the file. See [Testing database](testing.md#testing-database-and-artifacts) for fixture behavior. Schema setup needs no provider metadata download. Use the separate [advanced Bybit tutorial](../examples/bybit/manual-normalization.md) when you intend to populate market metadata and acquire archives.
 
 ## Verify installer changes
 

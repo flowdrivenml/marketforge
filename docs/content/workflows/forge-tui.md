@@ -117,7 +117,7 @@ output reference, or run ID cell to copy the complete identifier. Raw and
 Normalized group inspectors list their constituent identifiers and open the
 existing archive and publication inspectors. Those inspectors provide physical
 files, partitions where recorded, and available lineage and verification evidence.
-Use **Datasets** and **Runs** for deeper inspection.
+Use **Data** and **Runs** for deeper inspection.
 
 **Ctrl+R**, entering Overview, and finishing a workspace operation reload the
 dashboard. An unavailable registry leaves host monitoring and retained local

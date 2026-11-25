@@ -1,6 +1,6 @@
 [project]
 site_name = "MarketForge"
-site_description = "Historical market-data acquisition, normalization and dataset inspection"
+site_description = "Historical market-data pipelines and quantitative research"
 site_url = "https://flowdrivenml.github.io/marketforge/"
 repo_url = "https://github.com/flowdrivenml/marketforge"
 docs_dir = "content"
@@ -10,10 +10,11 @@ extra_javascript = ["assets/javascripts/keyboard.js"]
 nav = [
   { "Using MarketForge" = [
     { "Introduction" = "index.md" },
-    { "Getting started" = [
+    { "Getting Started" = [
       "getting-started/index.md",
-      { "Installation and workspace setup" = "getting-started/installation.md" },
-      { "First dataset: Bybit trades and depth" = "getting-started/quickstart.md" },
+      { "Installation" = "getting-started/installation.md" },
+      { "Quick Start" = "getting-started/quickstart.md" },
+      { "Interactive Workspace" = "workflows/forge-tui.md" },
     ] },
     { "Workflows" = [
       "workflows/index.md",
@@ -35,9 +36,8 @@ nav = [
       ] },
       { "Merge" = "workflows/merge.md" },
       { "Conversion" = "workflows/conversion.md" },
-      { "Pipeline" = "workflows/pipeline.md" },
+      { "Historical pipeline" = "workflows/pipeline.md" },
       { "Inspection" = ["workflows/inspection/datasets.md", "workflows/inspection/runs.md"] },
-      "workflows/forge-tui.md",
     ] },
     { "Concepts" = ["concepts/index.md", "concepts/data-model.md", "concepts/identity.md", "concepts/configuration.md", "concepts/time.md", "concepts/depth.md", "concepts/ordering.md", "concepts/normalization.md", "concepts/merge.md", "concepts/conversion.md", "concepts/evidence.md", "concepts/execution.md", "concepts/glossary.md"] },
     { "Reference" = [
@@ -55,7 +55,7 @@ nav = [
         { "Prepared jobs and evidence" = ["reference/data-formats/prepared.md", "reference/data-formats/prepared-normalization.md", "reference/data-formats/prepared-merge.md", "reference/data-formats/prepared-conversion.md", "reference/data-formats/prepared-forge.md"] },
       ] },
     ] },
-    { "Examples" = ["examples/index.md", "examples/catalogue/index.md", "examples/catalogue/merge.md", "examples/bring-your-own-data/index.md", "examples/bring-your-own-data/databento/index.md"] },
+    { "Examples" = ["examples/index.md", "examples/bybit/manual-normalization.md", "examples/catalogue/index.md", "examples/catalogue/merge.md", "examples/bring-your-own-data/index.md", "examples/bring-your-own-data/databento/index.md"] },
     { "Maintenance" = ["maintenance/index.md", "maintenance/database.md", "maintenance/publications.md", "maintenance/conversion.md"] },
   ] },
   { "Research & Analysis" = [

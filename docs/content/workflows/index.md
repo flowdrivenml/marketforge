@@ -1,6 +1,6 @@
 # Workflows
 
-Start with the outcome you need. For the objects and guarantees shared by these workflows, see [MarketForge concepts](../concepts/index.md). The [Bybit quick start](../getting-started/quickstart.md) shows the full route from provider archive to inspected Parquet.
+Start with the outcome you need. For the objects and guarantees shared by these workflows, see [MarketForge concepts](../concepts/index.md). The [Bybit quick start](../getting-started/quickstart.md) shows how to run the complete historical pipeline and inspect the merged publication.
 
 | Task | Guide |
 | --- | --- |

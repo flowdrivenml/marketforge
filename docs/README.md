@@ -16,7 +16,7 @@ docs/.venv/bin/python -m pip install -r docs/requirements.txt
 python3 docs/check_links.py
 ```
 
-Stop the preview with Ctrl-C. Generated files go to `docs/site/`; that directory, `docs/.venv/`, and the Zensical cache (`docs/.cache/`) are ignored. Do not use this environment for Forge. No deployment is configured.
+Stop the preview with Ctrl-C. Generated files go to `docs/site/`; that directory, `docs/.venv/`, and the Zensical cache (`docs/.cache/`) are ignored. Do not use this environment for Forge. GitHub Pages publishes the generated site from the root of the `gh-pages` branch.
 
 Zensical is pinned in `requirements.txt`. Mermaid and source footnotes are enabled in the site configuration. Check both in a browser after changing a diagram or citation. Configuration follows the official [basics](https://zensical.org/docs/setup/basics/) and [navigation](https://zensical.org/docs/setup/navigation/) documentation and is checked by a strict build. System fonts and local branding keep the core site independent of remote assets after dependencies are installed.
 

@@ -16,15 +16,7 @@ The installer verifies or installs Neovim, Python 3.12 or newer, uv, and Rust/Ca
 
 It installs the `mf` and `marketforge` entry points under `~/.local/bin`. If they are missing from your PATH, add that directory using your shell’s setup or run `~/.local/bin/mf` directly. An occupied launcher path is reported and left alone. Run workspace commands from the checkout or pass `--project-root PATH` before the command.
 
-## Development installation
-
-```bash
-./install.sh --dev
-```
-
-Development selects the testing database for provisioning, migrations, and initialization. It verifies the runtime tools and adds the locked `dev` and `lab` groups, including pytest, pytest-asyncio, Ruff, Pyright, Polars, Arrow, JupyterLab, and ipykernel. It also checks Rustfmt and Clippy and installs the pinned Zensical requirement in `.install/docs`. The contributor environment is `.install/dev`. The two environments coexist and working launchers from this checkout are reused. Use the [contributor setup](../development/setup.md) for environment selection and test commands.
-
-Forge itself still defaults to production. Use `mf tui --testing` and pass `--testing` for testing registry commands.
+For the development installer and testing registry, see [contributor setup](../development/setup.md).
 
 ## Installer options and results
 
@@ -113,21 +105,6 @@ mf database migrate --production
 mf init --production
 ```
 
-### Prepare the testing registry
-
-Create a dedicated database named `marketforge_test` and give its intended role
-the privileges to own its objects and apply migrations. Configure
-`TEST_DATABASE_KEY`, then run:
-
-```bash
-mf database migrate --testing
-mf database status --testing
-mf doctor --testing
-```
-
-Confirm purpose `testing` and zero pending migrations. Use `mf init --testing`
-when you are ready to collect metadata.
-
 ### Inspection and notebook tools
 
 The development installer includes these tools. For a standard or manual installation, install Arrow in the Forge environment for `datasets schema` and `datasets head`:
@@ -150,12 +127,11 @@ mf engine status
 mf database status
 ```
 
-Check that all three Engine targets are verified. For a development install,
-use `mf database status --testing` and open `mf tui --testing`.
+Check that all three Engine targets are verified.
 
 - If `mf` is unavailable, use the absolute launcher path and check which installation your PATH selects.
 - If a selected local cluster is stopped or ambiguous, inspect it with the local administrator. Supply the intended connection and use `--skip-postgres`.
 - If a configured registry is rejected, check the credential key, database name, purpose, and migration history before retrying. See [database troubleshooting](../maintenance/index.md#find-the-failing-boundary).
 - If a newer toolchain is required, update the active toolchain deliberately, then rerun. A verified binary with an unsupported runtime option needs a managed rebuild using the current checkout.
 
-Continue with the [Bybit quick start](quickstart.md).
+Continue with the [Quick Start](quickstart.md).

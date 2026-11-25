@@ -1,134 +1,100 @@
-# First dataset: Bybit BTCUSDT trades and depth
+# Quick Start
 
-Acquire one UTC day of trades and L2 depth for Bybit’s BTCUSDT linear USDT perpetual. Normalize it into canonical Parquet, verify the registered primary files, then check the first reconstructed book state against its retained boundary.
+Run a historical pipeline for Bybit BTCUSDT and inspect the merged dataset in Forge. Choose either the CLI or the interactive workspace to run it.
 
-## Prepare the workspace
-
-From the checkout, run `./install.sh --dev --skip-market-init` to set up the managed Engine, Arrow, and a migrated testing registry. If you already have a standard installation and want to add only the prerequisites for this guide, follow [manual testing setup and inspection tools](installation.md#prepare-the-testing-registry). Keep that registry selected with `--testing` throughout this example. Use a workspace with space for both compressed archives, normalized Parquet, and Engine scratch files.
-
-The installed profiles must match this venue and contract. Validate them before downloading:
+## 1. Install MarketForge
 
 ```bash
-mf normalize profiles validate bybit.perpetual.linear.trades
-mf normalize profiles validate bybit.perpetual.linear.depth
+git clone https://github.com/flowdrivenml/marketforge.git
+cd marketforge
+./install.sh
 ```
 
-The catalogue identifies this instrument as `bybit.perpetual.linear.BTCUSDT`. The acquisition recipe uses the native symbol with separate venue, instrument type and market category fields. It requests `trades` and `order_book_l2`; the Engine depth profile ends in `.depth`.
+Follow the [installation guide](installation.md) for supported platforms and setup options. The steps below assume installation and market initialization completed successfully and that you're running commands from the checkout. Forge uses the production registry by default.
 
-<a id="discover-and-acquire-both-inputs"></a>
+## 2. Load the example recipe
 
-## Plan and acquire a day
+The [canonical pipeline TOML](../examples/bybit/pipeline.toml) requests trades and L2 order-book depth for the Bybit BTCUSDT linear perpetual. It covers October 27, 28, and 29, 2026, in UTC. The end timestamp is exclusive. Forge runs acquisition, normalization, and merge using the installed defaults.
 
-Use the [Bybit recipe](../examples/bybit/acquisition.toml) for the half-open UTC interval `[2026-10-27T00:00:00Z, 2026-10-28T00:00:00Z)`. Discovery selects whole overlapping daily archives. A shorter interval inside this day can still select both complete archives. Normalization processes the selected inputs without trimming their records to the request.
+```toml
+version = 2
+
+[interval]
+start = 2026-10-27T00:00:00Z
+end = 2026-10-30T00:00:00Z
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "perpetual"
+market_category = "linear"
+data_type = "trades"
+scope = { kind = "instrument", identifier = "BTCUSDT" }
+
+[[requests]]
+exchange = "bybit"
+instrument_type = "perpetual"
+market_category = "linear"
+data_type = "order_book_l2"
+scope = { kind = "instrument", identifier = "BTCUSDT" }
+```
+
+Copy the recipe to Forge's managed library. The command reports an existing destination and leaves it in place.
 
 ```bash
-recipe=docs/content/examples/bybit/acquisition.toml
-library=data/.config/workflows/data_engineering/acquisition
-name=bybit-btc-20261027
-mkdir -p "$library"
-if [ ! -e "$library/$name.toml" ]; then
-  cp "$recipe" "$library/$name.toml"
+recipe_dir=data/.config/workflows/data_engineering/pipeline
+mkdir -p "$recipe_dir"
+recipe="$recipe_dir/bybit_quickstart.toml"
+if [ -e "$recipe" ] || [ -L "$recipe" ]; then
+  printf 'Recipe already exists: %s\n' "$recipe"
+else
+  (set -C; cat docs/content/examples/bybit/pipeline.toml > "$recipe")
 fi
-cmp "$recipe" "$library/$name.toml"
 ```
 
-If `cmp` reports a difference, choose an unused name and repeat the copy before proceeding.
+If the recipe already exists, check its contents before using that name.
+
+## 3. Run the pipeline
+
+### CLI
 
 ```bash
-mf acquisition map "$name" --testing
-mf acquisition plan "$name" --testing --cache-only
+mf pipeline run bybit_quickstart
 ```
 
-Map contacts Bybit for discovery and records the result without downloading archive bodies. The plan reads registered discovery and local inventory. Check that the two requests resolve to the expected candidates before downloading:
+Forge discovers and downloads the archives, verifies and registers the managed copies, normalizes the data, and merges the outputs. It verifies and registers the merged publication and retains a run report with stage results. Download and processing time and storage requirements depend on archive sizes, network availability, and local hardware.
 
-| Request | Expected archive |
-| --- | --- |
-| Trades | `BTCUSDT2026-10-27.csv.gz` |
-| L2 depth | `2026-10-27_BTCUSDT_ob200.data.zip` |
+For an optional preview, use `mf pipeline validate bybit_quickstart` to check the recipe or `mf pipeline plan bybit_quickstart` to see the stages and available registry evidence.
+
+### Interactive Forge workspace
 
 ```bash
-mf acquisition download "$name" --testing
-mf storage list --testing --exchange bybit --instrument-type perpetual \
-  --market linear --instrument BTCUSDT --status complete --wide \
-  --start 2026-10-27T00:00:00Z --end 2026-10-28T00:00:00Z
+mf tui
 ```
 
-Download registers verified managed copies. Check for both filenames in storage. Use a returned local ID with `mf storage show LOCAL_ID --testing` to inspect the managed path and checksum. The [historical acquisition guide](../workflows/acquisition/historical-data.md) explains discovery and retries. The [storage guide](../workflows/acquisition/managing-acquisitions.md) explains local records and verification.
+1. Open **Workflows → Pipeline** and select **bybit_quickstart**.
+2. Choose **Run**, leave **Stop after** unset, and choose **Run pipeline**.
+3. Review the recipe and production environment in the confirmation dialog, then choose **Run**. Follow the execution output or find the retained report under **Runs**.
 
-<a id="resolve-metadata-and-prepare"></a>
+![Interactive Forge workspace](../assets/images/tui.png)
 
-## Resolve specification evidence
+See the [interactive workspace guide](../workflows/forge-tui.md) for execution windows and controls.
 
-Preparation needs a catalogue entry and instrument specification evidence applicable to the selected archives. A fresh, dedicated testing workspace can use Forge initialization after acquisition so enrichment can consider the newly registered files:
+### Recover missing specification evidence
+
+If normalization reports `No applicable immutable specification` after acquisition completes, run `mf init --production` and start the same recipe again. Initialization can now use the registered archives to establish the specification's applicability. Forge can reuse the verified raw files. See [historical pipeline troubleshooting](../workflows/pipeline.md#troubleshooting) if the run reports a different blocker.
+
+## 4. Inspect the merged dataset
+
+Use the **Merge registry publication** ID in the pipeline summary or retained run report. In Forge, open **Data → Merged**, select the matching publication, and press **Enter** to inspect its streams, files, and evidence.
+
+From the CLI, substitute the Merge registry publication ID from your run:
 
 ```bash
-mf --json init --testing > bybit-init.json
-mf markets show bybit.linear.BTCUSDT --testing
-mf catalog specs show bybit.perpetual.linear.BTCUSDT --testing
+mf datasets show --publication-id MERGED_PUBLICATION_ID
 ```
 
-Initialization collects market metadata from providers, attempts historical metadata enrichment, and publishes standard rankings. Review the recorded stages even if ranking fails after catalogue collection. Use [catalogue declarations](../workflows/catalogue/specifications.md) if you have verified historical terms to register. An inferred applicability decision is a reproducible policy decision. It does not establish that the exchange’s terms were historically verified. Read [identity and historical applicability](../concepts/identity.md) for that distinction.
+The [dataset inspection guide](../workflows/inspection/datasets.md) covers file previews and verification.
 
-<a id="execute-and-inspect"></a>
+## 5. Continue into research
 
-## Prepare and run normalization
-
-```bash
-mf normalize prepare "$recipe" --testing --dry-run | cpout
-```
-
-Look for a prepared plan with separate trades and depth jobs. Resolve any reported blockers before execution. The dry run previews the plan and prospective paths. The execution command prepares and validates its own batch.
-
-```bash
-mf --json normalize execute "$recipe" --testing > bybit-result.json
-```
-
-Forge retains the submitted batch and execution evidence. A complete result with `verification = "verified"` and `registration = "registered"` records the verified normalized publications and their registered file IDs. Use those IDs in the same database environment.
-
-<a id="compare-with-the-checked-result"></a>
-
-## Verify both outputs
-
-```bash
-python - <<'PY' > bybit-file-ids.txt
-import json
-from pathlib import Path
-
-result = json.loads(Path("bybit-result.json").read_text())
-assert result["status"] == "complete", result["status"]
-assert result["verification"] == "verified", result["verification"]
-assert result["registration"] == "registered", result["registration"]
-assert result["registrations"], "No primary files were registered"
-for item in result["registrations"]:
-    print(item["catalogue_dataset_id"])
-PY
-while IFS= read -r id; do
-  mf datasets show "$id" --testing
-  mf datasets schema "$id" --testing
-  mf datasets head "$id" --testing --limit 3 --precise
-  mf datasets streams "$id" --testing
-  mf datasets verify "$id" --testing
-done < bybit-file-ids.txt
-```
-
-Look for both content types and inspect the manifests referenced by the result. Several primary files can share one publication manifest. Trades carry a trade ID and exact decimal values. Depth rows describe level changes, while the event index maps book observations to row spans. One observation can emit many levels or zero rows, so source record counts, indexed observation counts, and emitted row counts can differ.
-
-Run the [depth inspection script](../examples/bybit/inspect_depth.py) on this example’s report:
-
-```bash
-python docs/content/examples/bybit/inspect_depth.py bybit-result.json
-```
-
-On a retained run for this recipe, the script matched 400 initial levels to the saved boundary. Your actual row counts and file IDs come from your own run report. It establishes the initial book state for this publication. Continuous reconstruction and external historical coverage require additional [depth evidence](../concepts/depth.md). Compare the requested interval, reported nominal source coverage, and observed output bounds separately.
-
-<a id="diagnose-a-failure"></a>
-
-## Recover and continue
-
-- If discovery fails, inspect the map report and provider availability before retrying. A cache miss alone cannot establish archive unavailability.
-- If preparation is blocked, follow the selected archive’s diagnostics for missing inputs, profiles, or applicable specifications.
-- If the Engine committed output but registration failed, retain the execution intent and retry [registration only](../reference/cli/normalize.md) against the original registry.
-
-Continue with [normalize historical data](../workflows/normalization/index.md) to adapt this workflow or [inspect datasets](../workflows/inspection/datasets.md) to work with the output.
-
-To value a verified merged output in a target quote, continue with [Convert historical data](../workflows/conversion.md).
+Start with [dataset discovery](../research/discovery.md), then explore the [Python API](../research/python-api.md), [Jupyter notebooks](../research/notebooks.md), or [dataset queries and lazy Polars scans](../research/querying.md#exact-values-and-bounded-execution).

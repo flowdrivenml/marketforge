@@ -1,6 +1,6 @@
 # Normalized publications
 
-Canonical Arrow rows, manifest and auxiliary evidence emitted by historical normalization. [Inspect published files](../../workflows/inspection/datasets.md) · [Inspect a Bybit depth boundary](../../getting-started/quickstart.md#verify-both-outputs)
+Canonical Arrow rows, manifest and auxiliary evidence emitted by historical normalization. [Inspect published files](../../workflows/inspection/datasets.md) · [Inspect a Bybit depth boundary](../../examples/bybit/manual-normalization.md#verify-both-outputs)
 
 A managed run records Engine execution, committed publication verification, and PostgreSQL registration as separate outcomes. A publication has an Engine `dataset_id` and a shared manifest. Registration assigns a publication ID and a separate catalogue ID to each eligible primary Parquet file. Use the primary-file ID with [dataset inspection](../../workflows/inspection/datasets.md), including `mf datasets verify ID --testing`. Use the [logical run ID](../cli/runs.md) for execution history and the execution result for attempt-specific report and intent paths.
 

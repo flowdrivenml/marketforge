@@ -4,6 +4,8 @@ A single Forge recipe acquires and registers raw archives, normalizes them, and
 publishes and registers a merged dataset. Add a `[convert]` table to value the
 merged output in a target quote and index the verified result.
 
+Start with the [Quick Start](../getting-started/quickstart.md) to run a minimal Bybit recipe.
+
 ## Recipe
 
 In **Workflows → Pipeline → New recipe**, enter the UTC interval and add
@@ -42,10 +44,11 @@ recipes keep their existing defaults.
 
 ## Inspect and run
 
-Use a configured `marketforge_test` database with the testing identity and
-current migrations. Install the managed normalize and merge engines and use the
-operation runtime files, pipeline runtime and normalization profiles. The catalogue must supply instrument
-identity and applicable historical specifications for the requested archives.
+Use an initialized registry with current migrations. The commands below use
+the testing registry. Omit `--testing` to use the default production registry.
+Install the managed normalize and merge engines and use the operation runtime
+files, pipeline runtime, and normalization profiles. The catalogue must supply
+instrument identity and applicable historical specifications for the requested archives.
 Forge reads its ordinary application and HTTP configuration.
 
 ```bash
@@ -165,7 +168,7 @@ and registration receipts. Each engine attempt retains separate diagnostic
 logs and its structured result when available.
 
 Read the reported child error before retrying. Build missing managed engines,
-verify access to the testing registry, and supply missing catalogue or profile
+verify access to the selected registry, and supply missing catalogue or profile
 evidence as indicated. Preserve existing outputs and staging when inspecting
 interrupted attempts. Use a fresh run when the recipe, data selection, or
 interpretation needs to change.

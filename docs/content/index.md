@@ -1,21 +1,18 @@
 # Using MarketForge
 
-MarketForge turns historical market-data archives and external recordings into canonical trade and order-book datasets. Forge selects and tracks inputs, prepares processing jobs, and records their outcomes. The Engine interprets events and writes publication files that can be inspected with the CLI or Python.
+MarketForge turns historical market-data archives into research-ready trade and order-book datasets. Run the historical pipeline from the command line or use the interactive Forge workspace to run recipes, inspect outputs, and review execution history.
 
-## Start with a first dataset
+## Get your first dataset
 
-[Install and prepare a testing workspace](getting-started/installation.md), then follow the [Bybit BTCUSDT trades and depth quick start](getting-started/quickstart.md). You will verify the managed copies, inspect the normalized rows, and check the initial depth snapshot against its recorded boundary.
+[Install MarketForge](getting-started/installation.md) and follow the [Quick Start](getting-started/quickstart.md). One recipe prepares three UTC days of Bybit BTCUSDT trades and L2 depth. Use the [interactive Forge workspace](workflows/forge-tui.md) to run the recipe and inspect the merged publication.
 
-## Choose a task
+## Explore MarketForge
 
-| If you need to… | Start here |
+| Guide | What you can do |
 | --- | --- |
-| Find an instrument, browse current statistics, or inspect a ranking | [Explore markets](workflows/markets/index.md) |
-| Download archives or add a recording | [Acquisition](workflows/acquisition/index.md) and [external recordings](workflows/acquisition/external-data.md) |
-| Inspect raw availability and manage copies | [Raw storage](workflows/acquisition/managing-acquisitions.md) |
-| Process data | [Normalize](workflows/normalization/index.md), [merge](workflows/merge.md), or [convert](workflows/conversion.md) |
-| Run acquisition, normalization, and merge together | [Historical pipeline](workflows/pipeline.md) |
-| Read an existing publication | [Inspect datasets](workflows/inspection/datasets.md) or [use a notebook](research/notebooks.md) |
-| Look up exact syntax, fields, or formats | [Reference](reference/index.md) |
+| [Historical pipeline](workflows/pipeline.md) | Configure acquisition, normalization, merge, and optional conversion. |
+| [Research & Analysis](research/index.md) | Discover datasets and query them with Python, Arrow, or Polars. |
+| [Developer documentation](development/index.md) | Set up a contributor environment, test changes, and extend Forge and the Engine. |
+| [Roadmap](https://github.com/flowdrivenml/marketforge/blob/main/ROADMAP.md) | See completed milestones, current priorities, and planned development. |
 
-Read the [concepts](concepts/index.md) to understand the evidence behind a result. Use the [worked examples](examples/index.md) when you want reusable inputs, or [troubleshooting](maintenance/index.md) when a step fails. Contributors can start in [Development](development/index.md).
+Use the [workflow guides](workflows/index.md) for individual operations, the [reference](reference/index.md) for commands and configuration, and the [examples](examples/index.md) for recipes and advanced tutorials.
