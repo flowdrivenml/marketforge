@@ -9,7 +9,7 @@ env/
 /.bin/
 /.recordings/
 /.planning/
-/.examples/
+/examples/
 
 # Python cache / compiled files
 __pycache__/
