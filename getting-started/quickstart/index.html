@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Historical market-data acquisition, normalization and dataset inspection">
+        <meta name="description" content="Historical market-data pipelines and quantitative research">
       
       
       
@@ -17,7 +17,7 @@
         <link rel="prev" href="../installation/">
       
       
-        <link rel="next" href="../../workflows/">
+        <link rel="next" href="../../workflows/forge-tui/">
       
       
         
@@ -28,7 +28,7 @@
     
     
       
-        <title>First dataset: Bybit trades and depth - MarketForge</title>
+        <title>Quick Start - MarketForge</title>
       
     
     
@@ -111,7 +111,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              First dataset: Bybit trades and depth
+              Quick Start
             
           </span>
         </div>
@@ -456,6 +456,8 @@
       
         
       
+        
+      
     
     
     
@@ -483,7 +485,7 @@
   <span class="md-ellipsis">
     
   
-  Getting started
+  Getting Started
 
     
   </span>
@@ -505,7 +507,7 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Getting started
+  Getting Started
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -526,7 +528,7 @@
   <span class="md-ellipsis">
     
   
-  Installation and workspace setup
+  Installation
 
     
   </span>
@@ -562,7 +564,7 @@
   <span class="md-ellipsis">
     
   
-  First dataset: Bybit trades and depth
+  Quick Start
 
     
   </span>
@@ -579,7 +581,7 @@
   <span class="md-ellipsis">
     
   
-  First dataset: Bybit trades and depth
+  Quick Start
 
     
   </span>
@@ -605,10 +607,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#prepare-the-workspace" class="md-nav__link">
+  <a href="#1-install-marketforge" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Prepare the workspace
+        1. Install MarketForge
       </span>
     </span>
   </a>
@@ -616,10 +618,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#plan-and-acquire-a-day" class="md-nav__link">
+  <a href="#2-load-the-example-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Plan and acquire a day
+        2. Load the example recipe
       </span>
     </span>
   </a>
@@ -627,10 +629,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#resolve-specification-evidence" class="md-nav__link">
+  <a href="#3-run-the-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Resolve specification evidence
+        3. Run the pipeline
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Run the pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        CLI
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interactive-forge-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Interactive Forge workspace
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recover-missing-specification-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recover missing specification evidence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-inspect-the-merged-dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        4. Inspect the merged dataset
       </span>
     </span>
   </a>
@@ -638,32 +690,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prepare-and-run-normalization" class="md-nav__link">
+  <a href="#5-continue-into-research" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Prepare and run normalization
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#verify-both-outputs" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verify both outputs
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#recover-and-continue" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Recover and continue
+        5. Continue into research
       </span>
     </span>
   </a>
@@ -674,6 +704,33 @@
   
 </nav>
       
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Workspace
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -974,6 +1031,139 @@
   
   
   
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/live/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Live
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_3" id="__nav_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Live
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/live/management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Administer MarketForge Live
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/live/consumption/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Consume Live market data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../../workflows/storage/" class="md-nav__link">
         
@@ -1025,7 +1215,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_5" >
         
           
           <div class="md-nav__link md-nav__container">
@@ -1046,15 +1236,15 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_1_3_4" id="__nav_1_3_4_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_1_3_5" id="__nav_1_3_5_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_4_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_4">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_5">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -1160,7 +1350,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_6" >
         
           
           <div class="md-nav__link md-nav__container">
@@ -1181,15 +1371,15 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_1_3_5" id="__nav_1_3_5_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_1_3_6" id="__nav_1_3_6_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_5_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_5">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_6">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -1320,7 +1510,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_7" >
         
           
           <div class="md-nav__link md-nav__container">
@@ -1341,15 +1531,15 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_1_3_6" id="__nav_1_3_6_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_1_3_7" id="__nav_1_3_7_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_6_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_6">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_7">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -1491,7 +1681,7 @@
   <span class="md-ellipsis">
     
   
-  Pipeline
+  Historical pipeline
 
     
   </span>
@@ -1530,10 +1720,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_10" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_11" >
         
           
-          <label class="md-nav__link" for="__nav_1_3_10" id="__nav_1_3_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_1_3_11" id="__nav_1_3_11_label" tabindex="0">
             
   
   
@@ -1551,8 +1741,8 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_10_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_10">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_11_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_11">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -1619,33 +1809,6 @@
           </nav>
         
       
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../workflows/forge-tui/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Interactive Forge workspace
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -2097,6 +2260,8 @@
       
         
           
+        
+      
         
       
         
@@ -3191,6 +3356,155 @@
   
   
   
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_4" id="__nav_1_5_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Live
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Live
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/live/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Live configuration
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/live/management-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Live management API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/live/streaming-protocol/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  MarketForge streaming v1
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../../reference/acquisition-sources/" class="md-nav__link">
         
@@ -3271,10 +3585,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_7" >
         
           
-          <label class="md-nav__link" for="__nav_1_5_6" id="__nav_1_5_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_1_5_7" id="__nav_1_5_7_label" tabindex="0">
             
   
   
@@ -3292,8 +3606,8 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_6_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_5_6">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_7">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -3442,10 +3756,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_6_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_7_5" >
         
           
-          <label class="md-nav__link" for="__nav_1_5_6_5" id="__nav_1_5_6_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_1_5_7_5" id="__nav_1_5_7_5_label" tabindex="0">
             
   
   
@@ -3463,8 +3777,8 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_1_5_6_5_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_5_6_5">
+          <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_1_5_7_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_7_5">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -3656,6 +3970,8 @@
       
         
       
+        
+      
     
     
     
@@ -3710,6 +4026,33 @@
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
               
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/bybit/manual-normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Advanced tutorial: manual Bybit acquisition and normalization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
                 
               
                 
@@ -4438,6 +4781,8 @@
       
         
       
+        
+      
     
     
     
@@ -4664,6 +5009,155 @@
     
   
   Conversion Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3_4" id="__nav_3_3_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Live Engine
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_3_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_3_3_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Live Engine
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/live/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Live architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/live/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Live startup and shutdown
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/live/processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Live processing runtime
 
     
   </span>
@@ -5120,10 +5614,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#prepare-the-workspace" class="md-nav__link">
+  <a href="#1-install-marketforge" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Prepare the workspace
+        1. Install MarketForge
       </span>
     </span>
   </a>
@@ -5131,10 +5625,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#plan-and-acquire-a-day" class="md-nav__link">
+  <a href="#2-load-the-example-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Plan and acquire a day
+        2. Load the example recipe
       </span>
     </span>
   </a>
@@ -5142,10 +5636,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#resolve-specification-evidence" class="md-nav__link">
+  <a href="#3-run-the-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Resolve specification evidence
+        3. Run the pipeline
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Run the pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        CLI
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interactive-forge-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Interactive Forge workspace
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recover-missing-specification-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recover missing specification evidence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-inspect-the-merged-dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        4. Inspect the merged dataset
       </span>
     </span>
   </a>
@@ -5153,32 +5697,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prepare-and-run-normalization" class="md-nav__link">
+  <a href="#5-continue-into-research" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Prepare and run normalization
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#verify-both-outputs" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verify both outputs
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#recover-and-continue" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Recover and continue
+        5. Continue into research
       </span>
     </span>
   </a>
@@ -5259,6 +5781,8 @@
       
         
       
+        
+      
     
     
     
@@ -5268,7 +5792,7 @@
           
   
   <span class="md-ellipsis">
-    Getting started
+    Getting Started
   </span>
 
         </a>
@@ -5290,108 +5814,73 @@
   
 
 
-<h1 id="first-dataset-bybit-btcusdt-trades-and-depth">First dataset: Bybit BTCUSDT trades and depth</h1>
-<p>Acquire one UTC day of trades and L2 depth for Bybit’s BTCUSDT linear USDT perpetual. Normalize it into canonical Parquet, verify the registered primary files, then check the first reconstructed book state against its retained boundary.</p>
-<h2 id="prepare-the-workspace">Prepare the workspace</h2>
-<p>From the checkout, run <code>./install.sh --dev --skip-market-init</code> to set up the managed Engine, Arrow, and a migrated testing registry. If you already have a standard installation and want to add only the prerequisites for this guide, follow <a href="../installation/#prepare-the-testing-registry">manual testing setup and inspection tools</a>. Keep that registry selected with <code>--testing</code> throughout this example. Use a workspace with space for both compressed archives, normalized Parquet, and Engine scratch files.</p>
-<p>The installed profiles must match this venue and contract. Validate them before downloading:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span>bybit.perpetual.linear.trades
-mf<span class="w"> </span>normalize<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span>bybit.perpetual.linear.depth
+<h1 id="quick-start">Quick Start</h1>
+<p>Run a historical pipeline for Bybit BTCUSDT and inspect the merged dataset in Forge. Choose either the CLI or the interactive workspace to run it.</p>
+<h2 id="1-install-marketforge">1. Install MarketForge</h2>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/flowdrivenml/marketforge.git
+<span class="nb">cd</span><span class="w"> </span>marketforge
+./install.sh
 </code></pre></div>
-<p>The catalogue identifies this instrument as <code>bybit.perpetual.linear.BTCUSDT</code>. The acquisition recipe uses the native symbol with separate venue, instrument type and market category fields. It requests <code>trades</code> and <code>order_book_l2</code>; the Engine depth profile ends in <code>.depth</code>.</p>
-<p><a id="discover-and-acquire-both-inputs"></a></p>
-<h2 id="plan-and-acquire-a-day">Plan and acquire a day</h2>
-<p>Use the <a href="../../examples/bybit/acquisition.toml">Bybit recipe</a> for the half-open UTC interval <code>[2026-10-27T00:00:00Z, 2026-10-28T00:00:00Z)</code>. Discovery selects whole overlapping daily archives. A shorter interval inside this day can still select both complete archives. Normalization processes the selected inputs without trimming their records to the request.</p>
-<div class="highlight"><pre><span></span><code><span class="nv">recipe</span><span class="o">=</span>docs/content/examples/bybit/acquisition.toml
-<span class="nv">library</span><span class="o">=</span>data/.config/workflows/data_engineering/acquisition
-<span class="nv">name</span><span class="o">=</span>bybit-btc-20261027
-mkdir<span class="w"> </span>-p<span class="w"> </span><span class="s2">"</span><span class="nv">$library</span><span class="s2">"</span>
-<span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>!<span class="w"> </span>-e<span class="w"> </span><span class="s2">"</span><span class="nv">$library</span><span class="s2">/</span><span class="nv">$name</span><span class="s2">.toml"</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
-<span class="w">  </span>cp<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span><span class="w"> </span><span class="s2">"</span><span class="nv">$library</span><span class="s2">/</span><span class="nv">$name</span><span class="s2">.toml"</span>
-<span class="k">fi</span>
-cmp<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span><span class="w"> </span><span class="s2">"</span><span class="nv">$library</span><span class="s2">/</span><span class="nv">$name</span><span class="s2">.toml"</span>
-</code></pre></div>
-<p>If <code>cmp</code> reports a difference, choose an unused name and repeat the copy before proceeding.</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>map<span class="w"> </span><span class="s2">"</span><span class="nv">$name</span><span class="s2">"</span><span class="w"> </span>--testing
-mf<span class="w"> </span>acquisition<span class="w"> </span>plan<span class="w"> </span><span class="s2">"</span><span class="nv">$name</span><span class="s2">"</span><span class="w"> </span>--testing<span class="w"> </span>--cache-only
-</code></pre></div>
-<p>Map contacts Bybit for discovery and records the result without downloading archive bodies. The plan reads registered discovery and local inventory. Check that the two requests resolve to the expected candidates before downloading:</p>
-<table>
-<thead>
-<tr>
-<th>Request</th>
-<th>Expected archive</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Trades</td>
-<td><code>BTCUSDT2026-10-27.csv.gz</code></td>
-</tr>
-<tr>
-<td>L2 depth</td>
-<td><code>2026-10-27_BTCUSDT_ob200.data.zip</code></td>
-</tr>
-</tbody>
-</table>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>download<span class="w"> </span><span class="s2">"</span><span class="nv">$name</span><span class="s2">"</span><span class="w"> </span>--testing
-mf<span class="w"> </span>storage<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--exchange<span class="w"> </span>bybit<span class="w"> </span>--instrument-type<span class="w"> </span>perpetual<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--market<span class="w"> </span>linear<span class="w"> </span>--instrument<span class="w"> </span>BTCUSDT<span class="w"> </span>--status<span class="w"> </span><span class="nb">complete</span><span class="w"> </span>--wide<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--start<span class="w"> </span><span class="m">2026</span>-10-27T00:00:00Z<span class="w"> </span>--end<span class="w"> </span><span class="m">2026</span>-10-28T00:00:00Z
-</code></pre></div>
-<p>Download registers verified managed copies. Check for both filenames in storage. Use a returned local ID with <code>mf storage show LOCAL_ID --testing</code> to inspect the managed path and checksum. The <a href="../../workflows/acquisition/historical-data/">historical acquisition guide</a> explains discovery and retries. The <a href="../../workflows/acquisition/managing-acquisitions/">storage guide</a> explains local records and verification.</p>
-<p><a id="resolve-metadata-and-prepare"></a></p>
-<h2 id="resolve-specification-evidence">Resolve specification evidence</h2>
-<p>Preparation needs a catalogue entry and instrument specification evidence applicable to the selected archives. A fresh, dedicated testing workspace can use Forge initialization after acquisition so enrichment can consider the newly registered files:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>init<span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>bybit-init.json
-mf<span class="w"> </span>markets<span class="w"> </span>show<span class="w"> </span>bybit.linear.BTCUSDT<span class="w"> </span>--testing
-mf<span class="w"> </span>catalog<span class="w"> </span>specs<span class="w"> </span>show<span class="w"> </span>bybit.perpetual.linear.BTCUSDT<span class="w"> </span>--testing
-</code></pre></div>
-<p>Initialization collects market metadata from providers, attempts historical metadata enrichment, and publishes standard rankings. Review the recorded stages even if ranking fails after catalogue collection. Use <a href="../../workflows/catalogue/specifications/">catalogue declarations</a> if you have verified historical terms to register. An inferred applicability decision is a reproducible policy decision. It does not establish that the exchange’s terms were historically verified. Read <a href="../../concepts/identity/">identity and historical applicability</a> for that distinction.</p>
-<p><a id="execute-and-inspect"></a></p>
-<h2 id="prepare-and-run-normalization">Prepare and run normalization</h2>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>prepare<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span><span class="w"> </span>--testing<span class="w"> </span>--dry-run<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
-</code></pre></div>
-<p>Look for a prepared plan with separate trades and depth jobs. Resolve any reported blockers before execution. The dry run previews the plan and prospective paths. The execution command prepares and validates its own batch.</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>execute<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span><span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>bybit-result.json
-</code></pre></div>
-<p>Forge retains the submitted batch and execution evidence. A complete result with <code>verification = "verified"</code> and <code>registration = "registered"</code> records the verified normalized publications and their registered file IDs. Use those IDs in the same database environment.</p>
-<p><a id="compare-with-the-checked-result"></a></p>
-<h2 id="verify-both-outputs">Verify both outputs</h2>
-<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;'PY' &gt; bybit-file-ids.txt</span>
-<span class="s">import json</span>
-<span class="s">from pathlib import Path</span>
+<p>Follow the <a href="../installation/">installation guide</a> for supported platforms and setup options. The steps below assume installation and market initialization completed successfully and that you're running commands from the checkout. Forge uses the production registry by default.</p>
+<h2 id="2-load-the-example-recipe">2. Load the example recipe</h2>
+<p>The <a href="../../examples/bybit/pipeline.toml">canonical pipeline TOML</a> requests trades and L2 order-book depth for the Bybit BTCUSDT linear perpetual. It covers October 27, 28, and 29, 2026, in UTC. The end timestamp is exclusive. Forge runs acquisition, normalization, and merge using the installed defaults.</p>
+<div class="highlight"><pre><span></span><code><span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span>
 
-<span class="s">result = json.loads(Path("bybit-result.json").read_text())</span>
-<span class="s">assert result["status"] == "complete", result["status"]</span>
-<span class="s">assert result["verification"] == "verified", result["verification"]</span>
-<span class="s">assert result["registration"] == "registered", result["registration"]</span>
-<span class="s">assert result["registrations"], "No primary files were registered"</span>
-<span class="s">for item in result["registrations"]:</span>
-<span class="s">    print(item["catalogue_dataset_id"])</span>
-<span class="s">PY</span>
-<span class="k">while</span><span class="w"> </span><span class="nv">IFS</span><span class="o">=</span><span class="w"> </span><span class="nb">read</span><span class="w"> </span>-r<span class="w"> </span>id<span class="p">;</span><span class="w"> </span><span class="k">do</span>
-<span class="w">  </span>mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span><span class="s2">"</span><span class="nv">$id</span><span class="s2">"</span><span class="w"> </span>--testing
-<span class="w">  </span>mf<span class="w"> </span>datasets<span class="w"> </span>schema<span class="w"> </span><span class="s2">"</span><span class="nv">$id</span><span class="s2">"</span><span class="w"> </span>--testing
-<span class="w">  </span>mf<span class="w"> </span>datasets<span class="w"> </span>head<span class="w"> </span><span class="s2">"</span><span class="nv">$id</span><span class="s2">"</span><span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">3</span><span class="w"> </span>--precise
-<span class="w">  </span>mf<span class="w"> </span>datasets<span class="w"> </span>streams<span class="w"> </span><span class="s2">"</span><span class="nv">$id</span><span class="s2">"</span><span class="w"> </span>--testing
-<span class="w">  </span>mf<span class="w"> </span>datasets<span class="w"> </span>verify<span class="w"> </span><span class="s2">"</span><span class="nv">$id</span><span class="s2">"</span><span class="w"> </span>--testing
-<span class="k">done</span><span class="w"> </span>&lt;<span class="w"> </span>bybit-file-ids.txt
+<span class="k">[interval]</span>
+<span class="n">start</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-10-27T00:00:00Z</span>
+<span class="n">end</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-10-30T00:00:00Z</span>
+
+<span class="k">[[requests]]</span>
+<span class="n">exchange</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"bybit"</span>
+<span class="n">instrument_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"perpetual"</span>
+<span class="n">market_category</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"linear"</span>
+<span class="n">data_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"trades"</span>
+<span class="n">scope</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">kind</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"instrument"</span><span class="p">,</span><span class="w"> </span><span class="n">identifier</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"BTCUSDT"</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">[[requests]]</span>
+<span class="n">exchange</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"bybit"</span>
+<span class="n">instrument_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"perpetual"</span>
+<span class="n">market_category</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"linear"</span>
+<span class="n">data_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"order_book_l2"</span>
+<span class="n">scope</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">kind</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"instrument"</span><span class="p">,</span><span class="w"> </span><span class="n">identifier</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"BTCUSDT"</span><span class="w"> </span><span class="p">}</span>
 </code></pre></div>
-<p>Look for both content types and inspect the manifests referenced by the result. Several primary files can share one publication manifest. Trades carry a trade ID and exact decimal values. Depth rows describe level changes, while the event index maps book observations to row spans. One observation can emit many levels or zero rows, so source record counts, indexed observation counts, and emitted row counts can differ.</p>
-<p>Run the <a href="../../examples/bybit/inspect_depth.py">depth inspection script</a> on this example’s report:</p>
-<div class="highlight"><pre><span></span><code>python<span class="w"> </span>docs/content/examples/bybit/inspect_depth.py<span class="w"> </span>bybit-result.json
+<p>Copy the recipe to Forge's managed library. The command reports an existing destination and leaves it in place.</p>
+<div class="highlight"><pre><span></span><code><span class="nv">recipe_dir</span><span class="o">=</span>data/.config/workflows/data_engineering/pipeline
+mkdir<span class="w"> </span>-p<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe_dir</span><span class="s2">"</span>
+<span class="nv">recipe</span><span class="o">=</span><span class="s2">"</span><span class="nv">$recipe_dir</span><span class="s2">/bybit_quickstart.toml"</span>
+<span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-e<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-L<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">  </span><span class="nb">printf</span><span class="w"> </span><span class="s1">'Recipe already exists: %s\n'</span><span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span>
+<span class="k">else</span>
+<span class="w">  </span><span class="o">(</span><span class="nb">set</span><span class="w"> </span>-C<span class="p">;</span><span class="w"> </span>cat<span class="w"> </span>docs/content/examples/bybit/pipeline.toml<span class="w"> </span>&gt;<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span><span class="o">)</span>
+<span class="k">fi</span>
 </code></pre></div>
-<p>On a retained run for this recipe, the script matched 400 initial levels to the saved boundary. Your actual row counts and file IDs come from your own run report. It establishes the initial book state for this publication. Continuous reconstruction and external historical coverage require additional <a href="../../concepts/depth/">depth evidence</a>. Compare the requested interval, reported nominal source coverage, and observed output bounds separately.</p>
-<p><a id="diagnose-a-failure"></a></p>
-<h2 id="recover-and-continue">Recover and continue</h2>
-<ul>
-<li>If discovery fails, inspect the map report and provider availability before retrying. A cache miss alone cannot establish archive unavailability.</li>
-<li>If preparation is blocked, follow the selected archive’s diagnostics for missing inputs, profiles, or applicable specifications.</li>
-<li>If the Engine committed output but registration failed, retain the execution intent and retry <a href="../../reference/cli/normalize/">registration only</a> against the original registry.</li>
-</ul>
-<p>Continue with <a href="../../workflows/normalization/">normalize historical data</a> to adapt this workflow or <a href="../../workflows/inspection/datasets/">inspect datasets</a> to work with the output.</p>
-<p>To value a verified merged output in a target quote, continue with <a href="../../workflows/conversion/">Convert historical data</a>.</p>
+<p>If the recipe already exists, check its contents before using that name.</p>
+<h2 id="3-run-the-pipeline">3. Run the pipeline</h2>
+<h3 id="cli">CLI</h3>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>pipeline<span class="w"> </span>run<span class="w"> </span>bybit_quickstart
+</code></pre></div>
+<p>Forge discovers and downloads the archives, verifies and registers the managed copies, normalizes the data, and merges the outputs. It verifies and registers the merged publication and retains a run report with stage results. Download and processing time and storage requirements depend on archive sizes, network availability, and local hardware.</p>
+<p>For an optional preview, use <code>mf pipeline validate bybit_quickstart</code> to check the recipe or <code>mf pipeline plan bybit_quickstart</code> to see the stages and available registry evidence.</p>
+<h3 id="interactive-forge-workspace">Interactive Forge workspace</h3>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>tui
+</code></pre></div>
+<ol>
+<li>Open <strong>Workflows → Pipeline</strong> and select <strong>bybit_quickstart</strong>.</li>
+<li>Choose <strong>Run</strong>, leave <strong>Stop after</strong> unset, and choose <strong>Run pipeline</strong>.</li>
+<li>Review the recipe and production environment in the confirmation dialog, then choose <strong>Run</strong>. Follow the execution output or find the retained report under <strong>Runs</strong>.</li>
+</ol>
+<p><img alt="Interactive Forge workspace" src="../../assets/images/tui.png" /></p>
+<p>See the <a href="../../workflows/forge-tui/">interactive workspace guide</a> for execution windows and controls.</p>
+<h3 id="recover-missing-specification-evidence">Recover missing specification evidence</h3>
+<p>If normalization reports <code>No applicable immutable specification</code> after acquisition completes, run <code>mf init --production</code> and start the same recipe again. Initialization can now use the registered archives to establish the specification's applicability. Forge can reuse the verified raw files. See <a href="../../workflows/pipeline/#troubleshooting">historical pipeline troubleshooting</a> if the run reports a different blocker.</p>
+<h2 id="4-inspect-the-merged-dataset">4. Inspect the merged dataset</h2>
+<p>Use the <strong>Merge registry publication</strong> ID in the pipeline summary or retained run report. In Forge, open <strong>Data → Merged</strong>, select the matching publication, and press <strong>Enter</strong> to inspect its streams, files, and evidence.</p>
+<p>From the CLI, substitute the Merge registry publication ID from your run:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>--publication-id<span class="w"> </span>MERGED_PUBLICATION_ID
+</code></pre></div>
+<p>The <a href="../../workflows/inspection/datasets/">dataset inspection guide</a> covers file previews and verification.</p>
+<h2 id="5-continue-into-research">5. Continue into research</h2>
+<p>Start with <a href="../../research/discovery/">dataset discovery</a>, then explore the <a href="../../research/python-api/">Python API</a>, <a href="../../research/notebooks/">Jupyter notebooks</a>, or <a href="../../research/querying/#exact-values-and-bounded-execution">dataset queries and lazy Polars scans</a>.</p>
 
 
 
@@ -5423,7 +5912,7 @@ mf<span class="w"> </span>catalog<span class="w"> </span>specs<span class="w"> <
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../installation/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Installation and workspace setup">
+          <a href="../installation/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Installation">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -5433,20 +5922,20 @@ mf<span class="w"> </span>catalog<span class="w"> </span>specs<span class="w"> <
                 Previous
               </span>
               <div class="md-ellipsis">
-                Installation and workspace setup
+                Installation
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../workflows/" class="md-footer__link md-footer__link--next" aria-label="Next: Workflows">
+          <a href="../../workflows/forge-tui/" class="md-footer__link md-footer__link--next" aria-label="Next: Interactive Workspace">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Workflows
+                Interactive Workspace
               </div>
             </div>
             <div class="md-footer__button md-icon">

@@ -70,6 +70,15 @@
         <loc>https://flowdrivenml.github.io/marketforge/development/forge/</loc>
       </url>
       <url>
+        <loc>https://flowdrivenml.github.io/marketforge/development/live/architecture/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/development/live/lifecycle/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/development/live/processing/</loc>
+      </url>
+      <url>
         <loc>https://flowdrivenml.github.io/marketforge/development/merge/</loc>
       </url>
       <url>
@@ -101,6 +110,9 @@
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/examples/bring-your-own-data/databento/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/examples/bybit/manual-normalization/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/examples/catalogue/</loc>
@@ -256,6 +268,15 @@
         <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/publications/</loc>
       </url>
       <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/live/configuration/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/live/management-api/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/live/streaming-protocol/</loc>
+      </url>
+      <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/registration/</loc>
       </url>
       <url>
@@ -317,6 +338,15 @@
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/workflows/inspection/runs/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/live/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/live/consumption/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/live/management/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/workflows/markets/</loc>
