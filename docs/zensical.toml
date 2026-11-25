@@ -60,10 +60,14 @@ nav = [
   ] },
   { "Research & Analysis" = [
     "research/index.md",
+    "research/getting-started.md",
     "research/notebooks.md",
     "research/discovery.md",
+    "research/inspection.md",
+    "research/streams.md",
     "research/partitions.md",
     "research/querying.md",
+    "research/arrow-polars.md",
     "research/python-api.md",
   ] },
   { "Development" = [
@@ -124,10 +128,6 @@ footnotes = {}
 pymdownx.superfences.custom_fences = [
   { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
 ]
-
-[project.markdown_extensions.pymdownx.snippets]
-base_path = ["content"]
-check_paths = true
 
 [project.theme]
 logo = "assets/branding/logo_small.png"

@@ -1,21 +1,22 @@
-# Query combined market data
+# Querying market data
 
 Use the [discovery workflow](discovery.md) to open a merged or converted **combined** publication. Inspect its stream identities and available physical locators before selecting events.
 
 ```python
 print(merged.streams())
 print(merged.schema())
-part = merged.partitions()[0]
+display([part.info() for part in merged.partitions()])
+part = merged.partition(input("Partition reference: ").strip())
 trades = merged.query(data_type="trades", partition=part.reference)
 depth = merged.query(data_type="depth", partition=part.reference)
-print(trades.head(20))
-print(depth.head(5))
+print(trades.head(20, input_rows=100_000))
+print(depth.head(5, input_rows=100_000))
 ```
 
 Choose an authoritative numeric `instrument_id` from `streams()`, or an exact `stream_id`. They can be combined with the event-kind selector. Specify a projection to reduce decoding and memory use.
 
 ```python
-instrument_id = merged.streams()["instrument_id"][0]
+instrument_id = int(input("Instrument ID from the stream table: "))
 query = merged.query(data_type="trades", instrument_id=instrument_id)
 columns = ["event_timestamp_ns", "instrument_id", "stream_id"]
 start = "2026-10-27T10:00:00.000000001Z"

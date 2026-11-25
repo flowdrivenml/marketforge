@@ -1,10 +1,10 @@
 # Research & Analysis
 
-Discover historical datasets, inspect their recorded identity and provenance, then read only the files and market events needed for a question. The research API provides exact Arrow access and lazy Polars queries over immutable Parquet. The [historical data model](../concepts/data-model.md) explains how normalized, merged, and converted outputs relate to their source recordings.
+Use Python to discover historical outputs, inspect their provenance, and read the events needed for your research. The public entry point is `forge.datasets.MarketData`. It provides read-only access to normalized, merged, and converted Parquet data.
 
-1. Set up the research dependencies and open a dataset in [Jupyter](notebooks.md).
-2. [Search by market or identifier](discovery.md), then open the exact publication or file.
-3. Inspect [partitions and row groups](partitions.md) before reading a large publication.
-4. Build a [bounded trade or depth query](querying.md). Use the [Python API](python-api.md) to check selectors and return types.
+1. [Set up Python](getting-started.md) and preview the output of the historical Quick Start.
+2. [Explore the Jupyter notebooks](notebooks.md) or [discover and open datasets](discovery.md).
+3. [Inspect metadata and schemas](inspection.md), [select logical streams](streams.md), and [inspect physical partitions](partitions.md).
+4. [Build a bounded query](querying.md) and choose [Arrow or Polars](arrow-polars.md) for the values you need.
 
-For registry verification, run reports, and deletion, use the [operational Dataset workflow](../workflows/inspection/datasets.md).
+Use the [Python API reference](python-api.md) for supported arguments and return types. For operational dataset management and verification, see the [Forge dataset workflow](../workflows/inspection/datasets.md).

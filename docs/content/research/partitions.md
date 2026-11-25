@@ -1,4 +1,4 @@
-# Inspect partitions and row groups
+# Partitions and row groups
 
 A logical stream identifies a market data sequence. A physical partition groups one or more primary files, each of which can contain several Parquet row groups. The registry can identify a publication or a primary file. A partition locator only has meaning within the dataset handle that listed it.
 
@@ -13,11 +13,11 @@ A logical stream identifies a market data sequence. A physical partition groups 
 Re-read locators after changing the selected publication or file. Row groups describe physical storage and carry no separate registry identity. The inventory reads Parquet footers and manifest metadata. Missing observed statistics appear as unknown. File size, rows, and any declared row-group counts are checked against available evidence when opening a registered output.
 
 ```python
-parts = merged.partitions()
-if parts:
-    part = merged.partition(parts[0].reference)
-    print(part.info(), part.schema())
-    print(part.row_group(0).head(5, columns=["event_timestamp_ns"]))
+display([part.info() for part in merged.partitions()])
+part = merged.partition(input("Partition reference: ").strip())
+display(part.info(), part.schema())
+display(part.row_groups()[:3])
+display(part.row_group(0).head(5, columns=["event_timestamp_ns"]))
 ```
 
 Use `part.row_groups()` for per-file group rows and recorded compressed column-chunk size. Use `part.batches()` for exact sequential Arrow access, or `part.scan(columns=[...])` for lazy Polars over compatible fields. An explicitly selected row group supports `head` and `batches`. Use `part.select_row_groups([0, 2], file=1)` to read several groups from one file. Pass a list of locators to `Dataset.query(partition=...)` to read several partitions in manifest order.

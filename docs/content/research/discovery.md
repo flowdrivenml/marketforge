@@ -1,41 +1,77 @@
 # Discover and open datasets
 
-The public entry point is `MarketData` from `forge.datasets`. Filesystem discovery returns one handle per primary file. Registry search returns one record per publication or indexed conversion. A publication can appear on several timelines without any physical copies being made.
+## Search local files
 
-## Filesystem discovery
+Filesystem discovery walks the selected roots and returns one `Dataset` per primary file. It reads manifests and Parquet footers without connecting to PostgreSQL. The default can also read projected provenance columns for supported causal merges. Use `metadata_only=True` for a lighter search, and open the chosen publication with the default settings if you need more stream evidence.
 
 ```python
 from forge.datasets import MarketData
 
-data = MarketData()
-catalog = data.discover(scope="committed", metadata_only=True)
-files = catalog.find(exchange="bybit", symbol="BTCUSDT")
-files.summary()
+market = MarketData()
+catalog = market.discover(scope="committed", metadata_only=True)
+tests = market.discover(scope="tests", metadata_only=True)
+all_files = market.discover(scope="all", metadata_only=True)
+display(catalog.summary())
 ```
 
-Use `scope="tests"` for test fixture roots or `scope="all"` to include both. Opt in to staging with `include_staging=True`. `metadata_only=True` uses manifests and footers. The default additionally checks physical provenance for supported causal merges, which can read projected event columns to establish exact stream membership or counts. `summary()` uses the metadata already loaded on the handles.
-
-A summary begins with an actionable reference and its domain. A file ID opens a registered primary file. A filesystem path opens that specific artifact through `data.open(path)`. A supplied output reference identifies an indexed conversion. Multiple known instruments are shown explicitly. Unknown fields stay empty. See the [Python API](python-api.md#datasetcatalog) for exact filters.
-
-`find` uses exact symbol matching by default, with `symbol_match="contains"` for substring matching. It matches instrument filters against one membership. Results normally use observed start descending with a path tie-break. Explicit publication lookups retain physical path order unless you request a sort. Use `sort="time"` or `sort="path"` and `order="asc"` or `order="desc"` to choose explicitly.
-
-## Read-only registry discovery
-
-In a notebook, choose the environment explicitly and open a returned reference.
+The testing scope covers historical test fixture trees. It does not select the testing PostgreSQL registry. Staging is excluded unless you explicitly pass `include_staging=True`. Check `catalog.diagnostics` for unreadable files, conflicting metadata, and unknown identity.
 
 ```python
-page = await data.find_registered(
-    testing=True, operation="merge", data_type="combined",
-    exchange="bybit", instrument="BTCUSDT", limit=10
+matches = catalog.find(
+    exchange=["bybit", "okx"],
+    symbol="BTCUSDT",
+    instrument_type="perpetual",
+    market_category="linear",
+    data_type="trades",
+    operation="normalize",
+    start="2026-10-27T00:00:00Z",
+    end="2026-10-30T00:00:00Z",
+    sort="time",
+    order="desc",
 )
-publications = page["publications"]
-if publications:
-    merged = await data.open_registered(
-        testing=True, publication_id=publications[0]["publication_id"]
-    )
-    print(merged.discovery_fields())
+if not matches:
+    print("No matching normalized trade files.")
+elif len(matches) == 1:
+    dataset = matches.one()
+else:
+    display(matches.summary())
+    dataset = matches.get(input("Exact file reference from the table: ").strip())
 ```
 
-`find_registered` returns the same structured publication page as the [Datasets CLI](../reference/cli/datasets.md), with `operation`, `exchange`, `instrument`, `instrument_type`, `market_category`, `data_type`, `start`, `end`, `status`, `target_quote`, `search`, `sort`, `order`, `limit`, and `offset` available as filters. Pass integer nanoseconds for registry time bounds. Use exactly one of `publication_id`, `file_id`, or `output_ref` to open a result. Use `asyncio.run` to execute the coroutine from a synchronous script.
+Alternatives within a filter match with OR. Different filters match with AND. Market conditions must match the same membership, and successive `find()` calls preserve that restriction. Symbol matching is exact and case-sensitive by default. Use `symbol_match="contains"` for substring searches. Time filters match observed envelopes against `[start, end)`. Use `interval="envelope_contained"` to require the complete known envelope inside the bounds. Neither mode establishes continuity.
 
-Normalized and merged publications use numeric registry publication IDs. Converted outputs use a complete durable work reference. Registry IDs are scoped to the selected database. Engine IDs and filesystem paths have their own domains. See [identity](../concepts/identity.md#inspection-identifiers) and [coverage](../concepts/time.md).
+`one()` and `get()` raise `ValueError` without exactly one result. Use the summary's reference and reference type when several files match. The returned handle is already open. To open a filesystem path directly or group the files in a publication, use:
+
+```python
+primary_file = market.open(input("Primary Parquet path: ").strip())
+publication = market.open(input("Directory containing manifest.json: ").strip())
+```
+
+The TUI publication inspection shows the manifest location. Use the parent directory for the complete publication. To read one logical market sequence within it, [select a stream](streams.md).
+
+## Browse a registry
+
+The asynchronous registry methods require access to the selected PostgreSQL registry. `find_registered()` lists publications and indexed conversions using registry metadata. A file within a publication has a separate registry primary-file dataset ID. In Jupyter use top-level `await`. A synchronous script can call a coroutine through `asyncio.run()`.
+
+```pycon
+>>> page = await market.find_registered(
+...     testing=False, operation="merge", exchange="bybit",
+...     instrument="BTCUSDT", limit=10,
+... )
+>>> display(page["publications"])
+>>> publication_id = int(input("Registry publication ID from your run: "))
+>>> publication = await market.open_registered(publication_id=publication_id)
+```
+
+For a registered primary file, pass `file_id=int(...)` using the ID from publication inspection. For an indexed conversion, pass `output_ref=...` with the full work reference from the pipeline or registry entry. Use exactly one identity and pass `testing=True` consistently when browsing and opening testing records.
+
+| Reference | Meaning | How to open |
+| --- | --- | --- |
+| Filesystem path | Publication directory or primary Parquet file | `open(path)` |
+| Engine publication ID | Identifier recorded by the Engine in output evidence | Locate the corresponding path or registry item |
+| Registry publication ID | Registered normalized or merged publication | `open_registered(publication_id=...)` |
+| Registry primary-file ID | One registered primary file | `open_registered(file_id=...)` |
+| Converted output reference | Indexed conversion work reference | `open_registered(output_ref=...)` |
+| Logical stream ID | A stream within an open dataset | `dataset.select(stream_id=...)` |
+
+See [inspection identifiers](../concepts/identity.md#inspection-identifiers) and the [Python API reference](python-api.md#marketdata) for filter and error details.
