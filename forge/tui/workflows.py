@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from forge.cli.commands.normalization_runtime import inspection
-from forge.historical.archives.config import load_acquisition
+from forge.historical.archives.config import read_acquisition
 from forge.historical.archives.operation import run_acquisition
 from forge.historical.archives.planning import plan as acquisition_plan
 from forge.historical.archives.sources.capabilities import source_capabilities
@@ -149,7 +149,7 @@ async def workflow_operation(
             return {"status": "created", "path": str(source)}
         if action == "edit":
             await edit(source)
-        config = await disk(load_acquisition, source)
+        config, submitted = await disk(read_acquisition, source)
         if action in {"validate", "edit"}:
             return {"status": "valid", "configuration": config.model_dump(mode="json")}
         dsn = database_dsn(paths.root)
@@ -169,6 +169,7 @@ async def workflow_operation(
             download=action == "download",
             refresh=bool(v.get("refresh")),
             source_file=source,
+            source_bytes=submitted,
             observer=progress,
             requests_per_second=float(v["rate"]) if v.get("rate") else None,
         )
@@ -181,9 +182,11 @@ async def workflow_operation(
                     await disk(create_import, source, reference, file(v, "source", context))
                 ),
             }
-        config = await disk(imports.load_import, source)
+        config, submitted = await disk(imports.read_import, source)
         if action == "run":
-            return await run_import(paths, database_dsn(paths.root), config, source)
+            return await run_import(
+                paths, database_dsn(paths.root), config, source, source_bytes=submitted
+            )
         if action == "plan":
             return await disk(imports.plan, config)
         return await disk(inspect_import, config, action)

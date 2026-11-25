@@ -116,6 +116,9 @@ SUMMARY_FIELDS = (
     "target_quote",
     "settings_files",
 )
+execution_started: ContextVar[Callable[[Execution], None] | None] = ContextVar(
+    "execution_started", default=None
+)
 _current: ContextVar[Execution | None] = ContextVar("execution_registry", default=None)
 
 
@@ -581,7 +584,7 @@ async def begin(
                updated_at=clock_timestamp() WHERE run_id=%s""",
             (str(run_id),),
         )
-    return Execution(
+    execution = Execution(
         paths,
         str(run_id),
         operation,
@@ -594,6 +597,9 @@ async def begin(
         root,
         dsn,
     )
+    if parent is None and (started_observer := execution_started.get()) is not None:
+        started_observer(execution)
+    return execution
 
 
 async def finalize(
@@ -967,7 +973,7 @@ def retain_recipe(
     effective: Mapping[str, object] | None = None,
     destination: Path | None = None,
     family: str | None = None,
-) -> None:
+) -> dict[str, Any]:
     """Commit the bytes and metadata used by this attempt before dispatch."""
     import tomllib
 
@@ -975,16 +981,22 @@ def retain_recipe(
 
     execution = current_execution()
     if execution is None or execution.operation != operation:
-        return
+        return {}
     destination = destination or execution.outcome.with_name("recipe.toml")
     if not destination.resolve().is_relative_to(execution.root.resolve()):
         raise MarketForgeError("Unsafe retained recipe location.")
+    document = tomllib.loads(submitted.decode())
+    version = document.get("version") or (effective.get("version") if effective else None)
+    if version is None and family == "registration":
+        version = document["registration"]["version"]
+    elif version is None and operation == RunOperation.ACQUISITION and family is None:
+        version = 1
     digest = retain_bytes(destination, submitted)
-    metadata: dict[str, object] = {
+    metadata: dict[str, Any] = {
         "path": str(source.resolve()),
         "name": source.stem,
         "family": family or str(operation),
-        "version": tomllib.loads(submitted.decode()).get("version"),
+        "version": version,
         "snapshot": str(destination),
         "sha256": digest,
         "submitted_at": execution.started_at.isoformat(),
@@ -997,6 +1009,7 @@ def retain_recipe(
         execution.outcome.with_name("recipe-source.json"),
         json.dumps(metadata, sort_keys=True).encode(),
     )
+    return metadata
 
 
 def retain_effective(effective: Mapping[str, object]) -> dict[str, str]:
@@ -1007,7 +1020,9 @@ def retain_effective(effective: Mapping[str, object]) -> dict[str, str]:
     if execution is None:
         return {}
     path = execution.outcome.with_name("effective-configuration.json")
-    digest = retain_bytes(path, json.dumps(effective, sort_keys=True, indent=2).encode())
+    digest = retain_bytes(
+        path, json.dumps(effective, sort_keys=True, indent=2, allow_nan=False).encode()
+    )
     return {"effective_configuration": str(path), "effective_sha256": digest}
 
 
@@ -1022,8 +1037,6 @@ def recipe_evidence() -> dict[str, Any]:
 
 def inherit_recipe(operation: RunOperation, evidence: Mapping[str, Any]) -> None:
     """Pin the original recipe from a verified prepared submission."""
-    from forge.orchestration.runs import safe_report
-
     execution = current_execution()
     if not evidence or execution is None or execution.operation != operation:
         return
@@ -1032,7 +1045,7 @@ def inherit_recipe(operation: RunOperation, evidence: Mapping[str, Any]) -> None
     if previous:
         if previous["sha256"] != evidence["sha256"]:
             raise MarketForgeError("Prepared job belongs to a different recipe snapshot.")
-        return
+        evidence = previous
 
     root = execution.paths.runs_dir.resolve()
     snapshot = Path(evidence["snapshot"])
@@ -1044,11 +1057,13 @@ def inherit_recipe(operation: RunOperation, evidence: Mapping[str, Any]) -> None
     effective = None
     if effective_path := evidence.get("effective_configuration"):
         source = Path(effective_path)
-        effective = safe_report(source, root)
-        if hashlib.sha256(
-            json.dumps(effective, sort_keys=True, indent=2).encode()
-        ).hexdigest() != evidence.get("effective_sha256"):
+        if source.is_symlink() or not source.resolve().is_relative_to(root):
+            raise MarketForgeError("Prepared effective configuration is outside run storage.")
+        payload = source.read_bytes()
+        if hashlib.sha256(payload).hexdigest() != evidence.get("effective_sha256"):
             raise MarketForgeError("Prepared effective configuration fingerprint differs.")
-    retain_recipe(
-        operation, Path(evidence["path"]), data, effective=effective, family=evidence["family"]
-    )
+        effective = json.loads(payload)
+    if not previous:
+        retain_recipe(
+            operation, Path(evidence["path"]), data, effective=effective, family=evidence["family"]
+        )

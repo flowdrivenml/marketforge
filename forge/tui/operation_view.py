@@ -22,7 +22,8 @@ from forge.shared.presentation.normalization import PreparationView
 from forge.shared.terminal.palette import BLUE, CYAN, MUTED, RED, YELLOW
 from forge.tui.controller import Operation, document
 from forge.tui.design import OUTLINE
-from forge.tui.inspection import ActionMenu, fields
+from forge.tui.editor_inspection import OpenInspection, StructuredValue
+from forge.tui.inspection import ActionMenu, RunEvidenceActions, fields
 from forge.tui.presentation import display, status
 from forge.tui.resources import records
 from forge.tui.screens import Detail, WorkspaceHost
@@ -230,6 +231,48 @@ def dashboard(op: Operation, width: int, height: int) -> Group:
     ]
     if blockers:
         parts.append(panel("Blockers", Group(*blockers[:8])))
+    resolutions = records(result, "reference_resolutions") or [
+        resolution
+        for job in records(result, "jobs")
+        if (resolution := document(job.get("reference_resolution")))
+    ]
+    for resolution in resolutions:
+        ranking = document(resolution.get("ranking"))
+        evidence = document(ranking.get("snapshot"))
+        summary: dict[str, object] = {
+            "Mode": resolution.get("mode"),
+            "Source publication": resolution.get("source_registry_publication_id"),
+            "Target quote": resolution.get("target_quote"),
+            "Ranking evidence": ranking.get("status"),
+            "Validation": resolution.get("validation"),
+        }
+        if evidence:
+            summary["Ranking snapshot"] = evidence.get("id")
+        selected = [
+            Text(f"{item['stream_id']} · {item['provider']} · Trades")
+            for item in records(resolution, "selected")
+        ]
+        potential: list[Text] = []
+        for quote, raw_detail in document(resolution.get("routes")).items():
+            if isinstance(options := document(raw_detail).get("potential"), list):
+                for route in cast(list[object], options):
+                    if isinstance(route, (list, tuple)):
+                        parts_of_route = cast(list[object] | tuple[object, ...], route)
+                        if len(parts_of_route) != 2:
+                            continue
+                        currencies = cast(tuple[str, ...] | list[str], parts_of_route[0])
+                        path = (
+                            " → ".join(currencies)
+                            if parts_of_route[1]
+                            else f"{quote} → {quote} · Identity"
+                        )
+                        potential.append(Text(path))
+        parts.append(
+            panel(
+                "Conversion reference resolution",
+                Group(fields(summary), *selected[:8], *potential[:8]),
+            )
+        )
     routes: list[Text] = []
     for job in records(result, "jobs"):
         if job.get("engine_validation") != "passed":
@@ -280,6 +323,7 @@ class OperationView(Screen[None]):
         Binding("escape", "back", "Back"),
         Binding("f2", "actions", "Actions"),
         Binding("f3", "raw", "Evidence"),
+        Binding("f4", "errors", "Errors", show=False),
     ]
 
     def __init__(
@@ -287,15 +331,20 @@ class OperationView(Screen[None]):
         operation: Operation,
         choices: Callable[[], dict[str, Callable[[], object]]],
         stop: Callable[[], object] | None = None,
+        *,
+        errors: Callable[[], object] | None = None,
     ) -> None:
         super().__init__()
         self.operation = operation
         self.choices = choices
         self.stop = stop
+        self.errors = errors
 
     def compose(self) -> ComposeResult:
         yield Static("MarketForge / Operation", classes="screen-heading", markup=False)
         yield Static("", classes="workspace-monitor", markup=False)
+        if self.errors is not None:
+            yield RunEvidenceActions(StructuredValue(self.evidence()))
         with VerticalScroll(id="operation-scroll"):
             yield Static(id="operation-dashboard")
         with Horizontal(classes="screen-footer"):
@@ -313,6 +362,10 @@ class OperationView(Screen[None]):
         self.query_one("#operation-dashboard", Static).update(
             dashboard(self.operation, self.size.width, self.size.height)
         )
+        if self.errors is not None:
+            self.query_one("#inspect-open-json", OpenInspection).target = StructuredValue(
+                self.evidence()
+            )
         if self.stop is not None:
             self.query_one("#op-stop", Button).disabled = self.operation.finished_at is not None
         button = self.query_one("#op-actions", Button)
@@ -337,18 +390,21 @@ class OperationView(Screen[None]):
                 ActionMenu(self.operation.title, tuple(choices)), choose
             )
 
-    def action_raw(self) -> None:
-        from typing import cast
-
+    def evidence(self) -> dict[str, object]:
         snapshot = self.operation.snapshot()
         detail = (
             asdict(snapshot)
             if isinstance(snapshot, (PipelineSnapshot, ProgressSnapshot))
             else snapshot
         )
-        cast(WorkspaceHost, self).app.push_screen(
-            Detail("Operation evidence", {"activity": detail, "result": self.operation.result})
-        )
+        return {"activity": detail, "result": self.operation.result}
+
+    def action_raw(self) -> None:
+        cast(WorkspaceHost, self).app.push_screen(Detail("Operation evidence", self.evidence()))
+
+    def action_errors(self) -> None:
+        if self.errors is not None:
+            self.errors()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "op-stop" and self.stop is not None:
@@ -357,5 +413,7 @@ class OperationView(Screen[None]):
             self.action_back()
         elif event.button.id == "op-actions":
             self.action_actions()
+        elif event.button.id == "inspect-errors":
+            self.action_errors()
         elif event.button.id == "op-raw":
             self.action_raw()

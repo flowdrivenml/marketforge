@@ -11,7 +11,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import cast
 
 import tomlkit
 from tomlkit.items import AoT, Array, InlineTable, Table
@@ -22,6 +21,7 @@ from forge.historical.archives.sources.exchanges import validate_request
 from forge.historical.archives.templates import ACQUISITION_TEMPLATE
 from forge.historical.pipelines.config import PipelineRecipe
 from forge.shared.config.library import resolve_config_file
+from forge.shared.config.toml import append_entry, dumps
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -42,7 +42,7 @@ def create_pipeline(directory: Path, name: str) -> Path:
     return publish_new(
         resolve_config_file(directory, name),
         "# Pipeline draft. Review the interval and request before running.\n"
-        + ACQUISITION_TEMPLATE,
+        + ACQUISITION_TEMPLATE.replace("version = 1", "version = 2", 1),
     )
 
 
@@ -76,13 +76,13 @@ def create_with_requests(
     for request in requests:
         validate_request(request)
     payload = {
-        "version": 1,
+        "version": 2 if pipeline else 1,
         "interval": interval.model_dump(),
         "requests": [request.model_dump(exclude_none=True) for request in requests],
     }
     model = PipelineRecipe if pipeline else AcquisitionConfig
     model.model_validate(payload)
-    path = publish_new(resolve_config_file(directory, name), tomlkit.dumps(payload))
+    path = publish_new(resolve_config_file(directory, name), dumps(payload))
     return RecipeChange(path, len(requests), 0)
 
 
@@ -135,16 +135,7 @@ def request_addition(
     if not isinstance(entries, (AoT, Array)):
         raise MarketForgeError("Recipe requests must be an array.")
     for request in additions:
-        values = request.model_dump(exclude_none=True)
-        if isinstance(entries, Array):
-            item = tomlkit.inline_table()
-            for key, value in values.items():
-                item[key] = value
-        else:
-            item = tomlkit.table()
-            for key, value in values.items():
-                item[key] = value
-        cast(list[object], entries).append(item)
+        append_entry(entries, request.model_dump(exclude_none=True), ("requests",))
     model.model_validate(source.unwrap())
     return tomlkit.dumps(source), tuple(additions)
 

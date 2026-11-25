@@ -378,7 +378,7 @@ async def system(key: str, v: Values, context: ApplicationContext, progress: Pro
         )
         from forge.tui.run_views import project as run_view
 
-        return run_view(evidence, context, action)
+        return await disk(run_view, evidence, context, action)
     if key == "doctor":
         report = await disk(
             doctor,

@@ -60,8 +60,6 @@ def _identity(info: os.stat_result) -> tuple[int, int, int, int]:
 
 
 def recipe_directory(paths: ProjectPaths, family: RecipeFamily) -> Path:
-    if family == "ranking":
-        return paths.config_dir / "markets/rankings"
     if family == "registration":
         return paths.workflow_dir("import") / "registration"
     return paths.workflow_dir(family)
@@ -105,6 +103,10 @@ def delete_recipe(
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         if expected_sha256 is not None and digest != expected_sha256:
             raise MarketForgeError(f"Recipe changed since review: {source}")
+        if apply:
+            from forge.historical.authoring import recipe_writer
+
+            stack.enter_context(recipe_writer(source))
         evidence = dependencies(source)
         blocked = bool(evidence.executions or (evidence.references and not force))
         if not apply or blocked:
@@ -118,7 +120,7 @@ def delete_recipe(
             )
 
         # Reopen the configured location and compare it with the pinned directory before
-        # checking the entry again. unlinkat removes the entry itself without following it.
+        # checking the entry again before moving it to the archive.
         try:
             current_directory = _directory(stack, directory)
             unchanged = os.path.samestat(os.fstat(fd), os.fstat(current_directory)) and (

@@ -14,8 +14,10 @@ from forge.historical.engine.process import Shutdown, shutdown
 from forge.orchestration.registry import current_execution
 from forge.shared.database.connection import DatabaseError, database_environment, pinned_registry
 from forge.shared.ownership import OwnershipConflictError, WorkspaceOwnership
+from forge.shared.terminal.window import WindowUnavailable
 from forge.startup.context import ApplicationContext
 from forge.tui.actions import Action, Values, read_only
+from forge.tui.execution_monitor import run_in_terminal
 from forge.tui.services import execute
 from forge.tui.workflows import PIPELINE_DESCRIPTORS, Edit, Progress
 
@@ -86,6 +88,8 @@ class Controller:
         apply: Callable[[], Awaitable[object]] | None = None,
         *,
         reviewed: tuple[Path, bytes] | None = None,
+        desktop: bool = False,
+        on_terminal_unavailable: Callable[[str], None] | None = None,
     ) -> asyncio.Task[Operation]:
         if self.shutdown.emergency:
             raise ValueError("Emergency shutdown has started.")
@@ -98,7 +102,9 @@ class Controller:
             environment="testing" if self.context.testing else "production",
         )
         self.current = op
-        self.task = asyncio.create_task(self._run(op, action, dict(values), apply, reviewed))
+        self.task = asyncio.create_task(
+            self._run(op, action, dict(values), apply, reviewed, desktop, on_terminal_unavailable)
+        )
         return self.task
 
     async def _run(
@@ -108,6 +114,8 @@ class Controller:
         values: Values,
         apply: Callable[[], Awaitable[object]] | None,
         reviewed: tuple[Path, bytes] | None,
+        desktop: bool,
+        on_terminal_unavailable: Callable[[str], None] | None,
     ) -> Operation:
         def progress(value: object) -> None:
             op.progress = value
@@ -129,8 +137,40 @@ class Controller:
                     return await apply()
                 return await self.invoke(action.key, values, self.context, progress, self.editor)
 
+        def terminal_update(run_id: str | None, phase: str) -> None:
+            if run_id:
+                op.run_id = run_id
+            progress(phase)
+
         token_shutdown = shutdown.set(self.shutdown)
         try:
+            if desktop:
+                try:
+                    op.result = await run_in_terminal(
+                        action,
+                        values,
+                        self.context,
+                        self.registry_identity,
+                        reviewed,
+                        terminal_update,
+                    )
+                except WindowUnavailable as error:
+                    message = f"Desktop terminal unavailable. Continuing in the workspace. {error}"
+                    progress(message)
+                    if on_terminal_unavailable is not None:
+                        on_terminal_unavailable(message)
+                else:
+                    result = document(op.result)
+                    if isinstance(identity := result.get("run_id"), str):
+                        op.run_id = identity
+                    if isinstance(error := result.get("error"), str):
+                        op.error = error
+                    op.state = outcome(op.result)
+                    return op
+            # Native Engine TUIs require a separate PTY. The workspace fallback
+            # retains structured progress in the existing in-app operation view.
+            if desktop and values.get("engine_tui"):
+                values = {**values, "engine_tui": False}
             if (
                 not read_only(action, values)
                 and action.effect in {"write", "engine", "network", "guarded"}

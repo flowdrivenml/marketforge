@@ -1,6 +1,6 @@
 # Pipeline recipes
 
-Save the version-1 TOML under `data/.config/workflows/data_engineering/pipeline/`. The name resolves in that library. The recipe compiles inline acquisition requests into acquisition and normalization inputs. Merge receives the registered file IDs from normalization. Stage resource overrides live in the separate [pipeline runtime](../runtime.md#pipeline-runtime). [Pipeline guide](../../workflows/pipeline.md) · [CLI](../cli/pipeline.md)
+Save the version-2 TOML under `data/.config/workflows/data_engineering/pipeline/`. The name resolves in that library. The recipe compiles inline acquisition requests into acquisition and normalization inputs. Merge receives the registered file IDs from normalization. Stage resource overrides live in the separate [pipeline runtime](../runtime.md#pipeline-runtime). [Pipeline guide](../../workflows/pipeline.md) · [CLI](../cli/pipeline.md)
 
 The recipe derives source raw, file dataset, and merge publication IDs at runtime. An optional external conversion reference uses a registry publication ID. Forge binds the acquired revisions and normalized primary-file registrations to the stage outputs. See [Forge evidence](../data-formats/prepared-forge.md) for artifacts used by resume. [Pipeline model](https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/pipelines/config.py)
 
@@ -11,7 +11,7 @@ library and run `mf pipeline validate NAME` before inspecting the plan. The
 interval selects archives, and local readiness is checked separately.
 
 ```toml
-version = 1
+version = 2
 
 [interval]
 start = 2026-10-27T00:00:00Z
@@ -42,7 +42,7 @@ max_staleness_ns = 60000000000
 
 The table accepts the [conversion policy fields](conversion.md#common-fields)
 directly, including `price_source`, `max_hops`, `path_policy`, and
-`instrument_kinds`. It also accepts `reference_stream_ids`,
+`instrument_kinds`. It also accepts a shared [reference selection policy](conversion.md#reference-selection), `reference_stream_ids`,
 `reference_publication_id`, and a nested `[convert.resources]` table with the
 same types and defaults as a Conversion recipe. Forge binds the exact registered
 merge from this pipeline and applies whole-publication scope.
@@ -57,7 +57,7 @@ Conversion table for three-stage processing. TOML keys are strict.
 
 | Field | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `version` | Integer, exactly `1` | Yes | — | Recipe schema |
+| `version` | Integer, `1` or `2` | Yes | — | Recipe schema |
 | `interval.start` | Timezone-aware TOML datetime | Yes | — | Inclusive beginning |
 | `interval.end` | Timezone-aware TOML datetime | Yes | — | Exclusive end, later than start |
 | `requests` | Nonempty array of unique request tables | Yes | — | Requests must pass both the acquisition adapter and normalization recipe contracts |
@@ -76,7 +76,7 @@ Conversion table for three-stage processing. TOML keys are strict.
 | `convert.max_hops` | Integer from 1 through 4 | No | `3` | Maximum path length |
 | `convert.path_policy` | `all` or `primary` | No | `all` | Conversion path selection policy |
 | `convert.instrument_kinds` | Nonempty unique list of `spot`, `perpetual`, `future`, `option`, `equity` | No | All applicable kinds | Limits which instruments receive valuations |
-| `convert.reference_stream_ids` | List of unique nonblank strings | With external publication | Empty | Exact observed trade-stream identities |
+| `convert.reference_stream_ids` | List of unique nonblank strings | With external publication in manual mode | Omitted | Exact observed trade-stream identities |
 | `convert.reference_publication_id` | Positive signed 64-bit registry publication ID | No | — | External merged reference publication in the same registry |
 | `convert.resources.workers` | Positive unsigned 64-bit integer | No | `1` | Worker request |
 | `convert.resources.memory_limit_mb` | Positive unsigned 64-bit integer | No | `1024` | Memory request in MiB |
@@ -90,14 +90,14 @@ runtime. [Runtime composition](../runtime.md#pipeline-runtime)
 
 ## Four-stage Bybit spot recipe
 
-This example uses the canonical stream identities for the two Bybit spot
-trade requests. A stage report or `mf datasets streams --publication-id PUB_ID
---testing` lets you check the exact IDs after registration. Structural
-validation checks the declarations. Preparation checks whether the selected
-streams are present and eligible in the committed merge.
+In this version 2 example, Conversion discovers the canonical trade IDs after
+Merge commits and registers the exact publication. Preparation records which
+references are eligible and pins the ones used by the routes. To override the
+automatic selection, add an explicit `reference_stream_ids` array under
+`[convert]`. Version 1 recipes retain their legacy defaults.
 
 ```toml
-version = 1
+version = 2
 
 [interval]
 start = 2026-10-27T00:00:00Z
@@ -115,10 +115,6 @@ price_source = "last_trade"
 max_staleness_ns = 60000000000
 max_hops = 3
 path_policy = "all"
-reference_stream_ids = [
-  "bybit.spot.spot.BTCUSDT.trades",
-  "bybit.spot.spot.BTCUSDC.trades",
-]
 
 [[requests]]
 exchange = "bybit"

@@ -26,6 +26,51 @@ mf runs report RUN_ID --testing --section diagnostics
 
 Logs display recorded events from the start of an event file or bounded tails of named Engine and validation streams. Available timestamps, levels, and stage information depend on what the producer recorded. A report explains the operation itself, such as selected inputs, blockers, committed output, verification and registration. Either source may be absent for historical or interrupted runs.
 
+### Inspect errors in the workspace
+
+In the Textual **Runs** workspace, open a run and select **Errors** beside
+**Open JSON** above the inspection sections, or press **F4**. Press **Esc**
+to return to the section you were viewing. The Errors button shows a count
+when diagnostic coverage is complete. The view shows the run outcome
+separately from recorded errors and warnings. Pipeline diagnostics are grouped by stage.
+The stage list preserves pending and skipped states and links indexed child
+runs in the same registry.
+
+Use the severity and stage menus and the case-insensitive search to narrow
+the loaded entries. Search covers the retained message and available archive,
+instrument, job, task, and publication identifiers. **Details** shows the
+complete retained message, with its available timestamp, attempt, JSON
+pointer, or log line. Open the original JSON or log read-only in Neovim.
+Protected content in the displayed text is marked as redacted.
+
+**Load more evidence** continues through retained event records and artifact
+references. **Previous** and **Next** move through loaded matches. The search
+covers loaded evidence, including repeated occurrences. Counts describe
+diagnostic entries, so a report and an event can each show the same message.
+Unstructured Engine output appears under **Info / output** with its source;
+its lines have no recorded severity.
+
+The tab marks incomplete coverage when evidence remains unloaded or a
+report, event, or indexed reference is missing, invalid, oversized, or
+unavailable. Open **Coverage details** for the reason and use the original
+artifact when available. A failed or interrupted run can have an outcome
+without a retained diagnostic message. Engine capture limits and producer
+redaction can also limit the evidence available to inspect.
+
+The Errors view starts with errors and warnings. Choose **Info / output** or
+**All diagnostics** to see retained Engine output alongside the failure
+evidence. Diagnostic cards show the recorded failure, affected inputs when
+available, and a next step. The original message and technical details
+remain available.
+
+For a Pipeline blocked during Conversion validation, the inspector can follow
+the retained preparation reference when the report matches the selected
+registry and the retained Pipeline recipe. It shows the Engine rejection,
+the stages that completed, and a read-only link to the preparation report.
+A missing report, unsafe reference, or fingerprint mismatch appears as an
+evidence limitation. When the retained evidence does not establish a root
+cause, the card says so.
+
 ### Investigate a blocked merge
 
 ```bash

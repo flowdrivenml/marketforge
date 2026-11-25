@@ -65,3 +65,33 @@ Forge processes jobs in order and stops on a blocked, interrupted, or failed job
 The work key includes the registry, executable checksum, and resolved job content, including input paths and fingerprints, reference selection, policy, embedded metadata, resources and Parquet settings. The generated job ID and output destination are excluded. Changing an effective job field or the binary can change the key. Forge also checks live input eligibility and verifies the retained output before reuse. A pathname alone establishes neither equivalence nor integrity.
 
 [Prepared jobs](../reference/data-formats/prepared-conversion.md) · [Converted output and counters](../reference/data-formats/publication-converted.md) · [Recovery](../maintenance/conversion.md#workspace-ownership-and-interrupted-publication)
+
+
+## Automatic reference selection
+
+Forge starts with the exact verified merge and an external trade-only merge
+only when the recipe binds one. The resolver uses observed trade membership,
+committed normalization metadata, and the Engine’s reference layout rules. A publication with several venues can supply routes across venues
+when those streams share the verified instrument namespace and layout.
+Each eligible trade supplies two potential directions between its historical
+base and quote. Routes visit each currency at most once and obey `max_hops`.
+
+For example, trade streams for ETHUSDC and ETHUSDT provide USDC → ETH → USDT.
+The Rust Engine uses the inverse ETHUSDC rate followed by the direct ETHUSDT
+rate when the causal observations are valid and fresh. Historical ranking only
+prioritizes eligible alternatives. Execution still evaluates event timestamps,
+reference freshness, price validity, and decimal arithmetic.
+
+With `path_policy = "all"`, Forge retains references for all eligible routes
+and the Engine keeps its existing traversal and fallback order. The report
+records any comparable ranking preference. With `"primary"`, Forge prefers
+fewer legs and uses published positions when equally short routes compete.
+It compares the weakest distinguishing leg first, then the remaining
+distinguishing legs. A stable identity order breaks equal preferences.
+Missing comparable evidence for a primary choice, conflicting primary choices
+across source quotes, or an exceeded route limit require a manual override.
+
+Forge retains exact reference identities, the candidates and exclusions, the
+ranking snapshot and evidence fingerprint when consulted, and the Rust
+validation result. Executing a prepared job or resuming from it uses those
+pinned bindings. [Ranking applicability](../workflows/markets/rankings.md#historical-conversion)

@@ -92,3 +92,26 @@ Unlike `build`, `update` performs one global statistics refresh, then publishes 
 For missing/stale data, inspect sync membership and scope errors, then intentionally refresh. For missing currency paths, collect suitable spot inputs or configure an explicit justified rule; do not assume a stablecoin peg. For window mismatch, inspect source end times and tolerance: a fresh fetch alone is insufficient. Strict rejection and a partial publication are different outcomes.
 
 `markets rank delete` previews snapshots by policy, UUID or `--all`; adding `--apply` deletes eligible snapshots and owned evidence transactionally after re-resolving the selection. Referenced snapshots remain blocked. This is explicit maintenance, separate from immutability under normal publication. See [deletion syntax and effects](../../reference/cli/markets.md#snapshot-deletion).
+
+
+## Historical Conversion
+
+Automatic historical reference selection can consult published turnover
+positions from the same registry. It uses the snapshot’s retained policy,
+common comparison currency and observation evidence. Native turnover in
+different units remains separate. An excluded or missing entry supplies no
+position.
+
+The historical cutoff is the earliest observed timestamp in the source merge.
+Forge requires the ranking’s build time, verified publication time and
+necessary observation times to be at or before that cutoff. Stale observations
+fall outside the snapshot policy’s age limit. Older snapshots without a
+recorded publication timestamp are unavailable for causal use. Conversion
+never refreshes statistics as part of reference resolution.
+
+One eligible route needs no ranking. All-path selection preserves eligible
+alternatives without making an unsupported choice. When competing primary
+routes need a preference, provide a comparable snapshot or choose references
+manually. An explicit ex-post snapshot may use later evidence for analysis.
+That choice is retained in the preparation evidence together with the snapshot
+ID, fingerprint, observation times, and exact bindings. [Reference selection](../../reference/configuration/conversion.md#reference-selection)

@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
@@ -43,7 +43,7 @@ from .test_acquisition_execution import ImmediateLimiter, install_http
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
 
-@pytest.mark.parametrize("interface", ["cli", "cli-convert", "tui", "tui-publications"])
+@pytest.mark.parametrize("interface", ["cli", "cli-convert", "cli-auto", "tui", "tui-publications"])
 def test_prepared_stop_resume_and_new_run(
     workspace: Path,
     interface: str,
@@ -59,7 +59,8 @@ def test_prepared_stop_resume_and_new_run(
     library.mkdir(parents=True)
     engine_config = workspace / "data/.config/engine"
     engine_config.mkdir()
-    convert = interface == "cli-convert"
+    automatic = interface == "cli-auto"
+    convert = automatic or interface == "cli-convert"
     runtime_files = ["normalize.toml", "merge.toml", "pipeline.toml"]
     targets = ["normalize", "merge"]
     if convert or interface == "tui-publications":
@@ -86,75 +87,125 @@ def test_prepared_stop_resume_and_new_run(
     settings = workspace / "data/.config/forge/marketforge.toml"
     settings.parent.mkdir()
     settings.write_text(f"[storage]\ndata_root={json.dumps(str(storage))}\n")
-    symbol = f"MFP{uuid4().hex[:12].upper()}USDT"
-    start = datetime(2026, 7, 9, tzinfo=UTC)
-    end = datetime(2026, 7, 10, tzinfo=UTC)
+    exchange = "binance" if automatic else "bybit"
+    symbol = "ETHUSDT" if automatic else f"MFP{uuid4().hex[:12].upper()}USDT"
+    bridge = "ETHUSDC"
+    start = datetime(2026, 11, 19, tzinfo=UTC) if automatic else datetime(2026, 7, 9, tzinfo=UTC)
+    end = datetime(2026, 11, 22, tzinfo=UTC) if automatic else datetime(2026, 7, 10, tzinfo=UTC)
+    date = start.date().isoformat()
 
     async def seed() -> None:
         async with registry_connection(dsn) as connection:
-            await add(
-                connection,
-                Instrument(
-                    exchange="bybit",
-                    instrument_type="spot",
-                    market_category="spot",
-                    symbol=symbol,
-                    base_asset="BTC",
-                    quote_asset="USDT",
-                ),
-            )
-            await add(
-                connection,
-                Specification(
-                    instrument=f"bybit.spot.spot.{symbol}",
-                    quantity_type="base",
-                    tick_size=Decimal("0.01"),
-                    valid_from=start,
-                    valid_to=end,
-                    provenance="Synthetic bounded pipeline integration fixture",
-                ),
-            )
+            pairs = [(symbol, "USDT")]
+            if automatic:
+                pairs.append((bridge, "USDC"))
+            for native, quote in pairs:
+                await add(
+                    connection,
+                    Instrument(
+                        exchange=exchange,
+                        instrument_type="spot",
+                        market_category="spot",
+                        symbol=native,
+                        base_asset="ETH" if automatic else "BTC",
+                        quote_asset=quote,
+                    ),
+                )
+                await add(
+                    connection,
+                    Specification(
+                        instrument=f"{exchange}.spot.spot.{native}",
+                        quantity_type="base",
+                        tick_size=Decimal("0.01"),
+                        valid_from=start,
+                        valid_to=end,
+                        provenance="Synthetic bounded pipeline integration fixture",
+                    ),
+                )
 
     asyncio.run(seed())
     recipe = library / "tiny.toml"
-    recipe.write_text(
-        """version = 1
-[interval]
-start = 2026-07-09T00:00:00Z
-end = 2026-07-10T00:00:00Z
-[[requests]]
-exchange = "bybit"
+    request = f"""[[requests]]
+exchange = "{exchange}"
 instrument_type = "spot"
 market_category = "spot"
 data_type = "trades"
-scope = { kind = "instrument", identifier = "BTCUSDT" }
-""".replace("BTCUSDT", symbol)
+scope = {{ kind = "instrument", identifier = "{symbol}" }}
+"""
+    recipe.write_text(
+        f"""version = {2 if automatic else 1}
+[interval]
+start = {start.isoformat()}
+end = {end.isoformat()}
+"""
+        + ('[merge]\ntimeline_ordering = "chronological"\n' if automatic else "")
+        + request
+        + (request.replace(symbol, bridge) if automatic else "")
     )
     if convert:
         with recipe.open("a") as stream:
             stream.write('\n[convert]\ntarget_quote = "USDT"\nmax_staleness_ns = 60000000000\n')
-    name = f"{symbol}-2026-07-09.csv.gz"
-    stamp = int(datetime(2026, 7, 9, 12, tzinfo=UTC).timestamp()) * 1000
-    body = gzip.compress(
-        f"id,timestamp,price,volume,side,rpi\n7,{stamp},200,3,buy,0\n8,{stamp + 1},201,1,sell,0\n".encode()
-    )
+    stamp = int(start.replace(hour=12).timestamp()) * 1000
+    listings: dict[str, str] = {}
+    if automatic:
+
+        def zipped(native: str, day: int, offset: int, price: int) -> tuple[str, bytes]:
+            day_start = start + timedelta(days=day)
+            stem = f"{native}-trades-{day_start.date().isoformat()}"
+            data = io.BytesIO()
+            with zipfile.ZipFile(data, "w") as archive:
+                micros = (stamp + day * 86_400_000) * 1000 + offset
+                sequence = day * 2 + 7
+                archive.writestr(
+                    zipfile.ZipInfo(
+                        f"{stem}.csv", (day_start.year, day_start.month, day_start.day, 0, 0, 0)
+                    ),
+                    f"{sequence},{price},3,{price * 3},{micros},false,true\n"
+                    f"{sequence + 1},{price + 1},1,{price + 1},{micros + 1},true,true\n",
+                )
+            return f"{stem}.zip", data.getvalue()
+
+        archives: dict[str, bytes] = {}
+        for native, offset, price in ((symbol, 0, 200), (bridge, 2, 202)):
+            prefix = f"data/spot/daily/trades/{native}/"
+            daily = dict(zipped(native, day, offset, price) for day in range((end - start).days))
+            archives.update(daily)
+            keys = "".join(
+                f"<Contents><Key>{prefix}{filename}</Key></Contents>" for filename in daily
+            )
+            listings[prefix] = (
+                '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+                f"<IsTruncated>false</IsTruncated>{keys}</ListBucketResult>"
+            )
+        name = next(iter(archives))
+        body = archives[name]
+    else:
+        name = f"{symbol}-{date}.csv.gz"
+        body = gzip.compress(
+            f"id,timestamp,price,volume,side,rpi\n7,{stamp},200,3,buy,0\n8,{stamp + 1},201,1,sell,0\n".encode()
+        )
+        archives = {name: body}
     calls: list[str] = []
 
     def http(request: httpx.Request) -> httpx.Response:
         calls.append(request.url.path)
+        if prefix := request.url.params.get("prefix"):
+            return httpx.Response(200, text=listings[prefix])
         if request.url.path.endswith("/"):
             return httpx.Response(
                 200, text=f'<pre><a href=../>../</a><a href="{name}">archive</a></pre>'
             )
-        assert request.url.path.endswith(name)
-        return httpx.Response(200, stream=httpx.ByteStream(body))
+        filename = request.url.path.rsplit("/", 1)[-1]
+        assert filename in archives
+        return httpx.Response(200, stream=httpx.ByteStream(archives[filename]))
 
     install_http(monkeypatch, http)
     args = ["--project-root", str(workspace), "--json", "pipeline"]
 
     fixture_worker = workspace / "fixture-worker.py"
     if convert or interface == "tui":
-        (workspace / "archive.csv.gz").write_bytes(body)
+        for filename, data in archives.items():
+            (workspace / filename).write_bytes(data)
         fixture_worker.write_text(
             f"""import sys
 from contextlib import asynccontextmanager
@@ -165,10 +216,16 @@ from forge.historical.pipelines.stage_worker import main
 original_client = operation.open_configured_http_client
 
 def http(request):
+    names = {tuple(archives)!r}
+    if prefix := request.url.params.get("prefix"):
+        return httpx.Response(200, text={listings!r}[prefix])
     if request.url.path.endswith("/"):
-        return httpx.Response(200, text='<pre><a href=../>../</a><a href="{name}">archive</a></pre>')
-    assert request.url.path.endswith({name!r})
-    data = Path({str(workspace / "archive.csv.gz")!r}).read_bytes()
+        symbol = request.url.path.rstrip("/").rsplit("/", 1)[-1]
+        available = next(name for name in names if name.startswith(symbol + "-"))
+        return httpx.Response(200, text=f'<pre><a href=../>../</a><a href="{{available}}">archive</a></pre>')
+    name = request.url.path.rsplit("/", 1)[-1]
+    assert name in names
+    data = (Path({str(workspace)!r}) / name).read_bytes()
     return httpx.Response(200, stream=httpx.ByteStream(data))
 
 @asynccontextmanager
@@ -218,6 +275,10 @@ raise SystemExit(main(Path(sys.argv[1])))
 
     code, plan = invoke("plan", "tiny", "--testing")
     assert code == 0 and plan["state"] == "planned", json.dumps(plan)
+    if automatic:
+        assert plan["conversion_reference_selection"]["mode"] == "automatic"
+        assert "reference_stream_ids" not in plan["recipe"]["convert"]
+        assert "deferred until merge registration" in plan["stages"]["convert"]
     assert not calls and not storage.exists()
 
     async def register_unrelated(
@@ -398,17 +459,36 @@ raise SystemExit(main(Path(sys.argv[1])))
     prepared = stopped["stages"]["normalize"]["prepared"]
     selected = json.loads(Path(prepared["report"]).read_text())["requests"][0]
     assert selected["request_index"] == 1
-    assert len(selected["selected_archives"]) == 1
+    assert len(selected["selected_archives"]) == (3 if automatic else 1)
     assert selected["selected_archives"][0]["local_id"] != unrelated
     acquire_stage = stopped["stages"]["acquire"]
     child = json.loads(Path(acquire_stage["child_report"]).read_text())
     assert child["requests"][0]["index"] == 0
-    pin = child["selection"]["archives"][0]
-    assert pin["local_archive_id"] == selected["selected_archives"][0]["local_id"]
+    selected_id = selected["selected_archives"][0]["local_id"]
+    pin = next(
+        archive
+        for archive in child["selection"]["archives"]
+        if archive["local_archive_id"] == selected_id
+    )
     assert stopped["stages"]["merge"]["state"] == "pending"
 
     original_recipe = recipe.read_bytes()
     recipe.write_text("version = 999")
+    from forge.historical.recipe_dependencies import inspect_references
+    from forge.shared.config.deletion import delete_recipe
+
+    paths = ProjectPaths(workspace, storage)
+    archived = delete_recipe(
+        paths,
+        "pipeline",
+        "tiny",
+        apply=True,
+        dependencies=lambda target: inspect_references(paths, "pipeline", target),
+    )
+    assert archived.status == "deleted"
+    assert not recipe.exists()
+    snapshot = Path(stopped["submitted_config"])
+    assert snapshot.read_bytes() == original_recipe
     (engine_config / "normalize.toml").write_text("deliberately invalid")
 
     pinned_input = storage / "raw" / pin["relative_path"]
@@ -447,14 +527,17 @@ raise SystemExit(main(Path(sys.argv[1])))
     code, finished = invoke("resume", run_id, "--testing")
     assert code == 0, finished.get("error")
     assert finished["state"] == "complete"
+    assert snapshot.read_bytes() == original_recipe and not recipe.exists()
     assert finished.get("execution_registry_status") == "finalized"
     stages = cast(dict[str, dict[str, Any]], finished["stages"])
     assert stages["merge"]["execution_intent"] == merge_intent
     assert stages["normalize"]["execution_intent"] == normalization_intent
     assert stages["normalize"]["primary_file_ids"] == stages["merge"]["upstream_file_ids"]
-    assert len(stages["merge"]["primary_file_ids"]) == 1
+    assert len(stages["merge"]["primary_file_ids"]) == (3 if automatic else 1)
     merged_path = Path(json.loads(Path(merge_intent).read_text())["path"])
-    assert json.loads((merged_path / "manifest.json").read_text())["events_written"] == 2
+    assert json.loads((merged_path / "manifest.json").read_text())["events_written"] == (
+        12 if automatic else 2
+    )
     if convert:
         converted = stages["convert"]["result"]
         assert converted["status"] == "complete"
@@ -463,6 +546,84 @@ raise SystemExit(main(Path(sys.argv[1])))
         assert len(job["work_key"]) == 64 and job["registration"] == "not_available"
         manifest = json.loads(Path(job["publication"]["manifest"]).read_text())
         assert manifest["statistics"]["identity"] >= 2
+        if automatic:
+            from forge.historical.conversion.contract import Job
+            from forge.historical.engine.work import WorkIndex
+
+            resolution = job["reference_resolution"]
+            expected = [f"binance.spot.spot.{native}.trades" for native in (bridge, symbol)]
+            assert resolution["mode"] == "automatic" and resolution["validation"] == "passed"
+            assert resolution["ranking"]["status"] == "Ranking not required for route selection."
+            assert [item["stream_id"] for item in resolution["selected"]] == expected
+            assert resolution["routes"]["USDC"]["potential"] == [
+                [["USDC", "ETH", "USDT"], expected]
+            ]
+            assert manifest["statistics"]["converted"] == 3
+            assert manifest["statistics"]["identity"] == 6
+            assert manifest["statistics"]["unavailable"] == 3
+            pub_id = resolution["source_registry_publication_id"]
+            assert (
+                pub_id
+                == next(iter(stages["merge"]["result"]["publications"].values()))["publication_id"]
+            )
+            pipeline_job = Job.model_validate_json(Path(job["submission"]["path"]).read_bytes())
+            assert [identity.symbol for identity in pipeline_job.conversion.references] == [
+                bridge,
+                symbol,
+            ]
+
+            def standalone(*arguments: str) -> tuple[int, dict[str, Any]]:
+                code = main(["--project-root", str(workspace), "--json", "convert", *arguments])
+                output = capsys.readouterr()
+                assert not output.err, output.err
+                return code, json.loads(output.out)
+
+            code, created = standalone(
+                "new",
+                "same-source",
+                "--from-publication",
+                str(pub_id),
+                "--target-quote",
+                "USDT",
+                "--testing",
+            )
+            assert code == 0, created
+            code, validation = standalone("validate", "same-source")
+            assert code == 0, validation
+            from forge.shared.config.toml import dumps
+
+            acquisition_recipe = paths.acquisition_config_dir / "pipeline-acquisition.toml"
+            acquisition_recipe.parent.mkdir(parents=True, exist_ok=True)
+            acquisition_recipe.write_text(
+                dumps(load_recipe(original_recipe).acquisition().model_dump(exclude_none=True))
+            )
+            code, created = standalone(
+                "new",
+                "same-lineage",
+                "--from-acquisition",
+                acquisition_recipe.stem,
+                "--target-quote",
+                "USDT",
+            )
+            assert code == 0, created
+
+            with monkeypatch.context() as comparison:
+
+                async def no_reuse(_index: WorkIndex, _keys: list[str]) -> dict[str, Any]:
+                    return {}
+
+                comparison.setattr(WorkIndex, "peek", no_reuse)
+                for name in ("same-lineage", "same-source"):
+                    code, standalone_report = standalone("prepare", name, "--testing")
+                    assert code == 0, standalone_report
+                    assert standalone_report["compatibility"] == "validated"
+                    standalone_job = Job.model_validate_json(
+                        Path(standalone_report["jobs"][0]["path"]).read_bytes()
+                    )
+                    assert standalone_job.source == pipeline_job.source
+                    assert standalone_job.conversion == pipeline_job.conversion
+            code, reused = standalone("run", standalone_report["job_path"], "--testing")
+            assert code == 0 and reused["disposition"] == "reused", reused
         assert launched == ["Acquisition", "Normalization", "Merge", "Conversion"]
         code, resumed = invoke("resume", run_id, "--testing")
         assert code == 0 and resumed["state"] == "complete"
@@ -584,9 +745,10 @@ async def interact_publications(
     market_symbol: str,
 ) -> None:
     """Drive registered inputs through the actual Textual handlers and Engines."""
-    from textual.widgets import Button, Checkbox, DataTable, Input, Select
+    from textual.widgets import Checkbox, DataTable, Input, Select
 
     from forge.tui.app import ForgeApp
+    from forge.tui.controller import document
     from forge.tui.inspection import ActionMenu, Inspection
     from forge.tui.presentation import Results
     from forge.tui.screens import Confirm, Detail, Form, StreamOrder
@@ -607,15 +769,18 @@ async def interact_publications(
             await pilot.press("f2")
             await until(lambda: isinstance(app.screen, ActionMenu))
             menu = app.screen
+            assert isinstance(menu, ActionMenu)
             await pilot.click(f"#menu-{menu.actions.index(label)}")
             await pilot.pause()
 
         async def submit(*, confirm: bool = False, **fields: str) -> None:
-            await until(lambda: isinstance(app.screen, Form))
+            await until(lambda: isinstance(app.screen, Form) and bool(app.screen.baseline))
+            form = app.screen
+            assert isinstance(form, Form)
             for key, value in fields.items():
-                app.screen.query_one(f"#field-{key}", Input).value = value
-            app.screen.query_one("#submit", Button).focus()
-            await pilot.press("enter")
+                form.query_one(f"#field-{key}", Input).value = value
+            await pilot.pause()
+            assert await pilot.click("#submit")
             await pilot.pause()
             if confirm:
                 assert not isinstance(app.screen, Form) or not app.screen.issues, (
@@ -749,16 +914,17 @@ async def interact_publications(
             table.focus()
             await pilot.press("space")
         await app.switch("Workflows", "Normalization")
-        await pilot.click("#recipe-new")
+        await pilot.pause()
+        assert await pilot.click("#recipe-new")
         await until(lambda: isinstance(app.screen, ActionMenu))
         await pilot.click("#menu-1")
         await submit(archive_ids=",".join(map(str, archive_ids)))
-        await until(lambda: isinstance(app.screen, Form))
-        for field in app.screen.spec.fields:
+        await until(lambda: isinstance(app.screen, Form) and bool(app.screen.baseline))
+        form = app.screen
+        assert isinstance(form, Form)
+        for field in form.spec.fields:
             if field.kind == "choice":
-                cast(
-                    Select[str], app.screen.query_one(f"#field-{field.key}")
-                ).value = field.choices[1]
+                cast(Select[str], form.query_one(f"#field-{field.key}")).value = field.choices[1]
         await submit(confirm=True, reference="exact-archive")
         await until(lambda: isinstance(app.screen, Inspection))
         await choose("Validate")
@@ -835,7 +1001,7 @@ async def interact_publications(
         await open_inventory("Merged", merge_id)
         assert isinstance(app.screen, Inspection)
         await pilot.click(f"#section-{tuple(app.screen.sections).index('Files')}")
-        table = app.screen.query_one(DataTable)
+        table = cast(DataTable[object], app.screen.query_one(DataTable))
         table.focus()
         await pilot.press("enter")
         await until(
@@ -864,7 +1030,7 @@ async def interact_publications(
         await until(
             lambda: isinstance(app.screen, Inspection) and app.screen.heading == "datasets head"
         )
-        assert app.screen.items or app.screen.evidence.get("rows")
+        assert app.screen.items or document(app.screen.evidence).get("rows")
         for _ in range(3):
             await pilot.press("escape")
             await pilot.pause()
@@ -874,7 +1040,7 @@ async def interact_publications(
         await until(
             lambda: isinstance(app.screen, Inspection) and app.screen.heading == "datasets lineage"
         )
-        assert app.screen.evidence.get("parents")
+        assert document(app.screen.evidence).get("parents")
         await pilot.press("escape")
 
         async def convert_publication(
@@ -893,6 +1059,7 @@ async def interact_publications(
             )
             await submit(confirm=True)
             await until(lambda: isinstance(app.screen, Inspection))
+            picked: str | None = None
             if external_id:
                 await choose("Browse external trade references…")
                 await submit(search=reference_symbol)
@@ -903,6 +1070,7 @@ async def interact_publications(
                     )
                 )
                 form = app.screen
+                assert isinstance(form, Form)
                 options = next(
                     field.choices for field in form.spec.fields if field.key == "publication"
                 )
@@ -917,8 +1085,10 @@ async def interact_publications(
                         and app.screen.spec.key.startswith("Trade streams")
                     )
                 )
-                picked = app.screen.spec.fields[0].label
-                app.screen.query_one("#field-stream-0", Checkbox).value = True
+                form = app.screen
+                assert isinstance(form, Form)
+                picked = form.spec.fields[0].label
+                form.query_one("#field-stream-0", Checkbox).value = True
                 await submit()
                 await until(
                     lambda: (
@@ -926,8 +1096,11 @@ async def interact_publications(
                         and "Edit conversion policy" in app.screen.spec.key
                     )
                 )
-                assert app.screen.preset["reference_publication_id"] == int(external_id)
-                assert app.screen.preset["reference_stream_ids"] == picked
+                options_form = app.screen
+                assert isinstance(options_form, Form)
+                assert options_form.preset["reference_mode"] == "manual"
+                assert options_form.preset["reference_publication_id"] == int(external_id)
+                assert options_form.preset["reference_stream_ids"] == picked
                 await submit(confirm=True)
                 await until(
                     lambda: (
@@ -964,10 +1137,12 @@ async def interact_publications(
         assert manifest["statistics"]["identity"] >= 2
         await open_inventory("Converted", identity["work_key"])
         assert isinstance(app.screen, Inspection)
-        assert app.screen.sections["Summary"]["indexing"] == "complete"
+        assert document(app.screen.sections["Summary"])["indexing"] == "complete"
         await choose("Open producing run")
         await until(lambda: isinstance(app.screen, Inspection))
-        assert app.screen.heading.startswith("convert-execute-")
+        assert app.screen.heading == (
+            f"Conversion Report · {Path(identity['result_path']).parent.name}"
+        )
         await choose(f"Open conversion output {identity['work_key']}")
         await until(
             lambda: (
@@ -975,7 +1150,7 @@ async def interact_publications(
                 and app.screen.heading == f"Conversion output {identity['work_key']}"
             )
         )
-        assert app.screen.sections["Summary"]["verification"] == "verified"
+        assert document(app.screen.sections["Summary"])["verification"] == "verified"
 
         from forge.historical.normalization.batch import inspect_exact_archives, prepare_batch
         from forge.historical.normalization.config import ExactRecipe
@@ -1019,7 +1194,7 @@ async def interact_publications(
         assert manifest["statistics"]["converted"] >= 2
         await open_inventory("Converted", external["work_key"])
         assert isinstance(app.screen, Inspection)
-        assert app.screen.sections["Summary"]["target_quote"] == "USDC"
+        assert document(app.screen.sections["Summary"])["target_quote"] == "USDC"
         if os.getenv("MARKETFORGE_TEST_CLEANUP_DISPOSABLE") == "1":
             await choose("Preview output deletion…")
             await until(
@@ -1044,5 +1219,5 @@ async def interact_publications(
             assert app.controller.task is not None
             deletion = await asyncio.shield(app.controller.task)
             assert deletion.error is None
-            assert deletion.result["removed_conversion_refs"] == [external["work_key"]]
+            assert document(deletion.result)["removed_conversion_refs"] == [external["work_key"]]
             assert not await asyncio.to_thread(Path(external["publication"]["manifest"]).exists)

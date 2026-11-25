@@ -1,6 +1,7 @@
 """Supervise a Ghostty editor independently of the TUI and its engine workers."""
 
 import asyncio
+import signal
 import subprocess
 import sys
 from collections.abc import Callable
@@ -10,6 +11,18 @@ from tempfile import mkdtemp
 
 from forge.shared.terminal.editor import EditorError, file_command
 from forge.shared.terminal.window import GhosttyWindow, Window, WindowUnavailable
+
+
+class EditorCompletionUnconfirmed(EditorError):
+    """A started editor supplied no trustworthy exit status."""
+
+
+class EditorInterrupted(EditorError):
+    """The editor exited due to a signal."""
+
+
+class EditorLaunchFailed(EditorError):
+    """The editor or its terminal could not start."""
 
 
 async def stop_window(window: Window, waiting: asyncio.Task[int]) -> None:
@@ -39,7 +52,7 @@ async def edit_in_window(
             file_command, path, editor=editor, fallback="nvim", readonly=readonly, filetype=filetype
         )
     except WindowUnavailable as error:
-        raise EditorError(str(error)) from error
+        raise EditorLaunchFailed(str(error)) from error
 
     # Keep receipts next to the draft while the editor is active. The worker can
     # still report completion if the TUI exits during emergency shutdown.
@@ -71,7 +84,9 @@ async def edit_in_window(
             raise
         assert window is not None
         waiting = asyncio.create_task(window.wait())
-        deadline = asyncio.get_running_loop().time() + 15
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 15
+        reconcile: float | None = None
         while True:
             # Observe the result first. A fast editor can publish both receipts
             # between checks, and the supervisor always publishes ready first.
@@ -84,23 +99,46 @@ async def edit_in_window(
                 status = result_path.read_text(encoding="utf-8")
                 if status == "0" and ready:
                     return
-                if status.lstrip("-").isdigit():
-                    raise EditorError(f"Editor exited with status {status}.")
+                if ready and status.startswith("interrupted:"):
+                    _, number, code = status.split(":", 2)
+                    raise EditorInterrupted(
+                        f"Editor interrupted by signal {number} (status {code})."
+                    )
+                if status.lstrip("-").isdigit() and ready:
+                    code = int(status)
+                    if code < 0:
+                        raise EditorInterrupted(f"Editor interrupted by signal {-code}.")
+                    if code in (128 + signal.SIGINT, 128 + signal.SIGHUP, 128 + signal.SIGTERM):
+                        raise EditorInterrupted(f"Editor interrupted (status {code}).")
+                    raise EditorError(f"Editor exited with status {code}.")
+                if not ready:
+                    raise EditorLaunchFailed(status)
                 raise EditorError(status)
+            now = loop.time()
             if waiting.done():
-                if result_path.is_file():
-                    continue
-                if ready:
-                    raise EditorError("The editor window closed without a completion receipt.")
-                raise EditorError(
-                    f"Ghostty exited ({waiting.result()}) before starting the editor. "
-                    "Check your Wayland or X11 display and the environment inherited by tmux."
-                )
-            if not ready and asyncio.get_running_loop().time() >= deadline:
-                raise EditorError("Ghostty did not start the editor in time.")
-            await asyncio.wait({waiting}, timeout=0.1)
+                # Ghostty's lifetime is separate from the editor worker's.
+                if reconcile is None:
+                    reconcile = now + 1
+                if now >= reconcile:
+                    if ready:
+                        raise EditorCompletionUnconfirmed(
+                            "The editor window closed and its exit status could not be verified."
+                        )
+                    raise EditorLaunchFailed(
+                        f"Ghostty exited ({waiting.result()}) before starting the editor. "
+                        "Check your Wayland or X11 display and the environment inherited by tmux."
+                    )
+                await asyncio.sleep(min(0.05, reconcile - now))
+            elif not ready and now >= deadline:
+                raise EditorLaunchFailed("Ghostty did not start the editor in time.")
+            else:
+                await asyncio.wait({waiting}, timeout=0.1)
     except (OSError, subprocess.SubprocessError) as error:
-        raise EditorError(f"Could not open the Ghostty editor window: {error}") from error
+        if ready:
+            raise EditorCompletionUnconfirmed(
+                f"Could not verify the editor receipt: {error}"
+            ) from error
+        raise EditorLaunchFailed(f"Could not open the Ghostty editor window: {error}") from error
     finally:
         if window is not None:
             if waiting is None:

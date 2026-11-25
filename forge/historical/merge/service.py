@@ -48,6 +48,7 @@ from forge.historical.normalization.service import write_job
 from forge.orchestration.registry import inherit_recipe, recipe_evidence, retain_recipe
 from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
+from forge.shared.config.toml import dumps
 from forge.shared.database.connection import (
     database_connection,
     database_dsn,
@@ -64,11 +65,16 @@ from forge.shared.paths import ProjectPaths
 
 MERGE_NAMESPACE = "marketforge:historical:merge:v1"
 
-TEMPLATE = """# Example registry primary-file IDs in precedence order. Replace before preparing.
-dataset_ids = [1, 2]
-start_ns = 1727683200000000000
-end_ns = 1727769600000000000
-"""
+TEMPLATE = (
+    "# Example registry primary-file IDs in precedence order. Replace before preparing.\n"
+    + dumps(
+        {
+            "dataset_ids": [1, 2],
+            "start_ns": 1727683200000000000,
+            "end_ns": 1727769600000000000,
+        }
+    )
+)
 
 
 class Recipe(SettingsModel, frozen=True):
@@ -879,6 +885,7 @@ def copy_runtime(report: dict[str, Any], binary: Path, source: Path, config: Pat
     shutil.copyfile(source, config)
     report["configuration_origin"] = str(source)
     report["configuration_filename"] = config.name
+    report["configuration_path"] = str(config)
     report["configuration_sha256"] = checksum(config)
     return digest
 

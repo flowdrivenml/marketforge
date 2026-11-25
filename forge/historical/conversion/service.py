@@ -24,8 +24,9 @@ from forge.historical.conversion.contract import (
 )
 from forge.historical.conversion.discovery import discover
 from forge.historical.conversion.evidence import check_source_environment
-from forge.historical.conversion.planning import output_available, references
+from forge.historical.conversion.planning import output_available
 from forge.historical.conversion.recipes import LoadedSource, PublicationSource, load_recipe
+from forge.historical.conversion.resolution import resolve_references
 from forge.historical.engine.managed import checksum, resolve
 from forge.historical.engine.process import Lifecycle, check, joined_io
 from forge.historical.engine.runtime import read_document
@@ -240,12 +241,16 @@ async def prepare(
             settings=recipe.conversion.model_dump(),
             resources=recipe.resources.model_dump(),
             upstream_interval=upstream.interval.model_dump(),
+            reference_selection=recipe.selection_policy(recipe.version).model_dump(
+                mode="json", exclude_none=True
+            ),
             note="Observed endpoints do not establish continuous coverage. Routes do not establish reference observations or freshness.",
             execution_scope="whole_merge_publication",
         )
         if isinstance(upstream, PublicationSource):
             check_source_environment(upstream)
         registry = await selected_registry_id(paths.root)
+        report["registry_id"] = registry
         with pinned_registry(registry):
             discovery = await discover(paths, recipe, upstream)
         report.update(discovery)
@@ -253,6 +258,28 @@ async def prepare(
             return finish_report(report, directory, dry_run)
         sources: list[dict[str, Any]] = discovery["sources"]
         external: dict[str, Any] | None = discovery["external_reference"]
+        selection = recipe.selection_policy(recipe.version)
+        resolutions: list[dict[str, Any]] = []
+        report["reference_resolutions"] = resolutions
+        selections: list[list[dict[str, Any]]] = []
+        for publication in sources:
+            resolution: dict[str, Any] = {"validation": "not_run"}
+            resolutions.append(resolution)
+            try:
+                with pinned_registry(registry):
+                    selected = await resolve_references(
+                        paths,
+                        publication,
+                        external,
+                        recipe.conversion,
+                        selection,
+                        recipe.reference_stream_ids,
+                        resolution,
+                    )
+            except MarketForgeError as error:
+                resolution["failure"] = str(error)
+                raise
+            selections.append(selected)
         snapshot = catalog_snapshot([*sources, *([external] if external else [])])
         artifact_pins: dict[str, Any] = {}
         if isinstance(upstream, PublicationSource):
@@ -303,8 +330,7 @@ async def prepare(
         entries: list[dict[str, Any]] = []
         ready: list[dict[str, Any]] = []
         work_index = WorkIndex(paths.root, registry, "convert", directory.name)
-        for publication in sources:
-            selected = references(publication, external, recipe.reference_stream_ids)
+        for publication, selected, resolution in zip(sources, selections, resolutions, strict=True):
             identity = uuid4().int & (2**63 - 1)
             destination = (paths.datasets_dir / "converted" / str(identity)).absolute()
             output_available(destination)
@@ -332,6 +358,7 @@ async def prepare(
                     "source_registry_publication_id": publication["registry_publication_id"],
                     "source_engine_publication_id": publication["engine_publication_id"],
                     "references": selected,
+                    "reference_resolution": resolution,
                     "engine_validation": "not_run",
                 }
             )
@@ -360,6 +387,7 @@ async def prepare(
                                 {
                                     **previous,
                                     "disposition": "reused",
+                                    "reference_resolution": resolution,
                                     "reuse_message": READY_MESSAGE,
                                 }
                             )
@@ -370,6 +398,8 @@ async def prepare(
                         "reason": str(error),
                     }
         if ready and len(ready) == len(entries) and not dry_run and not compatibility:
+            for entry in ready:
+                entry["reference_resolution"]["validation"] = "verified_reused_output"
             report.update(
                 status="complete", disposition="reused", execution="not_started", jobs=ready
             )
@@ -420,31 +450,44 @@ async def prepare(
             for entry in entries:
                 try:
                     prepared = Path(entry["path"])
+                    plan_path = prepared.with_suffix(".validation-plan.json")
                     if embedded:
+                        argv = [str(binary), "--job", str(prepared), "--validate"]
                         result = await check(
-                            [str(binary), "--job", str(prepared), "--validate"],
+                            [*argv, "--validation-plan", str(plan_path)],
                             prepared.parent,
                             directory,
                             f"validation-{entry['job_id']}",
                         )
+                        if (
+                            result.returncode
+                            and "unknown argument: --validation-plan" in result.stdout
+                        ):
+                            result = await check(
+                                argv,
+                                prepared.parent,
+                                directory,
+                                f"compatibility-validation-{entry['job_id']}",
+                            )
                         if result.returncode:
                             raise MarketForgeError(
                                 f"Engine validation failed for {prepared}: {result.stdout}"
                             )
                         entry["validation_output"] = result.stdout
                     else:
-                        plan_path = prepared.with_suffix(".validation-plan.json")
                         entry["validation_output"] = await joined_io(
                             validate_prepared_job, binary, prepared, plan_path
                         )
-                        if plan_path.is_file():
-                            plan = read_object(plan_path)
-                            if plan.get("schema_version") != 1:
-                                raise MarketForgeError(f"Unsupported validation plan: {plan_path}")
-                            entry["planned_routes"] = plan["streams"]
+                    if plan_path.is_file():
+                        plan = read_object(plan_path)
+                        if plan.get("schema_version") != 1:
+                            raise MarketForgeError(f"Unsupported validation plan: {plan_path}")
+                        entry["planned_routes"] = plan["streams"]
                     entry["engine_validation"] = "passed"
+                    entry["reference_resolution"]["validation"] = "passed"
                 except (MarketForgeError, OSError, subprocess.TimeoutExpired) as error:
                     entry["engine_validation"] = "failed"
+                    entry["reference_resolution"]["validation"] = "failed"
                     compatibility.append(str(error))
 
         pinned = {

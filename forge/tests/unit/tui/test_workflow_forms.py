@@ -129,6 +129,10 @@ async def test_acquisition_form_review_and_save(tmp_path: Path, width: int, heig
         assert isinstance(app.screen, Inspection)
         assert app.screen.heading == "Acquisition · pilot", app.screen.evidence
     path = paths.acquisition_config_dir / "pilot.toml"
+    generated = path.read_text()
+    assert generated.startswith("[interval]\nstart = " + START + "\n")
+    assert '\n\n[[requests]]\nexchange = "bybit"' in generated
+    assert 'scope = { kind = "instrument", identifier = "BTCUSDT" }' in generated
     config = load_acquisition(path)
     assert config.requests[0].scope.identifier == "BTCUSDT"
     assert config.requests[0].instrument_type == "perpetual"
@@ -212,6 +216,42 @@ def test_specification_contract_and_decimal() -> None:
     assert validate_declaration("specs", {**payload, "tick_size": "bad"})["tick_size"]
 
 
+@pytest.mark.asyncio
+async def test_catalogue_draft_edit_preserves_comments_and_omitted_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = ProjectPaths(tmp_path, tmp_path / "data")
+    app = ForgeApp(ApplicationContext(AppSettings(), paths, None, Console(), Console()))
+    draft = tmp_path / "instrument.toml"
+    original = """# Keep venue spelling and declaration order.
+symbol = "SOLUSDT"
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+
+base_asset = "SOL"
+quote_asset  = "USDT" # reviewed manually
+"""
+    draft.write_text(original)
+    reviewed: list[Path] = []
+
+    async def review(_view: str, path: Path) -> None:
+        reviewed.append(path)
+
+    monkeypatch.setattr(app, "review_catalogue_declaration", review)
+    async with app.run_test(size=(100, 30)) as pilot:
+        worker = app.new_catalogue("Instruments", draft=draft)
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, Form)
+        assert screen.query_one("#field-status", Input).value == ""
+        text(screen, "quote_asset", "USDC")
+        assert await pilot.click("#submit")
+        await worker.wait()
+    assert reviewed == [draft]
+    assert draft.read_text() == original.replace('quote_asset  = "USDT"', 'quote_asset  = "USDC"')
+
+
 def test_recipe_patch_preserves_inactive_sections_and_model_parity() -> None:
     original = b"""# keep this
 version = 1
@@ -290,7 +330,11 @@ async def test_pipeline_authoring_adds_ordered_requests_and_reviews_optional_sta
         assert await pilot.click("#confirm")
         await pilot.pause()
         assert isinstance(app.screen, Inspection) and app.screen.heading == "Pipeline · staged"
-    actual = load_recipe((paths.pipeline_config_dir / "staged.toml").read_bytes())
+    generated = (paths.pipeline_config_dir / "staged.toml").read_bytes()
+    assert generated.count(b"[[requests]]") == 2
+    assert generated.count(b'scope = { kind = "instrument", identifier = "BTCUSDT" }') == 2
+    assert b"\n\n[convert]\n" in generated
+    actual = load_recipe(generated)
     assert [request.data_type for request in actual.requests] == ["trades", "order_book_l2"]
     assert actual.convert is not None and actual.convert.target_quote == "USDC"
     assert actual.model_fields_set == {"version", "interval", "requests", "convert"}

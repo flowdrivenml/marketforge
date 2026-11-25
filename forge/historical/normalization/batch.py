@@ -968,6 +968,7 @@ def stage_batch(
     shutil.copyfile(origin, config)
     report["configuration_origin"] = str(origin)
     report["configuration_filename"] = config.name
+    report["configuration_path"] = str(config)
     report["configuration_sha256"] = checksum(config)
     report["submitted_sha256"] = checksum(source)
     if plan.batch["status"] != "prepared":

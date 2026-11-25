@@ -536,14 +536,38 @@ def test_recipe_runs_pin_two_versions_across_archive(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     import hashlib
+    import io
     import tomllib
+    from zipfile import ZipFile
 
     from forge.historical.recipe_removal import configured_removals
     from forge.shared.config.toml import dumps
 
-    install_http(monkeypatch, lambda _: httpx.Response(200, text="<pre><a href=../>../</a></pre>"))
     first = b"# Preserve this comment and the original line endings\r\n" + request_file.read_bytes()
     request_file.write_bytes(first)
+    edited_during_dispatch = False
+
+    depth_name = f"2026-09-01_{isolated_acquisition}_ob50.data"
+    depth = io.BytesIO()
+    with ZipFile(depth, "w") as archive:
+        archive.writestr(depth_name, '{"type":"snapshot","data":{}}\n')
+
+    def fixture(request: httpx.Request) -> httpx.Response:
+        nonlocal edited_during_dispatch
+        if not edited_during_dispatch:
+            request_file.write_bytes(first.replace(b"2026-09-03", b"2026-09-02"))
+            edited_during_dispatch = True
+        is_depth = "/orderbook/" in request.url.path
+        if request.url.path.endswith("/"):
+            name = depth_name + ".zip" if is_depth else f"{isolated_acquisition}-2026-09-01.csv.gz"
+            return httpx.Response(
+                200,
+                text=f'<pre><a href=../>../</a><a href="{name}">archive</a></pre>',
+            )
+        data = depth.getvalue() if is_depth else gzip.compress(b"time,price\n1,2\n")
+        return httpx.Response(200, stream=httpx.ByteStream(data))
+
+    install_http(monkeypatch, fixture)
 
     def acquire() -> dict[str, object]:
         assert run(workspace, "download") == 0
@@ -551,6 +575,7 @@ def test_recipe_runs_pin_two_versions_across_archive(
         return result
 
     run_one = acquire()
+    assert edited_during_dispatch and request_file.read_bytes() != first
     second = (
         first
         + f"""
@@ -602,3 +627,7 @@ identifier = "{isolated_acquisition}"
         assert [item["data_type"] for item in effective["configuration"]["requests"]] == feed_types
         assert [item["request"]["data_type"] for item in report["requests"]] == feed_types
         assert all(item["scan_id"] > 0 for item in report["requests"])
+        assert report["interval"] == effective["configuration"]["interval"]
+        archive_bindings = report["selection"]["archives"]
+        assert {item["request"]["data_type"] for item in archive_bindings} == set(feed_types)
+        assert all(item["local_archive_id"] > 0 for item in archive_bindings)

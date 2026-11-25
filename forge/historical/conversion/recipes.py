@@ -11,6 +11,7 @@ from pydantic import Field, model_validator
 
 from forge.historical.archives.config import AcquisitionConfig
 from forge.historical.conversion.contract import Currency, Digest, Policy, Resources
+from forge.historical.conversion.selection import ReferenceOptions
 from forge.historical.engine.runtime_config import directory_fd
 from forge.historical.merge.config import (
     DatabaseID,
@@ -105,18 +106,16 @@ class Selection(SettingsModel, frozen=True):
         return self
 
 
-class Recipe(SettingsModel, frozen=True):
-    version: Literal[1]
+class Recipe(ReferenceOptions, frozen=True):
+    version: Literal[1, 2]
     source: Annotated[Source | PublicationSource, Field(discriminator="kind")]
     interval: Interval
     selection: Selection = Field(default_factory=Selection)
     conversion: Policy
     resources: Resources = Field(default_factory=Resources)
-    reference_stream_ids: list[str] = Field(default_factory=list)
-    reference_publication_id: DatabaseID | None = None
 
     @model_validator(mode="after")
-    def reference_selection(self) -> Self:
+    def source_and_references(self) -> Self:
         if isinstance(self.source, PublicationSource):
             if (
                 self.selection.file_dataset_ids
@@ -132,13 +131,7 @@ class Recipe(SettingsModel, frozen=True):
                 raise ValueError(
                     "A publication source interval must equal the committed half-open interval; cropping is unsupported."
                 )
-        refs = self.reference_stream_ids
-        if any(not item.strip() for item in refs) or len(refs) != len(set(refs)):
-            raise ValueError("Reference stream IDs must be nonblank and unique.")
-        if self.reference_publication_id and not refs:
-            raise ValueError(
-                "An external reference publication requires explicit trade stream IDs."
-            )
+        self.validate_reference_options(self.version)
         return self
 
 
@@ -254,24 +247,21 @@ def create_bound(
         raise MarketForgeError(f"Conversion recipe already exists: {destination}")
     publication = isinstance(source, PublicationSource)
     recipe = Recipe(
-        version=1,
+        version=2,
         source=source,
         interval=interval,
         selection=Selection(whole_publication=publication),
         conversion=Policy(target_quote=target, max_staleness_ns=60_000_000_000),
     )
     fields = recipe.model_dump(mode="json", exclude_none=True)
-    sections = ("source", "interval", "selection", "conversion", "resources")
-    base = {key: value for key, value in fields.items() if key not in sections}
     document = (
-        "# Select reference trade stream IDs explicitly when needed. Review the resource limits.\n"
+        "# Trade references are resolved automatically during preparation. Review the resource limits.\n"
         + (
             "# The bound source fixes the whole publication and its committed interval.\n"
             if publication
             else "# Review the interval and use selection IDs to disambiguate revisions.\n"
         )
-        + dumps(base)
-        + "".join(f"\n[{name}]\n" + dumps(fields[name]) for name in sections)
+        + dumps(fields)
     )
     try:
         with directory_fd(destination.parent, create=True) as directory:

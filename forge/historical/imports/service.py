@@ -268,7 +268,12 @@ async def import_file(
 
 
 async def run_import(
-    paths: ProjectPaths, dsn: str, config: ImportConfig, source_file: Path
+    paths: ProjectPaths,
+    dsn: str,
+    config: ImportConfig,
+    source_file: Path,
+    *,
+    source_bytes: bytes | None = None,
 ) -> dict[str, object]:
     execution = await begin(
         paths,
@@ -278,17 +283,24 @@ async def run_import(
         source=source_file,
         dsn=dsn,
     )
-    return await complete_call(execution, lambda: _run_import(paths, dsn, config, source_file))
+    return await complete_call(
+        execution, lambda: _run_import(paths, dsn, config, source_file, source_bytes=source_bytes)
+    )
 
 
 async def _run_import(
-    paths: ProjectPaths, dsn: str, config: ImportConfig, source_file: Path
+    paths: ProjectPaths,
+    dsn: str,
+    config: ImportConfig,
+    source_file: Path,
+    *,
+    source_bytes: bytes | None = None,
 ) -> dict[str, object]:
     if config.binding is not None:
         raise ImportError(
             "Legacy import is raw-only. Use acquisition register for a verified binding."
         )
-    submitted = await disk(source_file.read_bytes)
+    submitted = source_bytes if source_bytes is not None else await disk(source_file.read_bytes)
     if ImportConfig.model_validate(tomllib.loads(submitted.decode())) != config:
         raise ImportError("The import recipe changed before execution.")
     execution = current_execution()
@@ -319,6 +331,20 @@ async def _run_import(
         ).encode(),
     )
     counts = {"completed": 0, "reused": 0, "failed": 0, "cancelled": 0}
+    report: dict[str, object] = {
+        "schema_version": 1,
+        "run_id": str(run_id),
+        "operation": "acquisition",
+        "action": "import",
+        "environment": execution.purpose,
+        "registry_id": execution.registry,
+        "counts": counts,
+        "report": str(artifacts.report),
+        "events": str(artifacts.events),
+        "plan": str(artifacts.resolved_plan),
+        "resolved_plan": str(artifacts.resolved_plan),
+        "resolved_sha256": resolved_sha256,
+    }
 
     async def inputs() -> AsyncIterator[FrozenInput]:
         for item in frozen:
@@ -351,24 +377,10 @@ async def _run_import(
         counts["cancelled"] = len(frozen) - sum(counts.values())
         await disk(
             artifacts.report.write_text,
-            json.dumps({"run_id": str(run_id), "status": "cancelled", "counts": counts}),
+            json.dumps({**report, "status": "cancelled"}),
             encoding="utf-8",
         )
         raise
-    report: dict[str, object] = {
-        "schema_version": 1,
-        "run_id": str(run_id),
-        "operation": "acquisition",
-        "action": "import",
-        "environment": execution.purpose,
-        "registry_id": execution.registry,
-        "status": "failed" if counts["failed"] else "complete",
-        "counts": counts,
-        "report": str(artifacts.report),
-        "events": str(artifacts.events),
-        "plan": str(artifacts.resolved_plan),
-        "resolved_plan": str(artifacts.resolved_plan),
-        "resolved_sha256": resolved_sha256,
-    }
+    report["status"] = "failed" if counts["failed"] else "complete"
     await disk(artifacts.report.write_text, json.dumps(report, indent=2), encoding="utf-8")
     return report

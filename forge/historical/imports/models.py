@@ -177,14 +177,18 @@ class ImportConfig(SettingsModel, frozen=True):
 
 
 def load_import(path: Path) -> ImportConfig:
+    return read_import(path)[0]
+
+
+def read_import(path: Path) -> tuple[ImportConfig, bytes]:
     with configuration_errors(path):
-        with path.open("rb") as source:
-            config = ImportConfig.model_validate(tomllib.load(source))
+        submitted = path.read_bytes()
+        config = ImportConfig.model_validate(tomllib.loads(submitted.decode()))
         if config.binding is not None:
             raise ImportError(
                 "Legacy import is raw-only. Use acquisition register for a verified binding."
             )
-        return config
+        return config, submitted
 
 
 @dataclass(frozen=True)

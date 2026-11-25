@@ -1,6 +1,6 @@
 # Conversion recipes
 
-The editable version-1 Forge recipe selects whole committed merge publications and historical reference trades. Use `mf convert new` to generate a source binding. [Workflow](../../workflows/conversion.md) · [Standalone Engine job](../data-formats/prepared-conversion.md)
+The editable Forge recipe selects whole committed merge publications and historical reference trades. Use `mf convert new` to generate a source binding. [Workflow](../../workflows/conversion.md) · [Standalone Engine job](../data-formats/prepared-conversion.md)
 
 A managed recipe takes its name from its filename. The name starts with an ASCII letter or digit and can also contain hyphens and underscores. The CLI accepts an optional `.toml` suffix. The recipe file has no separate name field. Omit optional fields to use the defaults below.
 
@@ -8,12 +8,12 @@ A managed recipe takes its name from its filename. The name starts with an ASCII
 
 | Field | Type | Required | Default | Meaning and constraints |
 | --- | --- | --- | --- | --- |
-| `version` | Integer | Yes | — | Recipe schema, exactly 1. |
+| `version` | Integer | Yes | — | Recipe schema, 1 or 2. New recipes use 2. |
 | `source` | Table | Yes | — | Choose one of the two bindings below. |
 | `interval.start_ns`, `interval.end_ns` | Signed 64-bit integers | Yes | — | Half-open Unix nanosecond bounds, with start before end. |
 | `selection.whole_publication` | Boolean | For direct binding, must be true | `false` | Approves the complete intersecting publication, including rows outside the request. Disjoint intervals are rejected. |
-| `reference_stream_ids` | Array of strings | No | Empty | Explicit trade stream IDs. Values must be unique and nonblank. |
-| `reference_publication_id` | Positive signed 64-bit integer | No | Omitted | Registry publication ID for a distinct trade-only merge. Requires an explicit, nonempty stream selection. |
+| `reference_stream_ids` | Array of strings | No | Empty | Manual selection. Values must be unique and nonblank. An explicit empty list selects no references. |
+| `reference_publication_id` | Positive signed 64-bit integer | No | Omitted | Registry publication ID for a distinct trade-only merge. In manual mode, requires an explicit, nonempty stream selection. |
 | `conversion.target_quote` | String | Yes | — | Target currency using uppercase ASCII letters and digits. |
 | `conversion.price_source` | Enum | No | `last_trade` | The only accepted price source is `last_trade`. |
 | `conversion.max_staleness_ns` | Positive uint64 | Yes | — | Maximum causal reference age in nanoseconds. The CLI template supplies 60 seconds. |
@@ -25,6 +25,33 @@ A managed recipe takes its name from its filename. The name starts with an ASCII
 | `resources.max_open_files` | Positive uint64 | No | 64 | Requested file-handle budget. |
 
 The [base runtime](conversion-runtime.md) caps each resource request. The [conversion concepts](../../concepts/conversion.md) describe route and layout constraints.
+
+## Reference selection
+
+Version 2 selects automatically when `reference_stream_ids` and
+`reference_selection` are omitted. In either version, a supplied
+`reference_stream_ids` array selects manual mode, including an empty array.
+Version 1 recipes that omit both fields keep their original empty manual
+selection. Set an explicit mode to change a version 1 recipe without migrating
+the rest of the document.
+
+In a standalone recipe, put `reference_stream_ids` and
+`reference_publication_id` before the first TOML table. Use
+`[reference_selection]` for explicit settings. Pipeline uses the same fields
+inside `[convert]` and `[convert.reference_selection]`.
+
+| Field | Values | Default |
+| --- | --- | --- |
+| `reference_selection.mode` | `automatic`, `manual` | `automatic` when the table is present |
+| `reference_selection.ranking_policy` | Published turnover policy name | `turnover` |
+| `reference_selection.ranking_snapshot` | Exact published ranking UUID in the selected registry | Latest eligible snapshot by publication time at the decision cutoff |
+| `reference_selection.temporal_policy` | `historical`, `ex_post` | `historical` |
+
+Ranking settings apply in automatic mode. Remove the manual stream array when
+setting `mode = "automatic"`. An analytical override requires
+`temporal_policy = "ex_post"` and an exact `ranking_snapshot`. Its ranking
+observations may postdate the historical period, and the preparation report
+records that choice. See [historical ranking applicability](../../workflows/markets/rankings.md#historical-conversion).
 
 ## Upstream recipe binding
 
@@ -56,7 +83,7 @@ Use `mf convert new NAME --from-publication MERGED_PUBLICATION_ID --target-quote
 | `source.publication_checksums_sha256` | String | Committed checksum index fingerprint, 64 lowercase hex digits. |
 | `source.interval.start_ns`, `source.interval.end_ns` | Signed 64-bit integers | Committed half-open Unix nanosecond bounds. |
 
-A direct recipe requires `selection.whole_publication = true` and its top-level `interval` must equal the committed range. Omit `selection.file_dataset_ids`, `selection.publication_ids`, and `selection.expected_engine_publication_ids` for this source. Reference selection remains independent. Configure explicit trade streams when the conversion needs them. A target quote equal to the historical quote can use the existing identity route.
+A direct recipe requires `selection.whole_publication = true` and its top-level `interval` must equal the committed range. Omit `selection.file_dataset_ids`, `selection.publication_ids`, and `selection.expected_engine_publication_ids` for this source. Reference selection remains independent. Automatic mode discovers reference trades during preparation. Manual mode uses the exact configured list. A target quote equal to the historical quote can use the existing identity route.
 
 List, show, and local recipe validation can inspect this declaration offline. Prepare in the bound environment to recheck eligibility and metadata fingerprints, then verify the full publication, normalized parents, namespace, stream membership, and historical currencies. Prepared submissions retain the publication declaration alongside the existing job and input evidence. Preparation keeps the whole publication, including any state reconstruction; the interval does not crop rows.
 
@@ -80,7 +107,7 @@ end_ns = 1727769600000000000
 The absolute paths show where to substitute your generated binding. Without explicit selection, preparation looks for an eligible committed merge related to the upstream recipe.
 
 ```toml
-version = 1
+version = 2
 
 [source]
 kind = "merge"
@@ -102,7 +129,7 @@ max_staleness_ns = 60000000000
 With a combined BTCUSDT merge, this USDT target uses the identity rate and needs no reference trades.
 
 ```toml
-version = 1
+version = 2
 
 [source]
 kind = "publication"

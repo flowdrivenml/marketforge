@@ -1,5 +1,6 @@
 """Inspect live references in managed historical workflow recipes."""
 
+import hashlib
 import json
 import tomllib
 from pathlib import Path
@@ -94,30 +95,49 @@ def execution_references(
                 continue
             attempt = intent.parent
             run = attempt.parents[1]
-            # Original bytes were already retained by these producers before the lifecycle change.
-            if (
-                (attempt / "recipe.toml").is_file()
-                or ((run / "submitted.toml").is_file() and (run / "report.json").is_file())
-                or (
-                    (attempt / "acquisition/submitted.toml").is_file()
-                    and (attempt / "acquisition/report.json").is_file()
-                )
-            ):
-                continue
-            if (attempt / "recipe-source.json").is_file():
-                metadata = read_evidence(attempt / "recipe-source.json")
-                snapshot = Path(metadata.get("snapshot", ""))
-                if snapshot.is_relative_to(run) and snapshot.is_file():
-                    continue
-            if (attempt / "outcome.json").is_file():
-                outcome = read_evidence(attempt / "outcome.json")
-                report = Path(outcome.get("report_path") or "")
-                if report.is_relative_to(paths.runs_dir) and (
-                    report.with_name("registration.toml").is_file()
-                    or report.with_name("recipe.toml").is_file()
-                ):
-                    continue
-            dependencies.append(intent)
         except (OSError, ValueError, TypeError, MarketForgeError, AttributeError):
             continue
+        try:
+            if retained_original(paths.runs_dir, run, attempt):
+                continue
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        dependencies.append(intent)
     return tuple(sorted(dependencies))
+
+
+def retained_original(root: Path, run: Path, attempt: Path) -> bool:
+    """Recognize current manifests and the original files recorded by legacy producers."""
+    declaration = attempt / "recipe-source.json"
+    if declaration.is_file():
+        metadata = read_evidence(declaration)
+        snapshot = Path(metadata.get("snapshot", attempt / "recipe.toml"))
+        if snapshot.is_symlink() or not snapshot.resolve().is_relative_to(run.resolve()):
+            return False
+        with snapshot.open("rb") as stream:
+            return hashlib.file_digest(stream, "sha256").hexdigest() == metadata.get("sha256")
+    for directory in (attempt / "acquisition", run):
+        snapshot = directory / "submitted.toml"
+        report = directory / "report.json"
+        if not snapshot.is_file() or snapshot.is_symlink() or not report.is_file():
+            continue
+        document = read_evidence(report)
+        expected = document.get("recipe_sha256") or document.get("submitted_sha256")
+        with snapshot.open("rb") as stream:
+            if expected == hashlib.file_digest(stream, "sha256").hexdigest():
+                return True
+        if expected is None and document.get("action") == "import":
+            return (directory / "resolved-plan.json").is_file()
+    if (attempt / "outcome.json").is_file():
+        outcome = read_evidence(attempt / "outcome.json")
+        report = Path(outcome.get("report_path") or "")
+        if not report.resolve().is_relative_to(root.resolve()):
+            return False
+        declaration = read_evidence(report)
+        snapshot = report.with_name("registration.toml")
+        if snapshot.is_file() and not snapshot.is_symlink():
+            with snapshot.open("rb") as stream:
+                return hashlib.file_digest(stream, "sha256").hexdigest() == declaration.get(
+                    "recipe_sha256"
+                )
+    return False

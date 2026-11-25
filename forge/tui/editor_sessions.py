@@ -3,10 +3,11 @@
 import json
 import shutil
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from tempfile import mkdtemp
+from uuid import uuid4
 
 type ValidateDraft = Callable[[Path], Awaitable[object]]
 type ApplyDraft = Callable[[bytes, bytes], Awaitable[None]]
@@ -24,6 +25,8 @@ class EditorSession:
     state: str = "Opening"
     error: str = ""
     busy: bool = True
+    id: str = field(default_factory=lambda: uuid4().hex)
+    modified: bool | None = None
 
     def stage(self) -> Path:
         if self.draft is not None:
@@ -34,7 +37,11 @@ class EditorSession:
         try:
             (directory / ".session.json").write_text(
                 json.dumps(
-                    {"target": str(self.target), "original_sha256": sha256(original).hexdigest()}
+                    {
+                        "session_id": self.id,
+                        "target": str(self.target),
+                        "original_sha256": sha256(original).hexdigest(),
+                    }
                 ),
                 encoding="utf-8",
             )

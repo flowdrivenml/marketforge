@@ -45,7 +45,18 @@ For example, `mf convert new from_merge --from-merge getting_started --target-qu
 
 ## 3. Review reference trades
 
-The example values USDT in USDT at rate 1. The recipe can show **Trade reference streams: None configured** and **External registry publication: None** for this combined identity case. For cross-currency valuation, configure explicit trade streams with `mf convert edit getting_started_usdt`. A combined merge can use selected internal trades and can also use a distinct external trade-only merge. See [reference eligibility and layout rules](../concepts/conversion.md#how-references-become-eligible).
+The example values USDT in USDT at rate 1. Automatic selection discovers
+observed trade streams from the committed publication and uses their historical
+base and quote currencies to find potential routes. An identity valuation needs
+no trade references for a trades or combined source. When there is only one
+eligible route, preparation can proceed without ranking evidence.
+
+Use **Edit conversion policy and references** to switch to Manual and search
+for eligible trade streams, or use `mf convert edit getting_started_usdt` to
+supply exact IDs. To configure external candidates, select a specific
+trade-only merge permitted by the source layout. Combined publications give
+internal trades precedence. See [reference eligibility and layout rules](../concepts/conversion.md#how-references-become-eligible)
+and [selection settings](../reference/configuration/conversion.md#reference-selection).
 
 ## 4. Validate and preview
 
@@ -54,7 +65,7 @@ mf convert validate getting_started_usdt
 mf convert prepare getting_started_usdt --testing --dry-run
 ```
 
-Validation checks the TOML locally. Preparation resolves the guarded registry, full inputs, historical instrument metadata, references and runtime settings. A dry run can show planned Rust job paths. It creates no prepared jobs and skips Rust validation of the proposed jobs. Reuse checks can validate an earlier retained job. To retain and validate a job before running it, use `mf convert prepare getting_started_usdt --testing`. Read the report’s status and compatibility together. See [prepared conversion jobs](../reference/data-formats/prepared-conversion.md).
+Validation checks the TOML locally. Preparation resolves the guarded registry, full inputs, historical instrument metadata, references and runtime settings. A dry run can show planned Rust job paths. It creates no prepared jobs and skips Rust validation of the proposed jobs. Reuse checks can validate an earlier retained job. To retain and validate a job before running it, use `mf convert prepare getting_started_usdt --testing`. Inspect the selected references, potential routes, ranking evidence, and validation in the preparation report. A missing route or an ambiguous primary route blocks preparation with the affected currency and reference candidates. See [prepared conversion jobs](../reference/data-formats/prepared-conversion.md).
 
 ## 5. Run conversion
 

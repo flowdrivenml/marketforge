@@ -249,7 +249,7 @@ def test_editor_quit_preserves_textual_terminal(
         else:
             message = {
                 "7": "status 7",
-                "interrupted": "without a completion receipt",
+                "interrupted": "Editor interrupted",
                 "startup-failure": "before starting the editor",
                 "no-display": "No Linux graphical display",
             }[outcome]
@@ -281,3 +281,61 @@ def test_parent_exit_leaves_editable_window_and_completion_receipt(terminal: Pat
         (terminal / "exit-status").write_text("0")
         (terminal / "release").touch()
         app.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("receipt_delay", [0.2, None])
+async def test_window_exit_waits_for_authoritative_editor_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, receipt_delay: float | None
+) -> None:
+    import asyncio
+
+    from forge.shared.terminal import editor_window
+    from forge.shared.terminal.editor_worker import receipt
+    from forge.shared.terminal.window import GhosttyWindow
+
+    draft = tmp_path / "sample.toml"
+    draft.write_text("version = 1\n")
+    started: list[bool] = []
+    publisher: asyncio.Task[None] | None = None
+
+    class EarlyExit:
+        async def launch_command(self, argv: tuple[str, ...], **_: object) -> "EarlyExit":
+            nonlocal publisher
+            directory = Path(argv[2])
+            receipt(directory, "ready", "42")
+            draft.write_text("version = 2\n")
+            if receipt_delay is not None:
+
+                async def publish(delay: float) -> None:
+                    await asyncio.sleep(delay)
+                    receipt(directory, "result", "0")
+
+                publisher = asyncio.create_task(publish(receipt_delay))
+            return self
+
+        async def wait(self) -> int:
+            return 0
+
+        def kill(self) -> None:
+            pytest.fail("Window already closed")
+
+        def terminate(self) -> None:
+            pytest.fail("Window already closed")
+
+    monkeypatch.setattr(GhosttyWindow, "detect", EarlyExit)
+    if receipt_delay is None:
+        with pytest.raises(
+            editor_window.EditorCompletionUnconfirmed, match="could not be verified"
+        ):
+            await editor_window.edit_in_window(
+                draft, cwd=tmp_path, editor="nvim", on_ready=lambda: started.append(True)
+            )
+    else:
+        await editor_window.edit_in_window(
+            draft, cwd=tmp_path, editor="nvim", on_ready=lambda: started.append(True)
+        )
+    if publisher is not None:
+        await publisher
+    assert draft.read_text() == "version = 2\n"
+    assert started == [True]

@@ -51,6 +51,7 @@ from forge.historical.pipelines.terminal import (
 from forge.orchestration.artifacts import RunArtifacts, retain_bytes
 from forge.orchestration.registry import begin, complete_call, show_index, status_of
 from forge.shared.config.models import AppSettings
+from forge.shared.config.toml import dumps
 from forge.shared.database.connection import (
     DatabaseError,
     database_connection,
@@ -776,6 +777,7 @@ class PipelineRun:
         stage = self.stage(name)
         options = self.recipe.convert
         assert options is not None
+        stage.pop("failed_preparation", None)
         publications = self.stage("merge")["result"].get("publications", {})
         if len(publications) != 1:
             raise Blocked("Conversion requires exactly one registered upstream merge publication.")
@@ -785,24 +787,33 @@ class PipelineRun:
             source = self.inspect_preparation(stage)
         else:
             binding = await inspect_publication_source(self.paths, publication_id)
+            selection = options.selection_policy(self.recipe.version)
             recipe = conversion_recipes.Recipe(
-                version=1,
+                version=2 if self.recipe.version == 2 else 1,
                 source=binding,
                 interval=binding.interval,
                 selection=conversion_recipes.Selection(whole_publication=True),
                 conversion=conversion_recipes.Policy.model_validate(
                     options.model_dump(
-                        exclude={"reference_stream_ids", "reference_publication_id", "resources"}
+                        exclude={
+                            "reference_stream_ids",
+                            "reference_publication_id",
+                            "reference_selection",
+                            "resources",
+                        }
                     )
                 ),
-                reference_stream_ids=options.reference_stream_ids,
+                reference_selection=selection,
+                **(
+                    {"reference_stream_ids": options.reference_stream_ids}
+                    if selection.mode == "manual"
+                    else {}
+                ),
                 reference_publication_id=options.reference_publication_id,
                 resources=options.resources,
             )
             path = self.historical / "conversion-recipe.toml"
-            path.write_text(
-                conversion_recipes.dumps(recipe.model_dump(mode="json", exclude_none=True))
-            )
+            path.write_text(dumps(recipe.model_dump(mode="json", exclude_none=True)))
             result = await conversion.prepare(
                 self.paths,
                 path,
@@ -814,6 +825,11 @@ class PipelineRun:
                 self.finish_conversion(result)
                 return
             if result.get("compatibility") != "validated":
+                failed_report = Path(result["report_path"])
+                stage["failed_preparation"] = {
+                    "report": str(failed_report),
+                    "report_sha256": checksum(failed_report),
+                }
                 raise Blocked(
                     f"Conversion preparation did not validate; inspect {result.get('report_path')}."
                 )

@@ -429,6 +429,7 @@ async def verify_publication(
                 "Merge stream is missing a unique registered normalized source identity."
             )
         declarations[key] = stream_metadata(stream, parent)
+    observed_bounds: dict[tuple[str, int], tuple[int, int]] = {}
     for file in files:
         for member in file["summary"]["memberships"]:
             key = (member["source_publication_id"], member["stream_rank"])
@@ -447,6 +448,18 @@ async def verify_publication(
                 raise MarketForgeError(
                     "Registry file membership disagrees with committed instrument provenance."
                 )
+
+            # Older memberships may omit stream bounds. File bounds remain a safe envelope.
+            lo = member.get("start_timestamp_ns", file["start_timestamp_ns"])
+            hi = member.get("end_timestamp_ns", file["end_timestamp_ns"])
+            if (
+                type(lo) is not int
+                or type(hi) is not int
+                or not file["start_timestamp_ns"] <= lo <= hi <= file["end_timestamp_ns"]
+            ):
+                lo, hi = file["start_timestamp_ns"], file["end_timestamp_ns"]
+            old_lo, old_hi = observed_bounds.get(key, (lo, hi))
+            observed_bounds[key] = min(lo, old_lo), max(hi, old_hi)
 
     registry = {
         pub.root / file["primary_file"]: {
@@ -509,7 +522,21 @@ async def verify_publication(
         "files": files,
         "normalized_inputs": pinned,
         "streams": [
-            {**stream, "observed": key[1] in ranks, "market_observed": key in observed_members}
+            {
+                **stream,
+                "observed": key[1] in ranks,
+                "market_observed": key in observed_members,
+                **(
+                    {
+                        "observed_interval_inclusive": {
+                            "start_ns": observed_bounds[key][0],
+                            "end_ns": observed_bounds[key][1],
+                        }
+                    }
+                    if key in observed_bounds
+                    else {}
+                ),
+            }
             for key, stream in sorted(
                 declarations.items(), key=lambda item: (item[0][1], item[0][0])
             )

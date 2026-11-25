@@ -19,6 +19,7 @@ from forge.tui.controller import document
 from forge.tui.design import SECONDARY
 from forge.tui.editor_inspection import OpenInspection, RetainedFile, StructuredValue, structured
 from forge.tui.presentation import entries, status
+from forge.tui.run_diagnostics import ErrorsPanel
 from forge.tui.screens import Detail, WorkspaceHost
 from forge.tui.text_selection import SelectableTable
 
@@ -227,11 +228,26 @@ class ActionMenu(ModalScreen[str | None]):
         self.dismiss(self.actions[int((event.button.id or "").removeprefix("menu-"))])
 
 
+class RunEvidenceActions(Horizontal):
+    """Pinned evidence actions shared by retained inspectors and owned runs."""
+
+    def __init__(self, target: StructuredValue) -> None:
+        super().__init__(id="inspection-evidence-actions")
+        self.target = target
+
+    def compose(self) -> ComposeResult:
+        yield OpenInspection(self.target, id="inspect-open-json")
+        button = Button("Errors", id="inspect-errors", classes="compact open-inspection")
+        button.tooltip = "F4 · Inspect retained errors and warnings"
+        yield button
+
+
 class Inspection(Screen[None]):
     BINDINGS = [
         Binding("escape", "back", "Back"),
         Binding("f2", "actions", "Actions"),
         Binding("f3", "evidence", "Evidence"),
+        Binding("f4", "errors", "Errors", show=False),
         Binding("y", "copy_section", "Copy section"),
         Binding("ctrl+y", "copy_selection", "Copy selected text"),
     ]
@@ -250,6 +266,7 @@ class Inspection(Screen[None]):
         files: tuple[RetainedFile, ...] = (),
         section_values: Mapping[str, object] | None = None,
         scalar_summary: bool = False,
+        errors: ErrorsPanel | None = None,
     ) -> None:
         super().__init__()
         self.heading, self.evidence = title, evidence
@@ -258,10 +275,17 @@ class Inspection(Screen[None]):
         self.files = files
         self.section_values = section_values or {}
         self.scalar_summary = scalar_summary
+        self.errors = errors
+        self.summary_section = next(iter(self.sections))
         if files:
             self.sections.setdefault("Artifacts", {})
         self.column_keys: tuple[str, ...] = ()
-        self.section = section if section in self.sections else next(iter(self.sections))
+        self.section = (
+            section
+            if section in self.sections or (section == "Errors" and errors is not None)
+            else self.summary_section
+        )
+        self.before_errors = self.summary_section
         self.choose = choose
         self.searchable = searchable
         self.evidence_label = evidence_label
@@ -271,10 +295,13 @@ class Inspection(Screen[None]):
     def compose(self) -> ComposeResult:
         yield Static(self.heading, classes="screen-heading", markup=False)
         yield Static("", classes="workspace-monitor", markup=False)
+        if self.errors is not None:
+            yield RunEvidenceActions(StructuredValue(self.evidence))
         with Horizontal(classes="section-tabs"):
             for n, section in enumerate(self.sections):
                 yield Button(section, id=f"section-{n}", classes="compact")
-        yield OpenInspection(StructuredValue(None), id="inspect-open-json")
+        if self.errors is None:
+            yield OpenInspection(StructuredValue(None), id="inspect-open-json")
         if self.files:
             yield from self.artifact_row(self.files[0], "inspect-primary-file", primary=True)
         if self.searchable:
@@ -285,6 +312,8 @@ class Inspection(Screen[None]):
                 for index, target in enumerate(self.files):
                     yield from self.artifact_row(target, f"inspect-file-{index}")
         yield RecordTable(cursor_type="cell", id="inspection-rows")
+        if self.errors is not None:
+            yield self.errors
         yield Static(id="inspection-operation", classes="inspect-operation")
         with Horizontal(classes="screen-footer"):
             yield Button("Esc Back", id="inspect-back", classes="compact")
@@ -309,7 +338,13 @@ class Inspection(Screen[None]):
     def render_section(self) -> None:
         self.clear_selection()
         self.query_one(RecordTable).clear_text_selection()
-        value = self.sections[self.section]
+        showing_errors = self.section == "Errors" and self.errors is not None
+        if self.errors is not None:
+            self.errors.display = showing_errors
+            self.query_one("#inspect-errors", Button).variant = (
+                "primary" if showing_errors else "default"
+            )
+        value = self.sections[self.summary_section if showing_errors else self.section]
         artifacts = bool(self.files) and self.section == "Artifacts"
         self.query_one("#inspection-artifacts").display = artifacts
         if self.files:
@@ -324,8 +359,21 @@ class Inspection(Screen[None]):
             and not any(structured(item) is not None for item in document(value).values())
         )
         open_json.display = target is not None and not artifacts and not scalar_summary
-        if target is not None:
+        if self.errors is not None and (showing_errors or not open_json.display):
+            open_json.display = True
+            original = next((item for item in self.files if item.label == "Execution report"), None)
+            open_json.target = original or StructuredValue(self.evidence)
+        elif target is not None:
             open_json.target = target
+        if self.searchable:
+            self.query_one("#inspection-search", Input).display = not showing_errors
+        if showing_errors and self.errors is not None:
+            self.query_one("#inspection-scroll").display = False
+            self.query_one(RecordTable).display = False
+            for index, _ in enumerate(self.sections):
+                self.query_one(f"#section-{index}", Button).remove_class("active")
+            self.errors.activate()
+            return
         self.items = [
             entry
             for entry in entries(value)
@@ -362,8 +410,9 @@ class Inspection(Screen[None]):
             rows.focus()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        self.search = event.value.casefold()
-        self.render_section()
+        if event.input.id == "inspection-search":
+            self.search = event.value.casefold()
+            self.render_section()
 
     def on_data_table_cell_selected(self, event: DataTable.CellSelected) -> None:
         if event.coordinate.row >= len(self.items):
@@ -395,7 +444,12 @@ class Inspection(Screen[None]):
             cast(WorkspaceHost, self).app.push_screen(Detail("Exact value", str(value), raw=True))
 
     def action_back(self) -> None:
-        self.dismiss(None)
+        if self.section == "Errors" and self.errors is not None:
+            self.section = self.before_errors
+            self.render_section()
+            self.query_one("#inspect-errors", Button).focus()
+        else:
+            self.dismiss(None)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if action == "copy_section" and isinstance(self.focused, Input):
@@ -412,8 +466,17 @@ class Inspection(Screen[None]):
             self.notify("Drag over text to select it.", severity="warning")
 
     def action_copy_section(self) -> None:
+        if self.section == "Errors" and self.errors is not None:
+            return
         value = self.items if self.search else self.sections[self.section]
         cast(WorkspaceHost, self).app.push_screen(Detail(self.section, value))
+
+    def action_errors(self) -> None:
+        if self.errors is not None:
+            if self.section != "Errors":
+                self.before_errors = self.section
+            self.section = "Errors"
+            self.render_section()
 
     def action_evidence(self) -> None:
         cast(WorkspaceHost, self).app.push_screen(Detail("Complete evidence", self.evidence))
@@ -431,7 +494,9 @@ class Inspection(Screen[None]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         key = event.button.id or ""
-        if key.startswith("section-"):
+        if key == "inspect-errors":
+            self.action_errors()
+        elif key.startswith("section-"):
             self.section = tuple(self.sections)[int(key.removeprefix("section-"))]
             self.render_section()
         elif key == "inspect-back":

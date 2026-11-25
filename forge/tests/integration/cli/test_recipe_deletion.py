@@ -1,5 +1,6 @@
 """Deletion uses disposable managed libraries and leaves all retained data intact."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -187,7 +188,11 @@ def test_pending_recipe_dependency_and_review_fingerprint(
     blocked = delete_recipe(paths, "acquisition", "request", apply=True, dependencies=dependencies)
     assert blocked.status == "blocked"
     assert blocked.dependencies.executions == (intent,)
-    intent.with_name("recipe.toml").write_bytes(request_file.read_bytes())
+    original = request_file.read_bytes()
+    intent.with_name("recipe.toml").write_bytes(original)
+    intent.with_name("recipe-source.json").write_text(
+        json.dumps({"path": str(request_file), "sha256": hashlib.sha256(original).hexdigest()})
+    )
     preview = delete_recipe(paths, "acquisition", "request", dependencies=dependencies)
     assert preview.status == "ready_to_delete"
     request_file.write_bytes(request_file.read_bytes() + b"\n# External edit\n")

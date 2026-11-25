@@ -24,3 +24,18 @@ A binary can support standalone Rust execution while lacking the managed TUI int
 In the shell that launched the command, inspect `jobs -l`. Use `ps -p PID -o pid,ppid,stat,command` to check a known PID. A suspended process can still hold the workspace lock. Bring a suspended foreground job back with `fg`, then let it finish or interrupt it normally with Ctrl-C. Coordinate with the owner when another session holds the lock. Leave the lock file in place.
 
 If physical publication appears to have finished, inspect `mf runs show RUN_ID --testing` and `mf runs report RUN_ID --testing`. Preserve the submitted job, pinned binary, execution intent and committed files. Rerunning the same compatible conversion lets Forge check for and recover matching committed work before materialization. A validated recovered commit can then be reused. A stale claim without provable committed output can block execution. Consult the [work identity and reuse rules](../concepts/conversion.md#execution-and-reuse) and [run index recovery](publications.md#recover-run-index-metadata). Run index recovery addresses history metadata.
+
+
+## Automatic reference-selection failures
+
+Open `prepare-report.json` from the CLI outcome or Runs. Review the source
+publication, target quote, candidate eligibility and potential routes. When no
+route exists, check the historical currency metadata and whether the
+publication actually contains observed trades. Depth-only conversion needs
+a permitted external trade-only publication with a usable route.
+
+If several primary alternatives have missing or incomparable rankings, use
+an applicable published turnover snapshot or select the exact trades
+manually. An ex-post ranking override explicitly uses analytical evidence
+that may be later than the source interval. If Rust validation passes but a
+valuation is unavailable, inspect causal timestamps and per-event freshness.

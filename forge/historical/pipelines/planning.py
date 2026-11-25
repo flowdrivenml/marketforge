@@ -68,6 +68,15 @@ async def plan(paths: ProjectPaths, recipe: PipelineRecipe, source: Path) -> dic
         "environment": database_purpose(),
         "source": str(source),
         "recipe": recipe.model_dump(mode="json"),
+        **(
+            {
+                "conversion_reference_selection": recipe.convert.selection_policy(
+                    recipe.version
+                ).model_dump(mode="json", exclude_none=True)
+            }
+            if recipe.convert is not None
+            else {}
+        ),
         "stages": stages,
         "inventory": inventory,
         "blockers": blockers,

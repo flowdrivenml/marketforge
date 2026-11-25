@@ -5,7 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from forge.orchestration.run_diagnostics import DiagnosticReader
 from forge.orchestration.runs import RunInspection, safe_report
+from forge.shared.errors import MarketForgeError
 from forge.shared.presentation import runs
 from forge.startup.context import ApplicationContext
 from forge.tui.controller import document
@@ -22,10 +24,12 @@ class RunView:
     command: str = ""
     log_files: dict[str, Path] = field(default_factory=dict[str, Path])
     files: tuple[RetainedFile, ...] = ()
+    diagnostics: DiagnosticReader | None = None
 
 
 def project(evidence: RunInspection, context: ApplicationContext, action: str) -> RunView:
     environment = "testing" if context.testing else "production"
+    reader = DiagnosticReader(context.paths, evidence, purpose=environment)
     files = retained_files(
         evidence.evidence,
         context.paths.runs_dir,
@@ -54,6 +58,7 @@ def project(evidence: RunInspection, context: ApplicationContext, action: str) -
             sections,
             log_files=evidence.log_files,
             files=files,
+            diagnostics=reader,
         )
     if action == "show" and evidence.record is not None:
         view = runs.detail(evidence, context.paths.root, environment)
@@ -71,16 +76,36 @@ def project(evidence: RunInspection, context: ApplicationContext, action: str) -
             "Artifacts": dict(view.artifacts),
             "Diagnostics": [{"Message": message} for message in view.messages],
         }
-        if view.run.recipe and not any(
-            "recipe" in item.label.lower() or item.path.name == "submitted.toml" for item in files
-        ):
-            detail_sections["Configuration"] = {
-                "Original recipe": "Original recipe snapshot unavailable."
+        configuration = {
+            item.label: item.path.name
+            for item in files
+            if item.path.name
+            in {
+                "submitted.toml",
+                "recipe.toml",
+                "effective-configuration.json",
+                "resolved-plan.json",
+                "normalize.toml",
+                "merge.toml",
+                "convert.toml",
             }
+        }
+        if view.run.recipe and not any(
+            item.path.name in {"submitted.toml", "recipe.toml"} for item in files
+        ):
+            configuration["Original recipe"] = "Original recipe snapshot unavailable."
+        if configuration:
+            detail_sections["Configuration"] = configuration
         detail_sections.update(
             table_sections((view.attempts, view.children, view.attempt_evidence, *view.resources))
         )
-        return RunView(f"Run · {evidence.name}", evidence.evidence, detail_sections, files=files)
+        return RunView(
+            f"Run · {evidence.name}",
+            evidence.evidence,
+            detail_sections,
+            files=files,
+            diagnostics=reader,
+        )
     report = runs.report(evidence, context.paths.root, environment)
     sections = {
         "Summary": {**dict(report.identity), "Status": report.status, **dict(report.lifecycle)},
@@ -106,6 +131,7 @@ def project(evidence: RunInspection, context: ApplicationContext, action: str) -
         sections,
         report.machine_command,
         files=files,
+        diagnostics=reader,
     )
 
 
@@ -125,6 +151,7 @@ REPORT_REFERENCES = {
     "configuration_path": "Configuration snapshot",
     "submitted_config": "Submitted configuration",
     "recipe_snapshot": "Recipe snapshot",
+    "effective_configuration": "Effective configuration",
 }
 
 
@@ -201,7 +228,10 @@ def retained_files(
                 if attempt_dir.parent == run_dir / "attempts" and run_dir in permitted_directories:
                     snapshot_metadata = attempt_dir / "recipe-source.json"
                     if snapshot_metadata.is_file():
-                        snapshot = safe_report(snapshot_metadata, run_dir)
+                        try:
+                            snapshot = safe_report(snapshot_metadata, run_dir)
+                        except (MarketForgeError, OSError):
+                            snapshot = {}
                         add(
                             f"Attempt {number} original recipe",
                             snapshot.get("snapshot", attempt_dir / "recipe.toml"),
@@ -231,6 +261,7 @@ def retained_files(
                 sha256=value.get(
                     {
                         "submitted_config": "submitted_sha256",
+                        "effective_configuration": "effective_sha256",
                         "resolved_plan": "resolved_sha256",
                         "configuration_path": "configuration_sha256",
                         "submission_path": "submitted_sha256",

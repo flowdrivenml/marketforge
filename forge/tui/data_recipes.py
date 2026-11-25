@@ -239,11 +239,12 @@ async def validate_sources(
             found = await discover(paths, conversion_recipe, source)
             if found["blockers"]:
                 raise ValueError("\n".join(found["blockers"]))
-            references(
-                found["sources"][0],
-                found["external_reference"],
-                conversion_recipe.reference_stream_ids,
-            )
+            if conversion_recipe.selection_policy(conversion_recipe.version).mode == "manual":
+                references(
+                    found["sources"][0],
+                    found["external_reference"],
+                    conversion_recipe.reference_stream_ids,
+                )
         elif conversion_recipe.reference_stream_ids:
             available = await browse(
                 paths,

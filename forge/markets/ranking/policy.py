@@ -13,6 +13,8 @@ from forge.markets.models import Exchange, Market, MarketDataError, number
 from forge.shared.config.loader import configuration_errors
 from forge.shared.config.models import SettingsModel
 
+DEFAULT_TURNOVER_POLICY = "turnover"
+
 
 def currency(value: str) -> str:
     import re

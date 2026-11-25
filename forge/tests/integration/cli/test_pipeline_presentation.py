@@ -144,7 +144,9 @@ def test_documented_pipeline_recipes() -> None:
     ]
     assert [len(recipe.stage_order()) for recipe in recipes] == [3, 4]
     options = recipes[1].convert
-    assert options is not None and options.reference_stream_ids
+    assert options is not None
+    assert options.selection_policy(recipes[1].version).mode == "automatic"
+    assert "reference_stream_ids" not in options.model_fields_set
     assert options.resources.workers == 1
 
 

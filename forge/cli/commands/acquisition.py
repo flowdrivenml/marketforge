@@ -13,7 +13,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from forge.historical.archives.config import load_acquisition
+from forge.historical.archives.config import load_acquisition, read_acquisition
 from forge.historical.archives.operation import run_acquisition
 from forge.historical.archives.sources.capabilities import CAPABILITIES, source_capabilities
 from forge.historical.archives.templates import write_acquisition_template
@@ -188,7 +188,7 @@ def execute_acquisition(
         not math.isfinite(requests_per_second) or requests_per_second <= 0
     ):
         raise MarketForgeError("--requests-per-second must be finite and positive.")
-    configuration = load_acquisition(path)
+    configuration, submitted = read_acquisition(path)
     dsn = database_dsn(context.paths.root)
     interval = configuration.interval.model_copy(
         update={
@@ -215,6 +215,7 @@ def execute_acquisition(
                     requests_per_second=requests_per_second,
                     silent=silent or as_json or context.settings.presentation.mode == "silent",
                     source_file=path,
+                    source_bytes=submitted,
                     observer=display.update,
                 )
             )

@@ -35,12 +35,16 @@ def create_import(path: Path, name: str, source: Path) -> Path:
 
 
 def create_registration(path: Path, name: str, source: Path) -> Path:
-    import json
-
     if source.suffix == ".toml":
         return write_new(path, source.read_bytes())
     root = source if source.is_dir() else source.parent
     return write_new(
         path,
-        f"[registration]\nversion = 1\nname = {json.dumps(name)}\n\n[source]\nkey = {json.dumps(name)}\nroot = {json.dumps(str(root))}\n# REQUIRED: provider, product, provenance, coverage, and inputs referencing registered catalogue metadata.\n",
+        dumps(
+            {
+                "registration": {"version": 1, "name": name},
+                "source": {"key": name, "root": str(root)},
+            }
+        )
+        + "# REQUIRED: provider, product, provenance, coverage, and inputs referencing registered catalogue metadata.\n",
     )

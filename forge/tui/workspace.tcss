@@ -347,3 +347,23 @@ Inspection .section-tabs { margin-bottom: 1; }
 .market-recipe .market-warning { color: $forge-yellow; }
 .market-recipe #form-error { height: auto; }
 .market-recipe > .buttons { align-horizontal: right; }
+
+#inspection-evidence-actions { height: 1; margin-bottom: 1; }
+#inspect-errors { min-width: 17; }
+#run-errors-panel { height: 1fr; }
+#errors-summary { height: auto; padding: 0 1; }
+#errors-filters { height: 3; }
+#errors-filters Input { width: 1fr; min-width: 14; }
+#errors-filters Select { width: 19; }
+#errors-coverage { height: auto; max-height: 2; color: $forge-yellow; padding: 0 1; }
+#errors-scroll { height: 1fr; }
+#errors-cards, .error-card, .error-stage, .error-empty-evidence { height: auto; }
+.error-card { border-bottom: solid $forge-outline; padding: 0 1; margin-bottom: 1; }
+.error-card > Static { height: auto; }
+.error-meta { color: $forge-secondary; }
+.error-message { padding: 0 0 1 0; }
+.error-explanation { padding: 1 0 0 0; }
+.error-actions, #errors-navigation { height: 1; }
+.error-stage-label, .error-empty { height: auto; padding: 0 1; }
+.error-stage Button { margin-left: 1; }
+#errors-range { width: 1fr; padding-left: 1; color: $forge-secondary; }

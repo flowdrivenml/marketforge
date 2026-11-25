@@ -274,3 +274,79 @@ async def test_pipeline_source_menu_opens_reviewable_draft(tmp_path: Path) -> No
     saved = tomllib.loads(path.read_text())
     assert saved["requests"][1]["scope"]["identifier"] == "ETHUSDT"
     assert saved["interval"] == tomllib.loads(before.decode())["interval"]
+
+
+@pytest.mark.asyncio
+async def test_recipe_remove_review_archive_cancel_and_restore(tmp_path: Path) -> None:
+    from textual.widgets import Button
+
+    from forge.tui.screens import Confirm, Form
+
+    paths = ProjectPaths(tmp_path, tmp_path / "data")
+    created = create_with_requests(
+        paths.acquisition_config_dir,
+        "mixed",
+        (request("BTCUSDT"), request("BTCUSDT", "order_book_l2"), request("ETHUSDT")),
+        pipeline=False,
+        start="2026-09-01T00:00:00Z",
+        end="2026-09-02T00:00:00Z",
+    )
+    path = created.path
+    before = path.read_bytes()
+    app = ForgeApp(ApplicationContext(AppSettings(), paths, None, Console(), Console(), True))
+    app.initial_area = "Workflows"
+    app.initial_view = "Acquisition"
+    async with app.run_test(size=(150, 40)) as pilot:
+        await pilot.pause(0.3)
+        app.action_context()
+        await pilot.pause()
+        assert isinstance(app.screen, ActionMenu)
+        index = app.screen.actions.index("Remove from Recipe…")
+        await pilot.click(f"#menu-{index}")
+        assert isinstance(app.screen, ActionMenu)
+        assert "order_book_l2" in app.screen.actions[1]
+        await pilot.press("down", "enter")
+        await pilot.pause()
+        assert isinstance(app.screen, Form)
+        assert path.read_bytes() == before
+        await pilot.click("#submit")
+        await pilot.pause()
+        assert isinstance(app.screen, Confirm)
+        assert "order_book_l2" in app.screen.explanation
+        await pilot.click("#confirm")
+        await pilot.pause()
+        assert isinstance(app.screen, Inspection)
+        saved = path.read_bytes()
+        config = tomllib.loads(saved.decode())
+        assert [(r["scope"]["identifier"], r["data_type"]) for r in config["requests"]] == [
+            ("BTCUSDT", "trades"),
+            ("ETHUSDT", "trades"),
+        ]
+
+        await pilot.press("f2")
+        assert isinstance(app.screen, ActionMenu)
+        await pilot.click(f"#menu-{app.screen.actions.index('Delete Recipe…')}")
+        await pilot.pause()
+        for cancel in (True, False):
+            assert isinstance(app.screen, Inspection)
+            assert app.screen.heading == "Recipe deletion preview"
+            await pilot.press("f2")
+            assert isinstance(app.screen, ActionMenu)
+            await pilot.click("#menu-0")
+            await pilot.pause()
+            assert isinstance(app.screen, Confirm)
+            assert app.screen.query_one("#confirm", Button).variant == "error"
+            await pilot.click("#back" if cancel else "#confirm")
+            await pilot.pause()
+            assert path.exists() is cancel
+        while app.screen != app.root_screen:
+            await pilot.press("escape")
+        app.action_context()
+        await pilot.pause()
+        assert isinstance(app.screen, ActionMenu)
+        index = app.screen.actions.index("Restore Archived Recipe…")
+        await pilot.click(f"#menu-{index}")
+        assert isinstance(app.screen, ActionMenu)
+        await pilot.click("#menu-0")
+        await pilot.pause()
+        assert path.read_bytes() == saved

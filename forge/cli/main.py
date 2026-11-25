@@ -351,7 +351,7 @@ def _emit_error(message: str, *, as_json: bool) -> None:
     )
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, context: ApplicationContext | None = None) -> int:
     """Run the command-line interface."""
     parser = build_parser()
     arguments = _Arguments()
@@ -360,14 +360,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.parse_args(tokens, namespace=arguments)
         if arguments.testing and arguments.production:
             parser.error("--testing and --production are mutually exclusive.")
+        if context is not None and arguments.testing != context.testing:
+            parser.error("The command environment differs from the prepared application context.")
     with (
         database_environment(testing=arguments.testing),
         terminal_spacing(enabled=not arguments.as_json and arguments.command != "tui"),
     ):
-        return _dispatch(parser, arguments)
+        return _dispatch(parser, arguments, context=context)
 
 
-def _dispatch(parser: HelpParser, arguments: _Arguments) -> int:
+def _dispatch(
+    parser: HelpParser, arguments: _Arguments, *, context: ApplicationContext | None = None
+) -> int:
 
     if arguments.command is None:
         parser.print_root_help(arguments)
@@ -381,7 +385,7 @@ def _dispatch(parser: HelpParser, arguments: _Arguments) -> int:
                 testing=arguments.testing,
                 as_json=arguments.as_json,
             )
-        context = build_context(
+        context = context or build_context(
             project_root=arguments.project_root,
             config_file=arguments.config_file,
             testing=arguments.testing,

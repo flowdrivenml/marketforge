@@ -23,6 +23,8 @@ from forge.historical.normalization.config import (
 )
 from forge.historical.pipelines.config import PipelineRecipe
 from forge.historical.registration.models import Recipe as RegistrationRecipe
+from forge.markets.ranking.policy import RankingPolicy
+from forge.shared.config.recipe_editing import update_recipe as update_recipe
 from forge.shared.config.toml import value
 from forge.tui.actions import Field, Value, Values
 from forge.tui.controller import document
@@ -53,6 +55,7 @@ GROUPS = {
     "format_profile": "Source format",
     "binding": "Advanced Options",
     "reference_stream_ids": "Reference streams",
+    "reference_selection": "Reference selection",
     "reference_publication_id": "Reference streams",
     "stream_ranks": "Advanced Options",
     "timeline_ordering": "Merge policy",
@@ -77,6 +80,7 @@ def model_for(family: str, data: Mapping[str, object]) -> type[BaseModel] | None
         "convert": ConversionRecipe,
         "acquisition import": ImportConfig,
         "acquisition register": RegistrationRecipe,
+        "markets rank": RankingPolicy,
     }.get(family)
 
 
@@ -191,9 +195,12 @@ class RecipeForm:
                                 "normalize": "Override normalization defaults",
                                 "merge": "Override merge defaults",
                                 "convert": "Enable conversion",
+                                "reference_selection": "Override reference selection defaults",
                             }.get(
                                 name,
-                                f"Enable {name.replace('_', ' ') if not name.isdecimal() else 'entry ' + str(int(name) + 1)}",
+                                f"Keep {'request' if path[0] == 'requests' else 'input'} {int(name) + 1}"
+                                if name.isdecimal() and data is not None
+                                else f"Enable {name.replace('_', ' ') if not name.isdecimal() else 'entry ' + str(int(name) + 1)}",
                             ),
                             "check",
                             group=group,
@@ -288,8 +295,7 @@ class RecipeForm:
         if self.new and data is None and required and type(constant) is int:
             data = constant
         if self.new and data is None and self.model is PipelineRecipe and path == ("version",):
-            if schema.get("minimum") == schema.get("maximum"):
-                data = schema.get("minimum")
+            data = schema.get("maximum")
         kind = schema.get("type")
         read = "toml" if kind not in {"string", "integer", "number"} and not choices else "scalar"
         if schema.get("format") == "date-time":
@@ -331,6 +337,8 @@ class RecipeForm:
         ):
             if constraint in schema:
                 help_parts.append(f"{wording} {schema[constraint]}".strip())
+        if "reference_selection" in path and name == "mode" and data is None:
+            data = schema.get("default")
         initial = "" if data is None else value(data) if read == "toml" else str(data)
         if isinstance(data, int) and not isinstance(data, bool) and read == "scalar":
             initial = str(data)
@@ -344,10 +352,14 @@ class RecipeForm:
         conditional = None
         if self.model is NormalizationRecipe and len(path) == 3 and name == "source_key":
             conditional = partial(self.equals, key.removesuffix(name) + "instrument_type", "equity")
-        elif name == "reference_stream_ids":
-            conditional = partial(
-                self.supplied, key.removesuffix(name) + "reference_publication_id"
-            )
+        visibility = self.visible(gates)
+        if name == "reference_stream_ids" or (
+            "reference_selection" in path
+            and name in {"ranking_policy", "ranking_snapshot", "temporal_policy"}
+        ):
+            prefix = path[:-1] if name == "reference_stream_ids" else path[:-2]
+            selection_key = "--".join(map(str, (*prefix, "reference_selection")))
+            visibility = partial(self.reference_field, selection_key, name, gates)
         self.controls.append(
             Control(
                 Field(
@@ -370,13 +382,22 @@ class RecipeForm:
                         self.feed_options, key.partition("source_options")[0], gates
                     )
                     if "source_options" in path
-                    else self.visible(gates),
+                    else visibility,
                 ),
                 initial,
                 read,
                 path,
             )
         )
+
+    @staticmethod
+    def reference_field(
+        key: str, name: str, gates: tuple[str, ...], values: Mapping[str, Value]
+    ) -> bool:
+        if not all(values.get(gate) is True for gate in gates):
+            return False
+        mode = values.get(f"{key}--mode") if values.get(key) else None
+        return mode != "automatic" if name == "reference_stream_ids" else mode != "manual"
 
     @staticmethod
     def feed_options(prefix: str, gates: tuple[str, ...], values: Mapping[str, Value]) -> bool:
@@ -582,71 +603,3 @@ def summarize(data: Payload, state: str, path: str) -> dict[str, object]:
             )
     summary["Configuration"] = path
     return summary
-
-
-def update_recipe(original: bytes, before: Payload, after: Payload) -> str:
-    """Patch only changed values in the existing TOML document."""
-    from collections.abc import MutableMapping, MutableSequence
-
-    import tomlkit
-    from tomlkit.items import AoT, Table
-
-    def retained_indices(old: list[object], new: list[object]) -> list[int] | None:
-        indices: list[int] = []
-        for index, item in enumerate(old):
-            if len(indices) < len(new) and item == new[len(indices)]:
-                indices.append(index)
-        return indices if len(indices) == len(new) else None
-
-    def patch(
-        table: MutableMapping[str, object], old: Mapping[str, object], new: Mapping[str, object]
-    ) -> None:
-        for key in old.keys() - new.keys():
-            del table[key]
-        for key, item in new.items():
-            previous = old.get(key)
-            if previous == item:
-                continue
-            current = table.get(key)
-            if (
-                isinstance(current, MutableMapping)
-                and isinstance(previous, dict)
-                and isinstance(item, dict)
-            ):
-                patch(
-                    cast(MutableMapping[str, object], current),
-                    cast(Payload, previous),
-                    cast(Payload, item),
-                )
-            elif (
-                isinstance(current, AoT)
-                and isinstance(previous, list)
-                and isinstance(item, list)
-                and item[: len(cast(list[object], previous))] == previous
-            ):
-                for entry in cast(
-                    list[dict[str, object]], item[len(cast(list[object], previous)) :]
-                ):
-                    addition = tomlkit.item(entry)
-                    assert isinstance(addition, Table)
-                    cast(MutableSequence[Table], current).append(addition)
-            elif (
-                isinstance(current, AoT)
-                and isinstance(previous, list)
-                and isinstance(item, list)
-                and (
-                    indices := retained_indices(
-                        cast(list[object], previous), cast(list[object], item)
-                    )
-                )
-                is not None
-            ):
-                for index in reversed(range(len(current))):
-                    if index not in indices:
-                        del cast(MutableSequence[Table], current)[index]
-            else:
-                table[key] = item
-
-    source = tomlkit.parse(original.decode())
-    patch(cast(MutableMapping[str, object], source), before, after)
-    return source.as_string()

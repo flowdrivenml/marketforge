@@ -362,3 +362,21 @@ async def test_large_snapshot_cancel_and_missing_file(
         await pilot.pause()
         assert screen.query_one("#inspection-primary-artifact").has_class("artifact-missing")
         assert not app.editor_open and len(snapshots) == 1
+
+
+def test_retained_fingerprint_is_verified_before_open(tmp_path: Path) -> None:
+    import hashlib
+
+    source = tmp_path / "recipe.toml"
+    source.write_text("version = 1\n")
+    fingerprint = hashlib.sha256(source.read_bytes()).hexdigest()
+    target = RetainedFile("Original recipe", source, tmp_path, fingerprint)
+    scratch = tmp_path / "first"
+    scratch.mkdir()
+    snapshot, _, _ = stage(target, scratch)
+    assert snapshot.read_bytes() == source.read_bytes()
+    source.write_text("version = 2\n")
+    scratch = tmp_path / "second"
+    scratch.mkdir()
+    with pytest.raises(EditorError, match="fingerprint differs"):
+        stage(target, scratch)

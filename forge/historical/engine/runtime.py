@@ -7,9 +7,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
 
-import tomlkit
-
 from forge.historical.engine.managed import resolve, supervised
+from forge.shared.config.toml import dumps
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -73,7 +72,7 @@ def compose_pipeline(
         if overrides.get(stage):
             document = read_document(source, base)
             overlay(document, overrides[stage])
-            target.write_text(tomlkit.dumps(document), encoding="utf-8")
+            target.write_text(dumps(document), encoding="utf-8")
             try:
                 settings = inspect_runtime(paths, stage, target, binaries[stage])
             except MarketForgeError as error:

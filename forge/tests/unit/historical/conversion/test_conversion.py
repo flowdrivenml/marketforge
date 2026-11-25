@@ -13,6 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -22,7 +23,7 @@ from forge.cli.main import main
 from forge.datasets.parquet import arrow_modules
 from forge.historical.archives.config import AcquisitionConfig
 from forge.historical.archives.models import archive_scope_document, archive_scope_key
-from forge.historical.conversion import discovery, execution, recipes, registry, service
+from forge.historical.conversion import discovery, execution, recipes, registry, resolution, service
 from forge.historical.conversion.contract import (
     Identity,
     Job,
@@ -203,6 +204,7 @@ def stream(symbol: str, base: str, quote: str, rank: int, kind: str = "trade") -
         "base_currency": base,
         "quote_currency": quote,
         "instrument_type": "spot",
+        "market_category": "spot",
         "market_observed": True,
         "observed": True,
     }
@@ -216,6 +218,7 @@ def publication(paths: ProjectPaths, *, combined: bool, key: int = 60) -> dict[s
         "mode": "combined" if combined else "trades",
         "physical_schema_version": 2 if combined else 1,
         "timeline_ordering": "causal" if combined else "chronological",
+        "observed_interval_inclusive": {"start_ns": START, "end_ns": END - 1},
         "events": 1,
         "streams": (
             [
@@ -669,6 +672,18 @@ async def test_collection_submits_original_single_job_bytes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     recipe = prepare_fixture(paths)
+    snapshot = str(uuid4())
+    recipe.write_text(
+        recipe.read_text() + "\n[reference_selection]\n"
+        f'ranking_snapshot = "{snapshot}"\ntemporal_policy = "ex_post"\n'
+    )
+    ranking = AsyncMock(
+        return_value=(
+            {},
+            {"applicability": "ex_post", "snapshot": {"id": snapshot}, "status": "ex_post"},
+        )
+    )
+    monkeypatch.setattr(resolution, "rank_candidates", ranking)
     candidates = [
         publication(paths, combined=False, key=60),
         publication(paths, combined=False, key=61),
@@ -716,7 +731,15 @@ async def test_collection_submits_original_single_job_bytes(
     report = await service.prepare(paths, recipe)
     assert report["compatibility_blockers"] == []
     assert report["status"] == "generated" and report["compatibility"] == "validated"
+    assert report["jobs"][0]["reference_resolution"]["ranking"]["snapshot"]["id"] == snapshot
+    assert ranking.await_count == 2
+    ranking.side_effect = MarketForgeError("The ranking snapshot is now unavailable.")
     submitted = [await asyncio.to_thread(Path(job["path"]).read_bytes) for job in report["jobs"]]
+    monkeypatch.setattr(
+        service,
+        "resolve_references",
+        AsyncMock(side_effect=AssertionError("Selection was re-resolved.")),
+    )
     recipe.unlink()
     observed: list[bytes] = []
 
@@ -742,6 +765,9 @@ async def test_collection_submits_original_single_job_bytes(
     assert result["status"] == "complete" and observed == submitted
     repeated = await execution.execute(paths, Path(report["job_path"]))
     assert repeated["disposition"] == "reused" and observed == submitted
+    assert [job["reference_resolution"] for job in repeated["jobs"]] == [
+        job["reference_resolution"] for job in result["jobs"]
+    ]
     assert [job["publication"] for job in repeated["jobs"]] == [
         job["publication"] for job in result["jobs"]
     ]

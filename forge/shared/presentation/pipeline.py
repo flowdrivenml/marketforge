@@ -7,6 +7,7 @@ from shlex import join
 from typing import cast
 
 from forge.historical.pipelines.config import PipelineRecipe, load_recipe_file
+from forge.markets.ranking.policy import DEFAULT_TURNOVER_POLICY
 from forge.orchestration.run_summary import mapping, when
 from forge.shared.config.library import resolve_config_file
 from forge.shared.errors import MarketForgeError
@@ -248,15 +249,26 @@ def project(record: Mapping[str, object], action: str, *, index_state: str = "")
             )
         )
     if options and action in {"validate", "plan"}:
+        selection = mapping(options.get("reference_selection"))
         references = options.get("reference_stream_ids")
-        identity.append(
-            (
-                "Reference streams",
-                ", ".join(map(str, cast(list[object], references)))
-                if isinstance(references, list) and references
-                else "No explicit reference streams",
-            )
+        mode = selection.get("mode") or (
+            "automatic" if recipe.get("version") == 2 and references is None else "manual"
         )
+        identity.append(("Reference selection", str(mode).capitalize()))
+        if mode == "automatic":
+            identity.append(("Reference streams", "Resolved after Merge registers its publication"))
+            identity.append(
+                ("Ranking policy", str(selection.get("ranking_policy") or DEFAULT_TURNOVER_POLICY))
+            )
+        else:
+            identity.append(
+                (
+                    "Reference streams",
+                    ", ".join(map(str, cast(list[object], references)))
+                    if isinstance(references, list) and references
+                    else "No explicit reference streams",
+                )
+            )
         if external := options.get("reference_publication_id"):
             identity.append(("External reference registry publication", str(external)))
     if run_id and options.get("target_quote"):

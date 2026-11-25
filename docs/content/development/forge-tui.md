@@ -275,8 +275,10 @@ command exits. The child environment excludes tmux pane and socket identifiers.
 
 A supervisor runs on the new window's PTY. It records editor readiness and
 then an atomic exit receipt in the private session directory. Forge checks
-both receipts and monitors early Ghostty exit asynchronously. Missing
-completion evidence leaves the draft available for recovery. The Textual
+both receipts and allows a bounded reconciliation period after Ghostty exits.
+The worker forwards PTY interruption signals and records the editor's actual
+exit status. Missing completion evidence leaves the draft available for
+explicit validation and review. The Textual
 driver stays active and keeps its own input, mouse reporting, and screen state.
 
 Editable sessions are keyed by canonical target path. A session keeps the
@@ -304,6 +306,14 @@ identity and registry. Effective configuration records the validated model and
 its defaults. Runtime snapshots, prepared jobs, receipts and publication
 manifests remain the authority for Engine settings and resolved data identities.
 
+Within a logical run, the attempt's `recipe-source.json` names its original
+recipe and fingerprints it. The usual filenames are `recipe.toml` and
+`effective-configuration.json`. File-backed Acquisition keeps its original
+in `submitted.toml` under that operation's artifact directory. Pipeline keeps
+`submitted.toml` and `resolved-plan.json` at the parent run root, and stage
+evidence under `steps/`. Engine jobs and publication evidence are linked from
+the existing preparation and execution receipts.
+
 | Workflow | Evidence in the original implementation | Lifecycle extension |
 | --- | --- | --- |
 | Acquisition | Submitted TOML, request and scan records, archive selections, reports and event logs. Acquisition used its parsed configuration. | Immutable publication, attempt provenance, effective HTTP settings and overrides. |
@@ -316,3 +326,17 @@ manifests remain the authority for Engine settings and resolved data identities.
 The managed path records provenance. Recipe archival is blocked when a matching
 retained execution intent still points to the managed file and lacks a retained
 original. Current configuration is never labeled as an older run's snapshot.
+
+
+## Workflow terminal lifecycle
+
+The workspace authorizes one CLI worker over a private Unix socket. Before
+authorization, a failed graphical launch can fall back to the structured
+in-app operation. After authorization, the worker uses the normal CLI workspace
+locks, pinned registry, and durable run intent. The workspace observes the
+retained run ID and outcome without starting a second execution.
+
+The worker owns the Ghostty PTY and publishes its final receipt before the
+terminal enters its hold state. The control socket also carries cancellation
+and emergency-stop requests. Losing the workspace connection interrupts active
+work. A missing final receipt is reconciled with retained run evidence.

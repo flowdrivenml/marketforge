@@ -22,6 +22,7 @@ from tomlkit.items import InlineTable, String, Table
 
 from forge.historical.engine.managed import resolve, supervised
 from forge.historical.engine.runtime import inspect_runtime
+from forge.shared.config.toml import configuration_item
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import WorkspaceOwnership, acquire_file_lock
 from forge.shared.paths import ProjectPaths
@@ -405,7 +406,7 @@ class RuntimeConfiguration:
         parents: list[tuple[Container | Table | InlineTable | OutOfOrderTableProxy, str]] = []
         for part in parts[:-1]:
             if part not in node:
-                node[part] = tomlkit.table()
+                node[part] = configuration_item({}, inline=isinstance(node, InlineTable))
             member = node[part]
             if not isinstance(member, (Table, InlineTable, OutOfOrderTableProxy)):
                 raise MarketForgeError(f"{path}: expected a TOML table at {part}.")
@@ -448,7 +449,9 @@ class RuntimeConfiguration:
                     value, literal=literal, multiline=quote in {"'''", '"""'}
                 )
             else:
-                node[key] = value
+                node[key] = configuration_item(
+                    value, tuple(parts), inline=isinstance(node, InlineTable)
+                )
         return document.as_string().encode("utf-8")
 
     def propose(self, original: Snapshot, candidate: bytes) -> Change:

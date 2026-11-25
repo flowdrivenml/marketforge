@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from forge.historical.engine.managed import checksum, resolve, supervised
 from forge.historical.normalization.service import write_job
+from forge.shared.config.toml import dumps
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import acquire_file_lock
 from forge.shared.paths import ProjectPaths, require_migrated
@@ -151,14 +152,18 @@ def new_draft(paths: ProjectPaths, profile_id: str) -> Path:
         "# Starting example: verify every source field, encoding and mapping against your records.\n"
         "# REQUIRED: uncomment format_code and assign your catalogue format code.\n"
         '# format_code = "REPLACE WITH CATALOGUE FORMAT CODE"\n'
-        "schema_version = 2\n"
-        'kind = "profile"\n'
-        f'id = "{profile_id}"\n'
-        f'exchange = "{exchange}"\n'
-        f'instrument_type = "{instrument}"\n'
-        f'market_category = "{market}"\n\n'
     )
-    return write_draft(paths, profile_id, (header + body).encode())
+    metadata = dumps(
+        {
+            "schema_version": 2,
+            "kind": "profile",
+            "id": profile_id,
+            "exchange": exchange,
+            "instrument_type": instrument,
+            "market_category": market,
+        }
+    )
+    return write_draft(paths, profile_id, (header + metadata + "\n" + body).encode())
 
 
 def write_draft(paths: ProjectPaths, profile_id: str, data: bytes) -> Path:

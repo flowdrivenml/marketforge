@@ -51,7 +51,10 @@ class Action:
     testing: bool = False
 
     def command(self, values: Values, *, testing: bool = False) -> str:
-        cmd = ["mf", *self.key.split()]
+        return join(["mf", *self.arguments(values, testing=testing)])
+
+    def arguments(self, values: Values, *, testing: bool = False) -> list[str]:
+        cmd = self.key.split()
         for field in self.fields:
             if field.key == "catalogue_quote":
                 continue
@@ -91,7 +94,7 @@ class Action:
             cmd.append("--all")
         if self.key == "database restore":
             cmd.append("--disposable-testing")
-        return join(cmd)
+        return cmd
 
 
 def flag(key: str, label: str, *, option: str = "") -> Field:

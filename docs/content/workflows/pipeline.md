@@ -13,7 +13,7 @@ Enable Conversion to reveal its target quote and staleness policy. Turning
 it off omits the optional stage from the saved recipe. The review displays
 the enabled stage sequence before saving.
 
-Save named recipes under `data/.config/workflows/data_engineering/pipeline/`. The version 1 recipe uses
+Save named recipes under `data/.config/workflows/data_engineering/pipeline/`. The version 2 recipe uses
 the acquisition request schema and one half-open UTC interval `[start, end)`.
 Use the existing scopes and feed options for each exchange. Forge resolves
 archive, instrument, job, dataset, and registry identities.
@@ -32,6 +32,13 @@ pipeline uses the exact merge registered by the preceding stage. Install the
 managed converter with `mf engine build convert` and configure its base runtime
 before running this stage. See [pipeline recipe options](../reference/configuration/pipeline.md#optional-conversion)
 and [reference-trade requirements](../concepts/conversion.md#how-references-become-eligible).
+
+The default in version 2 is automatic reference selection. Planning shows the
+configured policy. Once Merge registers the source, Conversion discovers trade
+streams in that exact publication and retains the selection, ranking evidence,
+and Rust validation in the preparation report. An explicit
+`convert.reference_stream_ids` array overrides automatic selection. Version 1
+recipes keep their existing defaults.
 
 ## Inspect and run
 

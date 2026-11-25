@@ -151,10 +151,13 @@ def run_operation(
                     )
                 document = (
                     "# Narrow this selection before preparing if discovery reports blockers.\n"
-                    "version = 1\n\n[interval]\n"
-                    + dumps(derived.interval.model_dump())
-                    + "\n[selection]\n"
-                    + dumps(derived.selection.model_dump(exclude_none=True))
+                    + dumps(
+                        {
+                            "version": derived.version,
+                            "interval": derived.interval.model_dump(),
+                            "selection": derived.selection.model_dump(exclude_none=True),
+                        }
+                    )
                 )
             try:
                 with WorkspaceOwnership(paths):

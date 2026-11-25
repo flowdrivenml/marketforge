@@ -10,7 +10,7 @@ from forge.cli.commands.markets import emit
 from forge.cli.environment import add_database_options
 from forge.historical.drafts import create_import
 from forge.historical.imports.formats import sample
-from forge.historical.imports.models import ImportError, freeze_inputs, load_import, plan
+from forge.historical.imports.models import ImportError, freeze_inputs, plan, read_import
 from forge.historical.imports.service import run_import
 from forge.shared.config.library import resolve_config_file
 from forge.shared.database.connection import database_dsn
@@ -88,7 +88,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
         }
         _emit_import(context, o, draft)
         return 0
-    config = load_import(path)
+    config, submitted = read_import(path)
     result: dict[str, object]
     if o.import_action == "format":
         raise ImportError(
@@ -116,7 +116,13 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     else:
         with WorkspaceOwnership(context.paths):
             result = asyncio.run(
-                run_import(context.paths, database_dsn(context.paths.root), config, path)
+                run_import(
+                    context.paths,
+                    database_dsn(context.paths.root),
+                    config,
+                    path,
+                    source_bytes=submitted,
+                )
             )
     _emit_import(context, o, result)
     return 1 if result.get("status") == "failed" else 0

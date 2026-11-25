@@ -1,10 +1,13 @@
 """Managed recipe drafts and schema-backed conversion options."""
 
+import tomllib
 from pathlib import Path
+from typing import cast
 
 from forge.historical.archives.storage.files import disk
 from forge.historical.authoring import publish_new
 from forge.historical.normalization.config import ExactRecipe
+from forge.shared.config.recipe_editing import update_recipe
 from forge.shared.config.toml import dumps
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
@@ -14,7 +17,7 @@ async def save_normalization(path: Path, recipe: ExactRecipe) -> Path:
     return await disk(
         publish_new,
         path,
-        dumps(recipe.model_dump(mode="json", exclude_none=True, exclude_unset=True)),
+        dumps(recipe.model_dump(exclude_none=True, exclude_unset=True)),
     )
 
 
@@ -64,36 +67,38 @@ def conversion_candidate(
     resources: dict[str, object],
     reference_stream_ids: list[str],
     reference_publication_id: int | None,
+    reference_selection: dict[str, object] | None = None,
 ) -> tuple[str, dict[str, object]]:
     """Round-trip a conversion draft through Forge's authoritative recipe model."""
-    import tomlkit
-    from tomlkit.container import OutOfOrderTableProxy
-    from tomlkit.items import InlineTable, Table
-
     from forge.historical.conversion.recipes import Recipe
 
-    document = tomlkit.parse(original.decode())
+    before = tomllib.loads(original.decode())
+    candidate: dict[str, object] = dict(before)
     for section, updates in (("conversion", policy), ("resources", resources)):
         if not updates:
             continue
-        if section not in document:
-            document[section] = tomlkit.table()
-        table = document[section]
-        if not isinstance(table, (Table, InlineTable, OutOfOrderTableProxy)):
+        table = before.get(section, {})
+        if not isinstance(table, dict):
             raise MarketForgeError(f"Expected a TOML table for {section}.")
-        for key, value in updates.items():
-            table[key] = value
-    if reference_stream_ids or "reference_stream_ids" in document:
-        document["reference_stream_ids"] = reference_stream_ids
+        candidate[section] = {**cast(dict[str, object], table), **updates}
+    if reference_selection is not None:
+        candidate["reference_selection"] = reference_selection
+    if reference_selection and reference_selection["mode"] == "automatic":
+        candidate.pop("reference_stream_ids", None)
+    elif reference_stream_ids or "reference_stream_ids" in before:
+        candidate["reference_stream_ids"] = reference_stream_ids
     if reference_publication_id is None:
-        if "reference_publication_id" in document:
-            del document["reference_publication_id"]
+        candidate.pop("reference_publication_id", None)
     else:
-        document["reference_publication_id"] = reference_publication_id
-    validated = Recipe.model_validate(document.unwrap())
-    return document.as_string(), {
+        candidate["reference_publication_id"] = reference_publication_id
+    updated = update_recipe(original, before, candidate)
+    validated = Recipe.model_validate(tomllib.loads(updated))
+    return updated, {
         "conversion": validated.conversion.model_dump(),
         "resources": validated.resources.model_dump(),
+        "reference_selection": validated.selection_policy(validated.version).model_dump(
+            mode="json", exclude_none=True
+        ),
         "reference_stream_ids": validated.reference_stream_ids,
         "reference_publication_id": validated.reference_publication_id,
     }

@@ -12,3 +12,13 @@ Forge reports coordinate the Engine handoff and recover committed output. Pass t
 The pipeline's top-level report has `schema_version: 1`, `kind: "historical_pipeline"` and a `state`. Stage keys are `acquire`, `normalize`, `merge` and optional `convert`. Window dispatch outcomes are retained under the parent attempt’s `stage-windows/` directory. Each stage tracks phase and state, and processing stages may include prepared job and report pins, execution attempts, result and registered `primary_file_ids`. Status is a read of that report. Resume checks original input bindings and work context. It may recover a verified registration or allocate fresh output identities for a processing retry. Acquisition, preparation, submission and publication are separate transitions. [Pipeline service](https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/pipelines/service.py) · [Resume guide](../../workflows/pipeline.md)
 
 All artifact paths resolve according to their producer and contract. Treat retained inputs as immutable evidence. A preparation report can exist even if the job is blocked or generated without validation. Verify current binary compatibility before using older retained artifacts.
+
+
+For automatic Conversion, each job entry in the Forge collection carries its
+reference-resolution evidence. The preparation report shows the source and
+external publication identities, stream eligibility, potential routes, the
+selection rationale, and the Rust validation outcome. If a published ranking
+was consulted, the evidence includes the snapshot identity, compared entries,
+temporal applicability and fingerprint. Execution and resume use the exact
+retained job and collection fingerprints, so changes to the rankings library
+cannot change their reference bindings.

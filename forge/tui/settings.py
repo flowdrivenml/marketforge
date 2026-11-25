@@ -5,6 +5,7 @@ from tomlkit.container import Container, OutOfOrderTableProxy
 from tomlkit.items import InlineTable, Table
 
 from forge.shared.config.models import AppSettings
+from forge.shared.config.toml import configuration_item
 from forge.shared.errors import MarketForgeError
 from forge.tui.controller import document
 
@@ -50,7 +51,7 @@ def change_toml(data: bytes, path: str, value: object) -> bytes:
         if name not in node:
             if value is None:
                 return data
-            node[name] = tomlkit.table()
+            node[name] = configuration_item({}, inline=isinstance(node, InlineTable))
         child = node[name]
         if not isinstance(child, (Table, InlineTable, OutOfOrderTableProxy)):
             raise MarketForgeError(f"Expected a TOML table at {name}.")
@@ -60,5 +61,5 @@ def change_toml(data: bytes, path: str, value: object) -> bytes:
         if key in node:
             del node[key]
     else:
-        node[key] = value
+        node[key] = configuration_item(value, tuple(members), inline=isinstance(node, InlineTable))
     return configuration.as_string().encode("utf-8")

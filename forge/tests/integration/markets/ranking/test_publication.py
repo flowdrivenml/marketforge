@@ -10,6 +10,7 @@ from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 
 from forge.markets.models import Instrument, MarketDataError, Observation
+from forge.markets.ranking.historical import turnover_entry_issue, turnover_evidence
 from forge.markets.ranking.policy import RankingPolicy
 from forge.markets.ranking.service import build, show
 from forge.markets.repository import save_instrument, save_observation
@@ -51,6 +52,64 @@ async def test_snapshot_publication_is_immutable_and_inputs_retained(
         database, "test", RankingPolicy(instruments=[instrument.reference]), now=now
     )
     original = await show(database, snapshot)
+    # The policy and observation existed at `now`; the publication did not.
+    header, entries, status = await turnover_evidence(
+        database,
+        "test",
+        None,
+        now,
+        [instrument.reference],
+        ex_post=False,
+    )
+    assert header is not None and header["id"] == snapshot and header["published_at"] > now
+    assert not entries and "postdates" in status
+
+    cutoff = datetime.now(UTC)
+    header, entries, status = await turnover_evidence(
+        database,
+        "test",
+        None,
+        cutoff,
+        [instrument.reference, "bybit.spot.MISSING"],
+        ex_post=False,
+    )
+    assert status == "historical"
+    assert header is not None and header["id"] == snapshot
+    assert len(entries) == 1 and entries[0]["position"] == 1
+    assert turnover_entry_issue(entries[0], header, cutoff, ex_post=False) is None
+    stale = cutoff + timedelta(hours=2)
+    _, entries, status = await turnover_evidence(
+        database,
+        "test",
+        snapshot,
+        stale,
+        [instrument.reference],
+        ex_post=False,
+    )
+    assert not entries and "stale" in status
+
+    header, entries, status = await turnover_evidence(
+        database,
+        "test",
+        snapshot,
+        now - timedelta(days=3),
+        [instrument.reference],
+        ex_post=True,
+    )
+    assert status == "ex_post"
+    assert (
+        header is not None and turnover_entry_issue(entries[0], header, now, ex_post=True) is None
+    )
+    _, entries, status = await turnover_evidence(
+        database,
+        "test",
+        uuid4(),
+        cutoff,
+        [instrument.reference],
+        ex_post=False,
+    )
+    assert not entries and "unavailable in the selected registry" in status
+
     with pytest.raises(psycopg.errors.RaiseException):
         async with database.transaction():
             await database.execute(

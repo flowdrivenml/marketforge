@@ -91,6 +91,10 @@ class OperationReport(TypedDict):
     logical_run_id: NotRequired[str]
     execution_registry_warning: NotRequired[str]
     recipe_sha256: NotRequired[str]
+    submitted_config: NotRequired[str]
+    submitted_sha256: NotRequired[str]
+    effective_configuration: NotRequired[str]
+    effective_sha256: NotRequired[str]
     bytes_written: NotRequired[int | None]
 
 
@@ -440,6 +444,7 @@ async def run_acquisition(
     requests_per_second: float | None = None,
     silent: bool = False,
     source_file: Path | None = None,
+    source_bytes: bytes | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     observer: ProgressObserver | None = None,
     resume_report: OperationReport | None = None,
@@ -474,6 +479,7 @@ async def run_acquisition(
                 requests_per_second=requests_per_second,
                 silent=silent,
                 source_file=source_file,
+                source_bytes=source_bytes,
                 transport=transport,
                 observer=observer,
                 resume_report=resume_report,
@@ -492,6 +498,7 @@ async def _run_acquisition(
     requests_per_second: float | None = None,
     silent: bool = False,
     source_file: Path | None = None,
+    source_bytes: bytes | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     observer: ProgressObserver | None = None,
     resume_report: OperationReport | None = None,
@@ -523,12 +530,30 @@ async def _run_acquisition(
         "download": download,
         "refresh": refresh,
     }
+    if resume_report is not None:
+        prior = resume_report.get("effective_configuration")
+        if prior:
+            path = Path(prior)
+
+            def read_effective() -> bytes:
+                if path.is_symlink() or not path.resolve().is_relative_to(execution.root.resolve()):
+                    raise MarketForgeError("Unsafe retained acquisition configuration path.")
+                return path.read_bytes()
+
+            retained = await disk(read_effective)
+            if (
+                hashlib.sha256(retained).hexdigest() != resume_report.get("effective_sha256")
+                or json.loads(retained) != effective
+            ):
+                raise MarketForgeError(
+                    "Acquisition resume requires its original effective configuration."
+                )
+
     if source_file is not None:
-        submitted = await disk(source_file.read_bytes)
+        submitted = source_bytes if source_bytes is not None else await disk(source_file.read_bytes)
         if AcquisitionConfig.model_validate(tomllib.loads(submitted.decode())) != configuration:
             raise MarketForgeError("The acquisition recipe changed before execution.")
-        reporter.metadata["recipe_sha256"] = hashlib.sha256(submitted).hexdigest()
-        await disk(
+        metadata = await disk(
             retain_recipe,
             RunOperation.ACQUISITION,
             source_file,
@@ -536,8 +561,17 @@ async def _run_acquisition(
             effective=effective,
             destination=reporter.artifacts.submitted_config,
         )
+        reporter.metadata.update(
+            submitted_config=metadata["snapshot"],
+            submitted_sha256=metadata["sha256"],
+            recipe_sha256=metadata["sha256"],
+        )
     else:
-        await disk(retain_effective, effective)
+        metadata = await disk(retain_effective, effective)
+    reporter.metadata.update(
+        effective_configuration=metadata["effective_configuration"],
+        effective_sha256=metadata["effective_sha256"],
+    )
     clients: dict[str, HttpClient] = {}
     scope_locks = tuple(asyncio.Lock() for _ in range(640))
     archive_locks = tuple(asyncio.Lock() for _ in range(640))

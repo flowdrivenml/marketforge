@@ -76,16 +76,20 @@ class AcquisitionConfig(SettingsModel, frozen=True):
 
 
 def load_acquisition(path: Path) -> AcquisitionConfig:
-    """Read and structurally validate a bulk acquisition TOML file."""
+    return read_acquisition(path)[0]
+
+
+def read_acquisition(path: Path) -> tuple[AcquisitionConfig, bytes]:
+    """Return the parsed configuration and the exact bytes used to validate it."""
     source = path.expanduser().resolve()
 
     try:
-        with source.open("rb") as stream:
-            payload: object = tomllib.load(stream)
+        data = source.read_bytes()
+        payload: object = tomllib.loads(data.decode())
     except tomllib.TOMLDecodeError as exc:
         raise ConfigurationLoadError(f"Invalid acquisition TOML: {source}") from exc
     except (OSError, UnicodeError) as exc:
         raise ConfigurationLoadError(f"Cannot read acquisition configuration: {source}") from exc
 
     with configuration_errors(source):
-        return AcquisitionConfig.model_validate(payload)
+        return AcquisitionConfig.model_validate(payload), data

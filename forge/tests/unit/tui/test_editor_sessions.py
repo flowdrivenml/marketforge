@@ -204,3 +204,36 @@ async def test_normalize_toml_rust_review_and_apply(
         await until(pilot, lambda: not editor.loading and not editor.editing)
         assert editor.drafts["normalize"].effective_document
         assert editor.drafts["normalize"].effective_document["resources"]["workers"] == 7
+
+
+@pytest.mark.asyncio
+async def test_normalization_missing_receipt_can_validate_saved_draft(
+    workspace: ForgeApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from forge.historical.archives.templates import ACQUISITION_TEMPLATE
+    from forge.shared.terminal.editor_window import EditorCompletionUnconfirmed
+
+    app = workspace
+    target = app.context.paths.normalization_recipe_dir / "getting_started.toml"
+    target.parent.mkdir(parents=True)
+    target.write_text(ACQUISITION_TEMPLATE)
+
+    async def launch(path: Path, **_: object) -> None:
+        await disk(path.write_text, ACQUISITION_TEMPLATE + "# Saved in Neovim\n")
+        raise EditorCompletionUnconfirmed("Editor exit could not be verified.")
+
+    monkeypatch.setattr("forge.tui.app.edit_in_window", launch)
+    async with app.run_test() as pilot:
+        app.edit_selected(Row(target.stem, target.stem, "normalize", "", {}, target.stem, target))
+        await until(pilot, lambda: target in app.editor_sessions and not app.editor_open)
+        session = app.editor_sessions[target]
+        assert session.state == "Completion unconfirmed"
+        assert session.modified and session.draft and session.draft.exists()
+        assert session.original == target.read_bytes()
+        assert session.id in (session.draft.parent / ".session.json").read_text()
+        screen = await review(pilot, app, target)
+        assert "Apply reviewed changes" not in screen.links
+        screen.links["Validate saved draft"]()
+        await until(pilot, lambda: session.state == "Ready for review")
+        assert session.updated == session.draft.read_bytes()
+        assert target.read_text() == ACQUISITION_TEMPLATE

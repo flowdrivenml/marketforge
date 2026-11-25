@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from forge.historical.archives.config import ArchiveRequest
+from forge.shared.database.connection import pinned_registry
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -20,15 +21,17 @@ class Removal:
 
     def apply(self, original: Document) -> Document:
         draft = deepcopy(original)
+
+        def child(parent: object, key: str | int) -> object:
+            if isinstance(key, int):
+                return cast(list[object], parent)[key]
+            return cast(Document, parent)[key]
+
         parent: object = draft
-        for key in self.path[:-1]:
-            parent = (
-                cast(list[object], parent)[key]
-                if isinstance(key, int)
-                else cast(Document, parent)[key]
-            )
+        for component in self.path[:-1]:
+            parent = child(parent, component)
         key = self.path[-1]
-        entry = parent
+        entry = cast(Document, parent)
         assert isinstance(key, str)
         if not self.indices:
             del entry[key]
@@ -111,7 +114,7 @@ def configured_removals(family: str, data: Mapping[str, object]) -> tuple[Remova
                 Removal(
                     ("reference_publication_id",),
                     (),
-                    f"External reference publication {data['reference_publication_id']}",
+                    f"External reference publication {data['reference_publication_id']} and its selected streams",
                 )
             )
     if family == "pipeline" and isinstance(data.get("convert"), dict):
@@ -136,8 +139,11 @@ def configured_removals(family: str, data: Mapping[str, object]) -> tuple[Remova
             for key in ("files", "patterns"):
                 choices(item.get(key), ("inputs", index, key), f"Input {index + 1} · {key} ·")
     if family == "markets rank":
-        for key in ("exchanges", "markets", "instruments", "manual_preferences"):
-            choices(data.get(key), (key,), key.replace("_", " ").capitalize())
+        for key in ("exchanges", "markets", "instruments"):
+            values = data.get(key)
+            if isinstance(values, list) and len(cast(list[object], values)) > 1:
+                choices(data.get(key), (key,), key.capitalize())
+        choices(data.get("manual_preferences"), ("manual_preferences",), "Manual preference")
     return tuple(result)
 
 
@@ -148,47 +154,71 @@ async def remove_configured_input(
     if removal not in configured_removals(family, data):
         raise MarketForgeError("The selected input is no longer configured.")
     draft = removal.apply(data)
-    if family != "merge" or "publication_ids" not in data:
+    if family == "convert" and removal.path == ("reference_publication_id",):
+        from forge.historical.archives.storage.files import disk
+        from forge.historical.conversion.discovery import discover
+        from forge.historical.conversion.planning import references
+        from forge.historical.conversion.recipes import Recipe as ConversionRecipe
+        from forge.historical.conversion.recipes import validate_binding
+
+        conversion = ConversionRecipe.model_validate(data)
+        if conversion.selection_policy(conversion.version).mode == "automatic":
+            return draft
+        source = await disk(validate_binding, paths, paths.workflow_dir("conversion"), conversion)
+        with pinned_registry(registry):
+            found = await discover(paths, conversion, source)
+        if found["blockers"]:
+            raise MarketForgeError("\n".join(found["blockers"]))
+        selected = references(
+            found["sources"][0], found["external_reference"], conversion.reference_stream_ids
+        )
+        draft["reference_stream_ids"] = [
+            item["stream_id"] for item in selected if item["provider"] == "internal"
+        ]
+    if family != "merge" or "selection" in data:
         return draft
-    if data["registry_id"] != registry:
-        raise MarketForgeError("This recipe belongs to another registry.")
-    from forge.historical.merge.service import Recipe, publication_recipe, reviewed_inputs
+
+    from forge.historical.merge.service import (
+        Recipe,
+        assign_ranks,
+        publication_selection_sha256,
+        reviewed_inputs,
+    )
+    from forge.shared.database.connection import selected_registry_id
 
     recipe = Recipe.model_validate(data)
-    assert registry is not None
+    if "publication_ids" not in data and not recipe.stream_ranks:
+        return draft
+    registry = registry or await selected_registry_id(paths.root)
     selected = await reviewed_inputs(
         paths, recipe, recipe.dataset_ids, registry, include_publication_ids=True
     )
-    if removal.path == ("dataset_ids",):
-        ids = cast(list[int], draft["dataset_ids"])
-        publications = list(
-            dict.fromkeys(
-                int(item["registry_publication_id"])
-                for item in selected
-                if item["database_id"] in ids
-            )
-        )
-    else:
-        publications = cast(list[int], draft["publication_ids"])
-        ids = [
-            int(item["database_id"])
-            for item in selected
-            if item["registry_publication_id"] in publications
-        ]
-    if not publications or not ids:
+    publications = cast(list[int], draft.get("publication_ids", []))
+    ids = cast(list[int], draft["dataset_ids"])
+    retained = (
+        [item for item in selected if item["registry_publication_id"] in publications]
+        if removal.path == ("publication_ids",)
+        else [item for item in selected if item["database_id"] in ids]
+    )
+    if not retained:
         raise MarketForgeError("At least one merge input is required.")
-    pinned, _ = await publication_recipe(
-        paths,
-        publications,
-        dataset_ids=ids if recipe.file_subset else None,
-        start_ns=recipe.start_ns,
-        end_ns=recipe.end_ns,
-        stream_ranks=recipe.stream_ranks,
-        timeline_ordering=recipe.timeline_ordering,
-    )
-    if set(pinned.dataset_ids) != set(ids):
-        raise MarketForgeError("The retained publication membership changed.")
-    draft.update(
-        dataset_ids=ids, publication_ids=publications, selection_sha256=pinned.selection_sha256
-    )
+    if recipe.publication_ids is not None:
+        membership = {item["registry_publication_id"] for item in retained}
+        publications = [identity for identity in publications if identity in membership]
+        draft.update(
+            dataset_ids=[item["database_id"] for item in retained],
+            publication_ids=publications,
+            selection_sha256=publication_selection_sha256(retained),
+        )
+    if recipe.stream_ranks:
+        original_order = assign_ranks(selected, recipe.stream_ranks, {})
+        streams = {item["stream_id"] for item in retained}
+        ranks = {stream: rank for stream, rank in recipe.stream_ranks.items() if stream in streams}
+        proposed_order = assign_ranks(retained, ranks, {})
+        expected = [item for item in original_order if item["stream_id"] in streams]
+        if [item["stream_id"] for item in expected] != [
+            item["stream_id"] for item in proposed_order
+        ]:
+            ranks = {item["stream_id"]: item["stream_rank"] for item in expected}
+        draft["stream_ranks"] = ranks
     return draft

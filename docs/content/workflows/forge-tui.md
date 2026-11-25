@@ -147,23 +147,23 @@ through retained evidence and the TUI monitor. The **Runs** area provides
 status, logs and inspection across operations. Resume applies only where the
 underlying service supplies a supported recovery path.
 
-### Execution monitor
+### Execution terminals
 
-Forge starts the operation through its existing service and controller. On a
-supported Linux Ghostty desktop it opens a separate Textual monitor without
-moving execution ownership out of the main workspace. **Open run in workspace**
-and **Logs in workspace** use the run ID supplied by the service. The monitor
-shows current phase, available progress, retained results and diagnostics.
-Pipeline stages come from the run itself, including Conversion only when
-configured. **Stage execution → Window** opts into per-stage terminals in place
-of the separate pipeline-level monitor.
+On a supported Linux desktop, **Run** opens the workflow in a resizable
+Ghostty terminal. The terminal runs the same CLI command and uses its native
+progress and result presentation. The main workspace stays available, and
+**Ctrl+O** opens the owned operation there. Use **Runs** to inspect its
+retained report and logs.
 
-With no supported display, or if Ghostty cannot confirm startup, Forge presents
-an in-app monitor and explains the fallback. **Close View** returns to the
-workspace without interrupting work. **Ctrl+O** reopens the same owned operation.
-**Request Stop** asks the controller to interrupt the run and wait for cleanup.
-Successful and failed results remain inspectable. Close the main application
-only after owned work finishes or after confirming cancellation.
+Pipeline runs use a single terminal by default. **Stage execution → Window**
+also opens the existing dedicated stage terminals. Press **Ctrl+C**, close an
+active execution terminal, or use **Request Stop** in the workspace to
+interrupt execution. A completed terminal stays open for scrolling and
+reading the result. Closing it at that point only closes the window.
+
+If Ghostty cannot start the CLI worker, Forge can run the operation in the
+workspace with its in-app progress view. If the CLI worker was already
+authorized and its outcome is uncertain, inspect **Runs** before retrying.
 
 ## Author recipes
 
@@ -607,8 +607,10 @@ loads the validated file into the existing settings form. Use **Review &
 apply** there to save settings and acknowledge integrity risks when required.
 Catalogue registration and profile installation retain their own review.
 
-An unchanged draft is removed. Invalid drafts stay available to reopen,
-copy, or discard. If the authoritative file changes during editing, Forge
+After a verified editor exit, Forge removes an unchanged draft. Invalid
+drafts stay available to reopen, copy, or discard. If the editor's exit
+cannot be confirmed, Forge preserves the draft. Choose **Validate saved
+draft** to check the saved contents and open the normal review. If the authoritative file changes during editing, Forge
 blocks the apply and keeps the draft. Use **Compare with current file**
 to inspect the conflict before starting again. Different files can have separate windows. Each target has
 one active draft per Forge session, including drafts awaiting review.
@@ -637,7 +639,8 @@ configuration associated with that execution.
 ### Remove configured inputs
 
 Open the recipe inspector or context menu and choose **Remove from Recipe**.
-Pick a configured entry, review the draft, then validate and save. Cancel before
+Pick a configured entry, review the draft, then validate and save. In a request
+editor, clear **Keep request** to remove that request from the draft. Cancel before
 saving to keep the current recipe. Use source selection and instrument handoffs
 to add entries.
 
@@ -649,6 +652,7 @@ to add entries.
 | Conversion | Explicit reference streams or the external reference publication. Use **Replace Source Publication** for the required merged source. Reference compatibility is checked during review. |
 | Pipeline | Acquisition requests and optional Conversion selections. Normalization and Merge are required. |
 | Import and Registration | Source files, patterns and Registration input groups. |
+| Markets → Policies | Explicit universe entries and manual preferences. Keep at least one explicitly restricted universe entry when removing from a restricted list. |
 
 Recipe changes apply to shared workspace configuration. Registry-bound source
 selections use the selected registry. Recipe edits leave market data and

@@ -235,10 +235,16 @@ async def execute(
     if direct is not None:
         result["publication_source"] = direct.model_dump(mode="json")
     from forge.historical.conversion.recipes import Recipe
-    from forge.orchestration.registry import recipe_evidence, retain_recipe
+    from forge.orchestration.registry import current_execution, recipe_evidence, retain_recipe
     from forge.shared.identity import RunOperation
 
-    if not recipe_evidence() and (recipe_pin := pins.get("recipe_snapshot")):
+    execution = current_execution()
+    if (
+        execution is not None
+        and execution.operation == RunOperation.CONVERT
+        and not recipe_evidence()
+        and (recipe_pin := pins.get("recipe_snapshot"))
+    ):
         _, original = await joined_io(
             read_pin, recipe_pin, collection.parent, expected="recipe.toml"
         )
@@ -332,7 +338,10 @@ async def execute(
                 "Managed converter cannot hand off the TUI result. Run mf engine build convert and prepare again."
             )
     completed: list[dict[str, Any]] = []
+    resolutions = {entry["job_id"]: entry.get("reference_resolution") for entry in entries}
     for job, submitted, pinned in prepared:
+        resolution = resolutions[job.job_id]
+        resolution_fields = {"reference_resolution": resolution} if resolution else {}
         directory = paths.runs_dir / f"convert-execute-{uuid4().hex}"
         index = WorkIndex(paths.root, document["registry_id"], "convert", directory.name)
         key = convert_key(
@@ -396,6 +405,7 @@ async def execute(
                 publication = await verify_reused_conversion(binary, pinned, previous)
                 receipt = {
                     **previous,
+                    **resolution_fields,
                     "publication": publication,
                     "disposition": "reused",
                     "reuse_message": READY_MESSAGE,
@@ -436,6 +446,7 @@ async def execute(
         if tui:
             argv.append("--managed-output")
         receipt: dict[str, Any] = {
+            **resolution_fields,
             "status": "blocked",
             "work_key": key,
             "registry_id": document["registry_id"],

@@ -6,9 +6,10 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, Self, TypedDict
+from typing import BinaryIO, Protocol, Self, TypedDict
 
 from forge.shared.errors import MarketForgeError
 
@@ -46,7 +47,7 @@ class SpawnOptions(TypedDict):
     env: dict[str, str]
     stdin: int
     stdout: int
-    stderr: int
+    stderr: int | BinaryIO
     start_new_session: bool
 
 
@@ -94,7 +95,14 @@ class GhosttyWindow:
         return cls(executable)
 
     async def launch_command(
-        self, argv: Sequence[str], *, cwd: Path, title: str, detached_lifetime: bool = False
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        title: str,
+        detached_lifetime: bool = False,
+        hold: bool = False,
+        diagnostics: Path | None = None,
     ) -> Window:
         # Isolate this window from any existing Ghostty instance or tmux session.
         env = {
@@ -107,7 +115,7 @@ class GhosttyWindow:
             "--config-default-files=false",
             "--gtk-single-instance=false",
             "--initial-window=true",
-            "--wait-after-command=false",
+            f"--wait-after-command={str(hold).lower()}",
             "--quit-after-last-window-closed=true",
             "--abnormal-command-exit-runtime=0",
             f"--working-directory={cwd}",
@@ -115,14 +123,15 @@ class GhosttyWindow:
             "-e",
             *argv,
         )
-        options = SpawnOptions(
-            cwd=cwd,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        if detached_lifetime:
-            return DetachedWindow(await asyncio.to_thread(subprocess.Popen, command, **options))
-        return await asyncio.create_subprocess_exec(*command, **options)
+        with diagnostics.open("wb") if diagnostics else nullcontext(subprocess.DEVNULL) as errors:
+            options = SpawnOptions(
+                cwd=cwd,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=errors,
+                start_new_session=True,
+            )
+            if detached_lifetime:
+                return DetachedWindow(await asyncio.to_thread(subprocess.Popen, command, **options))
+            return await asyncio.create_subprocess_exec(*command, **options)

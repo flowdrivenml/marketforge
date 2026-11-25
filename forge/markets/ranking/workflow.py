@@ -8,14 +8,14 @@ from pydantic import ValidationError
 from forge.historical.archives.operation import failure_message
 from forge.markets.models import array, obj
 from forge.markets.progress import ProgressCallback
-from forge.markets.ranking.policy import load_policy
+from forge.markets.ranking.policy import DEFAULT_TURNOVER_POLICY, load_policy
 from forge.markets.ranking.service import build, show
 from forge.markets.service import collect
 from forge.shared.config.models import HttpSettings
 from forge.shared.database.connection import database_connection
 from forge.shared.errors import MarketForgeError
 
-STANDARD_POLICIES = ("turnover", "volume")
+STANDARD_POLICIES = (DEFAULT_TURNOVER_POLICY, "volume")
 
 
 def reason(error: Exception) -> str:

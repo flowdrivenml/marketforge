@@ -153,7 +153,16 @@ def render_recipe(console: Console, view: RecipeView, root: Path, *, action: str
                     if selection.whole_publication
                     else "Request scope checked at preparation",
                 ),
-                ("Trade reference streams", listing(recipe.reference_stream_ids)),
+                (
+                    "Reference selection",
+                    recipe.selection_policy(recipe.version).mode.capitalize(),
+                ),
+                (
+                    "Trade reference streams",
+                    "Resolved during preparation"
+                    if recipe.selection_policy(recipe.version).mode == "automatic"
+                    else listing(recipe.reference_stream_ids),
+                ),
                 ("External registry publication", str(recipe.reference_publication_id or "None")),
             ],
         )
@@ -163,7 +172,7 @@ def render_recipe(console: Console, view: RecipeView, root: Path, *, action: str
             summary(
                 console,
                 [
-                    ("Reference configuration", "Review explicit reference trade selection"),
+                    ("Reference configuration", "Review reference selection during preparation"),
                     ("Execution readiness", "Assessed during preparation"),
                 ],
             )
@@ -319,6 +328,9 @@ def render(console: Console, view: ConversionView, root: Path) -> None:
                 for job, item in states.items()
             ],
         )
+    if not view.jobs:
+        for resolution in report.get("reference_resolutions", ()):
+            render_reference_resolution(console, resolution)
     for job in view.jobs:
         render_job(console, job, root, view.environment)
     if view.action == "run":
@@ -362,14 +374,55 @@ def render(console: Console, view: ConversionView, root: Path) -> None:
         summary(console, retained)
 
 
+def render_reference_resolution(console: Console, resolution: dict[str, Any]) -> None:
+    section(console, "Conversion Reference Resolution")
+    ranking = resolution.get("ranking", {})
+    snapshot = ranking.get("snapshot", {})
+    fields = [
+        ("Mode", resolution["mode"].capitalize()),
+        ("Source publication", str(resolution["source_registry_publication_id"])),
+        ("Target quote", resolution["target_quote"]),
+        ("Ranking evidence", ranking.get("status", "Unavailable")),
+        ("Validation", resolution["validation"]),
+    ]
+    if ranking.get("policy"):
+        fields.append(("Ranking policy", ranking["policy"]))
+    if snapshot:
+        fields.append(("Ranking snapshot", snapshot["id"]))
+    summary(console, fields)
+    if routes := resolution.get("routes"):
+        table(
+            console,
+            ("Source quote", "Potential routes", "Decision"),
+            (
+                (
+                    quote,
+                    listing(
+                        (
+                            " → ".join(path) if legs else f"{quote} → {quote} · Identity"
+                            for path, legs in detail["potential"]
+                        ),
+                        "No eligible route",
+                    ),
+                    detail.get("rationale", ""),
+                )
+                for quote, detail in routes.items()
+            ),
+        )
+    if resolution["validation"] != "passed" and (candidates := resolution.get("candidates")):
+        table(
+            console,
+            ("Trade reference candidate", "Eligibility"),
+            ((entry["stream_id"], entry["reason"] or "Eligible") for entry in candidates),
+        )
+
+
 def render_job(console: Console, job: dict[str, Any], root: Path, environment: str) -> None:
     section(console, f"Engine Job {job['job_id']}")
-    if job.get("engine_validation"):
-        summary(
-            console,
-            [("Reference selection", f"{len(job.get('references', ())):,} explicit trade streams")],
-        )
-    if refs := job.get("references"):
+    resolution = job.get("reference_resolution", {})
+    if resolution:
+        render_reference_resolution(console, resolution)
+    if refs := job.get("references") or resolution.get("selected"):
         table(
             console,
             ("Market", "Provider", "Registry publication", "Trade stream"),
