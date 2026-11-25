@@ -1,10 +1,14 @@
 # Virtual environments
+# Virtual environments
 .venv/
 venv/
 env/
-.agents/
-.recordings/
-.bin/
+
+# Local development directories
+/.agents/
+/.bin/
+/.recordings/
+/.planning/
 
 # Python cache / compiled files
 __pycache__/
