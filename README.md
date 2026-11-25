@@ -1,6 +1,6 @@
 <div align="center">
 
-**[Documentation](https://flowdrivenml.github.io/marketforge/)** · **[Quick Start](https://flowdrivenml.github.io/marketforge/getting-started/quickstart/)** · **[Roadmap](ROADMAP.md)**
+**[Documentation](https://flowdrivenml.github.io/marketforge/)** · **[Quick Start](https://flowdrivenml.github.io/marketforge/getting-started/quickstart/)** · **[Roadmap](ROADMAP.md)** · **[Releases](https://github.com/flowdrivenml/marketforge/releases)**
 
 <img src="docs/content/assets/branding/logo.png" alt="MarketForge — From Data to Financial Engineering" width="95%">
 
@@ -8,6 +8,7 @@
 
 *Spend less time engineering data. More time engineering strategies.*
 
+[![Latest release](https://img.shields.io/github/v/release/flowdrivenml/marketforge?sort=date&color=7aa2f7&labelColor=1a1b26)](https://github.com/flowdrivenml/marketforge/releases)
 [![Python](https://img.shields.io/badge/Python-3.12%2B-7aa2f7?logo=python&logoColor=white)](forge/pyproject.toml)
 [![Rust](https://img.shields.io/badge/Rust-2024-7aa2f7?logo=rust&logoColor=white)](engine/Cargo.toml)
 ![Linux](https://img.shields.io/badge/Linux-9ece6a?logo=linux&logoColor=white)

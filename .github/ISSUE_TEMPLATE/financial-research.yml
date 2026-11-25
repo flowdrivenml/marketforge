@@ -1,0 +1,29 @@
+name: Financial feature research proposal
+description: Propose a market-data feature, signal, or research method.
+title: "[Research]: "
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Research question and hypothesis
+      description: What market behavior would this feature measure, and why?
+    validations:
+      required: true
+  - type: textarea
+    id: inputs
+    attributes:
+      label: Inputs and expected outputs
+      description: Include markets, trades or depth, time resolution, units, and the intended output.
+    validations:
+      required: true
+  - type: textarea
+    id: evaluation
+    attributes:
+      label: Evaluation approach
+      description: Describe a baseline, relevant metrics, and any look-ahead, data quality, or sampling concerns.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References or reproducible examples

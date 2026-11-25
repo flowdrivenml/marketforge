@@ -1,0 +1,22 @@
+name: Documentation improvement
+description: Report inaccurate, missing, or unclear MarketForge documentation.
+title: "[Docs]: "
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Page, section, or source path
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is inaccurate or unclear?
+      description: Include the relevant version, command, or broken link when known.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: Describe what a reader should learn or be able to do.

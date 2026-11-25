@@ -1,0 +1,30 @@
+name: Data-source integration proposal
+description: Propose support for a vendor, exchange, archive, or recording format.
+title: "[Data source]: "
+body:
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and public documentation
+      placeholder: Provider name and documentation URL
+    validations:
+      required: true
+  - type: textarea
+    id: coverage
+    attributes:
+      label: Markets, feeds, and history
+      description: Include instrument types, event kinds, example symbols, history depth, and delivery format.
+    validations:
+      required: true
+  - type: textarea
+    id: access
+    attributes:
+      label: Access and usage terms
+      description: Describe authentication, rate limits, cost, and licensing or redistribution restrictions. Omit credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: format
+    attributes:
+      label: Sample and event semantics
+      description: Link to a public sample if available. Describe timestamps, precision, and snapshot or update rules.

@@ -19,3 +19,5 @@ The [system overview](architecture.md) traces the boundaries between these compo
 Use [local development setup](setup.md) and the [first contribution walkthrough](first-contribution.md) to check your environment. Then choose an [extension point](extending.md) and keep a representative fixture close to the code it exercises. The [Bybit listing walkthrough](sources.md#walkthrough-accept-a-revised-bybit-directory-listing) shows how to carry one provider change through discovery, validation, tests, and documentation.
 
 Use the [testing guide](testing.md) to choose fixture and database coverage. For a failure, [trace retained evidence](debugging.md) before [measuring performance](performance.md). Review [compatibility and contribution checks](compatibility.md) before handing off a change.
+
+Maintainers can follow the [release procedure](releases.md) to coordinate package metadata, tags, and publication.

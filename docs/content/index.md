@@ -13,6 +13,7 @@ MarketForge turns historical market-data archives into research-ready trade and 
 | [Historical pipeline](workflows/pipeline.md) | Configure acquisition, normalization, merge, and optional conversion. |
 | [Research & Analysis](research/index.md) | Discover datasets and query them with Python, Arrow, or Polars. |
 | [Developer documentation](development/index.md) | Set up a contributor environment, test changes, and extend Forge and the Engine. |
+| [Releases and changelog](releases.md) | Find official source releases, version history, and platform limitations. |
 | [Roadmap](https://github.com/flowdrivenml/marketforge/blob/main/ROADMAP.md) | See completed milestones, current priorities, and planned development. |
 
 Use the [workflow guides](workflows/index.md) for individual operations, the [reference](reference/index.md) for commands and configuration, and the [examples](examples/index.md) for recipes and advanced tutorials.
