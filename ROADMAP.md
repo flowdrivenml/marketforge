@@ -7,6 +7,7 @@ MarketForge is building local, configuration-driven infrastructure for quantitat
 | Milestone | Status |
 | --- | --- |
 | Market catalogue and archive acquisition | Operational across Binance, Bybit, OKX, Bitget, and Gate.io, with provider-dependent coverage |
+| External data registration | Operational for supported formats and profiles |
 | Historical normalization and merge | Operational for supported sources and profiles, with canonical event data, specification evidence, and ordered Parquet outputs |
 | Historical pipeline orchestration | Operational from one recipe through archive discovery, managed raw registration, normalization, merge, output verification, and publication registration |
 | Optional quote conversion | Operational for supported routes and reference inputs, with verified output indexing |

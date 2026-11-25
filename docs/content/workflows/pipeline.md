@@ -235,6 +235,9 @@ four-stage resources. Installation or database administrators can check
 
 ## Troubleshooting
 
+On a fresh registry, normalization can report `No applicable immutable specification` after acquisition succeeds. Run `mf init --production` (or `mf init --testing` for a testing run) and start the recipe again. Initialization can use the registered archive intervals to establish applicable specification evidence, and the pipeline can reuse the raw files.
+
+
 | Observation | What to inspect or do |
 | --- | --- |
 | TOML invalid or provider rejects a request | Run `pipeline validate` and compare with `acquisition sources`. Fix the scope or feed declaration before starting |

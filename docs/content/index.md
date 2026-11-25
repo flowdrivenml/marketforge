@@ -4,7 +4,7 @@ MarketForge turns historical market-data archives into research-ready trade and 
 
 ## Get your first dataset
 
-[Install MarketForge](getting-started/installation.md) and follow the [Quick Start](getting-started/quickstart.md). One recipe prepares three UTC days of Bybit BTCUSDT trades and L2 depth. Use the [interactive Forge workspace](workflows/forge-tui.md) to run the recipe and inspect the merged publication.
+[Install MarketForge](getting-started/installation.md) and follow the [Quick Start](getting-started/quickstart.md). The included recipe prepares three UTC days of Bybit BTCUSDT trades and L2 depth. Use the [interactive Forge workspace](workflows/forge-tui.md) to run the recipe and inspect the merged publication.
 
 ## Explore MarketForge
 

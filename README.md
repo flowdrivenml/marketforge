@@ -1,40 +1,61 @@
 <div align="center">
 
+**[Documentation](https://flowdrivenml.github.io/marketforge/)** · **[Quick Start](https://flowdrivenml.github.io/marketforge/getting-started/quickstart/)** · **[Roadmap](ROADMAP.md)**
+
 <img src="docs/content/assets/branding/logo.png" alt="MarketForge — From Data to Financial Engineering" width="95%">
 
-<br>
-
-**High-performance data infrastructure for quantitative research and financial engineering.**
+**High-performance market data infrastructure for quantitative research and financial engineering.**
 
 *Spend less time engineering data. More time engineering strategies.*
-
-<br>
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-7aa2f7?logo=python&logoColor=white)](forge/pyproject.toml)
 [![Rust](https://img.shields.io/badge/Rust-2024-7aa2f7?logo=rust&logoColor=white)](engine/Cargo.toml)
 ![Linux](https://img.shields.io/badge/Linux-9ece6a?logo=linux&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-9ece6a?logo=apple&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-7aa2f7?logo=postgresql&logoColor=white)
-![Prometheus](https://img.shields.io/badge/Prometheus-e0af68?logo=prometheus&logoColor=white)
-![Grafana](https://img.shields.io/badge/Grafana-e0af68?logo=grafana&logoColor=white)
-
-<br>
-
-**[Documentation](https://flowdrivenml.github.io/marketforge/)** · **[Quick Start](https://flowdrivenml.github.io/marketforge/getting-started/quickstart/)** · **[Roadmap](ROADMAP.md)**
 
 </div>
 
-MarketForge prepares market data for quantitative research on a single machine. It automates the work of finding archives, reconciling provider formats, and publishing datasets you can inspect and reuse.
-
 ![Forge interactive workspace showing market coverage, storage, and recent runs](docs/content/assets/images/tui.png)
+
+Researchers spend time finding market data, reconciling formats, and preparing datasets before they can test an idea. MarketForge automates that work on one machine. Run a complete historical workflow from one recipe, then inspect and read the resulting Parquet datasets in Python.
+
+The [interactive Forge workspace](https://flowdrivenml.github.io/marketforge/workflows/forge-tui/) brings together historical pipelines, market discovery, acquisition, datasets, the instrument catalogue, run history, and configuration.
 
 ## Current capabilities
 
-- Discover and acquire historical trade ticks and L2 order-book data from Binance, Bybit, OKX, Bitget, and Gate.io. Coverage varies by market, feed, and date.
-- Run a single historical recipe through the CLI or interactive Forge workspace. Forge orchestrates acquisition, normalization, merge, and optional quote conversion, with verified outputs and retained execution evidence.
-- Browse registered datasets, inspect their provenance, and query Parquet with the Python API, Arrow, or Polars.
+- Discover and acquire historical trades and L2 order-book data from supported exchange archives. Register external recordings in supported formats.
+- Normalize and merge market events with the Rust Engine, with optional quote conversion on supported platforms.
+- Run reusable historical recipes from the CLI or TUI, register verified outputs, and inspect retained execution evidence.
+- Discover datasets and read selected events in Python with Jupyter, Arrow, and Polars.
 
-Historical pipeline orchestration is operational. MarketForge is under active development, with current work focused on live streaming and historical-to-live bootstrap. Spectra financial feature engineering is planned. [Development roadmap](ROADMAP.md)
+## Explore your data in Python
+
+After running the Quick Start, find the merged files in a notebook.
+
+```python
+from forge.datasets import MarketData
+
+market = MarketData()
+catalog = market.discover(metadata_only=True)
+matches = catalog.find(exchange="bybit", symbol="BTCUSDT", operation="merge")
+display(matches.summary())
+```
+
+Choose the publication from your run and paste its directory path. To find it, inspect the matching publication in Forge and use the directory containing its `manifest.json`.
+
+```python
+publication = market.open(input("Merged publication directory: ").strip())
+display(publication.streams())
+trades = publication.query(data_type="trades")
+display(trades.head(10, columns=["event_timestamp_ns", "instrument_id"]))
+```
+
+[Python setup](https://flowdrivenml.github.io/marketforge/research/getting-started/) · [Dataset discovery](https://flowdrivenml.github.io/marketforge/research/discovery/) · [Jupyter notebooks](https://flowdrivenml.github.io/marketforge/research/notebooks/) · [Querying](https://flowdrivenml.github.io/marketforge/research/querying/) · [Python API](https://flowdrivenml.github.io/marketforge/research/python-api/)
+
+## Project status
+
+Historical workflows are operational. Current development focuses on live market infrastructure and historical-to-live bootstrap. Spectra feature engineering, feature optimization, machine learning, backtesting, and algorithmic infrastructure are planned. [Roadmap](ROADMAP.md)
 
 ## License
 

@@ -24,6 +24,10 @@ class Page(HTMLParser):
 
 def main():
     root = Path(__file__).resolve().parent
+    managed = root.parent / "data/.config/workflows/data_engineering/pipeline/bybit_quickstart.toml"
+    download = root / "content/examples/bybit/pipeline.toml"
+    if managed.read_bytes() != download.read_bytes():
+        raise SystemExit("The documentation download must match the managed Bybit recipe.")
     with (root / "zensical.toml").open("rb") as config:
         project = tomllib.load(config)["project"]
     site = root / project["site_dir"]

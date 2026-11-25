@@ -161,9 +161,13 @@ handoff.md
 !/data/.config/workflows/data_engineering/
 !/data/.config/workflows/data_engineering/pipeline/
 !/data/.config/workflows/data_engineering/pipeline/bybit_spot.toml
+!/data/.config/workflows/data_engineering/pipeline/bybit_quickstart.toml
 !/engine/tests/historical/fixtures/normalize-job-v3.example.json
 
 !/docs/content/examples/forge/normalize-batch-v4.example.json
 
 # Installer-managed Python and documentation environments
 /.install/
+
+# Local Jupyter checkpoint files
+.ipynb_checkpoints/
