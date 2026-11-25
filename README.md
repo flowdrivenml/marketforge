@@ -4,7 +4,7 @@
 
 <img src="docs/content/assets/branding/logo.png" alt="MarketForge — From Data to Financial Engineering" width="95%">
 
-**High-performance market data infrastructure for quantitative research and financial engineering.**
+**Quantitative research and financial engineering powered by high-performance market data infrastructure.**
 
 *Spend less time engineering data. More time engineering strategies.*
 
