@@ -21,6 +21,7 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::{self, Instant},
 };
+use tokio_tungstenite::tungstenite::http::HeaderMap;
 
 // ============================================================
 // CONNECTION ID AUTHORITY
@@ -299,6 +300,36 @@ impl ReconnectRunner {
         compiled: &CompiledWebSocketLimiters,
         shared_limiter: &RateLimitManager,
         policy: ReconnectPolicy,
+        shutdown: oneshot::Receiver<()>,
+        events: mpsc::Sender<ReconnectEvent>,
+        fence: ConnectionFence,
+        session: F,
+    ) -> Result<(), ReconnectError>
+    where
+        F: FnMut(ConnectionStamp, WebSocketConnection) -> Fut,
+        Fut: Future<Output = Result<SupervisorExit, WebSocketTransportError>>,
+    {
+        Self::run_with_fence_and_headers(
+            url,
+            &HeaderMap::new(),
+            compiled,
+            shared_limiter,
+            policy,
+            shutdown,
+            events,
+            fence,
+            session,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn run_with_fence_and_headers<F, Fut>(
+        url: &str,
+        headers: &HeaderMap,
+        compiled: &CompiledWebSocketLimiters,
+        shared_limiter: &RateLimitManager,
+        policy: ReconnectPolicy,
         mut shutdown: oneshot::Receiver<()>,
         events: mpsc::Sender<ReconnectEvent>,
         fence: ConnectionFence,
@@ -350,8 +381,9 @@ impl ReconnectRunner {
                     return Ok(());
                 }
 
-                result = WebSocketConnector::connect(
+                result = WebSocketConnector::connect_with_headers(
                     url,
+                    headers,
                     connection_id,
                     compiled,
                     shared_limiter,

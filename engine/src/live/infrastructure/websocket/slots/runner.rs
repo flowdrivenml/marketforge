@@ -271,8 +271,13 @@ impl ConnectionSlotRunner {
         // PHYSICAL CONNECTION LIFECYCLE
         // ====================================================
 
-        ReconnectRunner::run_with_fence(
+        let headers = exchange
+            .websocket
+            .handshake_headers()
+            .map_err(ReconnectError::Configuration)?;
+        ReconnectRunner::run_with_fence_and_headers(
             url,
+            &headers,
             compiled_limiters,
             shared_limiter,
             reconnect_policy,

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use tokio_tungstenite::tungstenite::http::{HeaderMap, HeaderName, HeaderValue};
 
 /// WebSocket connectivity and protocol configuration.
 ///
@@ -92,6 +93,43 @@ pub struct WebSocketConfig {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connection: Option<ConnectionConfig>,
+}
+
+impl WebSocketConfig {
+    /// Compile public upgrade metadata using the same HTTP types as the connector.
+    pub(crate) fn handshake_headers(&self) -> Result<HeaderMap, String> {
+        let mut headers = HeaderMap::new();
+        for (name, value) in &self.headers {
+            let name = HeaderName::try_from(name.as_str())
+                .map_err(|_| "invalid name in websocket.headers".to_owned())?;
+            if name.as_str().starts_with("sec-websocket-")
+                || matches!(
+                    name.as_str(),
+                    "host"
+                        | "connection"
+                        | "upgrade"
+                        | "content-length"
+                        | "transfer-encoding"
+                        | "authorization"
+                        | "proxy-authorization"
+                        | "cookie"
+                )
+            {
+                return Err(format!("websocket.headers cannot set {name}"));
+            }
+            if headers.contains_key(&name) {
+                return Err(format!(
+                    "duplicate case-insensitive websocket.headers name: {name}"
+                ));
+            }
+            let value = HeaderValue::from_str(value)
+                .ok()
+                .filter(|value| !value.as_bytes().iter().any(u8::is_ascii_control))
+                .ok_or_else(|| format!("invalid value for websocket.headers name: {name}"))?;
+            headers.insert(name, value);
+        }
+        Ok(headers)
+    }
 }
 
 /// Named WebSocket endpoint.

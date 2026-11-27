@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use tokio_tungstenite::connect_async;
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{client::IntoClientRequest, http::HeaderMap},
+};
 use url::Url;
 
 use crate::live::infrastructure::limiter::{
@@ -20,6 +23,25 @@ pub struct WebSocketConnector;
 impl WebSocketConnector {
     pub async fn connect(
         url: &str,
+        connection_id: u64,
+        compiled: &CompiledWebSocketLimiters,
+        shared_limiter: &RateLimitManager,
+        timeout: Duration,
+    ) -> Result<WebSocketConnection, WebSocketTransportError> {
+        Self::connect_with_headers(
+            url,
+            &HeaderMap::new(),
+            connection_id,
+            compiled,
+            shared_limiter,
+            timeout,
+        )
+        .await
+    }
+
+    pub(crate) async fn connect_with_headers(
+        url: &str,
+        headers: &HeaderMap,
         connection_id: u64,
         compiled: &CompiledWebSocketLimiters,
         shared_limiter: &RateLimitManager,
@@ -61,6 +83,12 @@ impl WebSocketConnector {
             ));
         }
 
+        // Tungstenite generates the upgrade fields and a fresh key for each attempt.
+        let mut request = url.into_client_request().map_err(|_| {
+            WebSocketTransportError::Configuration("invalid WebSocket upgrade request URL".into())
+        })?;
+        request.headers_mut().extend(headers.clone());
+
         // Construct the connection-specific limiter before
         // attempting network access.
         let local_limiter = ConnectionRateLimiter::new(&compiled.connection, connection_id)?;
@@ -72,7 +100,7 @@ impl WebSocketConnector {
                 shared_limiter.acquire(&operation).await?;
             }
 
-            let (socket, _) = connect_async(url).await?;
+            let (socket, _) = connect_async(request).await?;
 
             Ok::<_, WebSocketTransportError>(socket)
         })
@@ -84,5 +112,60 @@ impl WebSocketConnector {
             socket,
             local_limiter,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::live::config::exchange::WebSocketConfig;
+
+    #[test]
+    fn compiles_public_headers_without_case_sensitive_lookup() {
+        let websocket: WebSocketConfig =
+            toml::from_str("[headers]\nX-Gate-Size-Decimal = '1'").unwrap();
+        assert_eq!(
+            websocket.handshake_headers().unwrap()["x-gate-size-decimal"],
+            "1"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_or_reserved_upgrade_headers_without_disclosing_values() {
+        for (name, value) in [
+            ("bad name", "sensitive-value"),
+            ("x-test", "sensitive-value\r\nX-Injected: yes"),
+            ("x-test", "sensitive-value\x00"),
+            ("x-test", "sensitive-value\x7f"),
+            ("Host", "sensitive-value"),
+            ("ConneCtion", "sensitive-value"),
+            ("upgrade", "sensitive-value"),
+            ("SEC-WebSocket-Key", "sensitive-value"),
+            ("Sec-WebSocket-Version", "sensitive-value"),
+            ("Sec-WebSocket-Protocol", "sensitive-value"),
+            ("Sec-WebSocket-Extensions", "sensitive-value"),
+            ("Content-Length", "sensitive-value"),
+            ("Transfer-Encoding", "sensitive-value"),
+            ("Authorization", "sensitive-value"),
+            ("Proxy-Authorization", "sensitive-value"),
+            ("Cookie", "sensitive-value"),
+        ] {
+            let mut websocket: WebSocketConfig = toml::from_str("").unwrap();
+            websocket.headers.insert(name.to_owned(), value.to_owned());
+            let error = websocket.handshake_headers().unwrap_err();
+            assert!(error.contains("websocket.headers"), "{name}: {error}");
+            assert!(!error.contains("sensitive-value"), "{name}: {error}");
+        }
+    }
+
+    #[test]
+    fn rejects_case_insensitive_duplicates() {
+        let websocket: WebSocketConfig =
+            toml::from_str("[headers]\nX-Example = '1'\nx-example = '2'").unwrap();
+        assert!(
+            websocket
+                .handshake_headers()
+                .unwrap_err()
+                .contains("duplicate")
+        );
     }
 }
