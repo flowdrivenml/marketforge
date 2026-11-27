@@ -14,6 +14,13 @@ The installer supports x86-64 and ARM64. Run it as your regular user. Ubuntu and
 
 The installer verifies or installs Neovim, Python 3.12 or newer, uv, and Rust/Cargo. The current locked Engine requires Rust 1.89 or newer. It synchronizes Forge in `.install/runtime` and builds and checksums the managed normalize, merge, and convert binaries through Forge. The installer creates a new Forge configuration with `presentation.editor = "nvim"` when there is no existing configuration. Existing editor settings, Neovim configuration, and plugins are preserved. Conversion’s atomic publication step currently requires Linux.
 
+Standard and development installs initialize `data/.config/live/general.toml` from
+`data/.config/live/general.example.toml` in the checkout. Existing Live settings
+are preserved byte-for-byte. The installer reports filesystem and TOML syntax
+errors. MarketForge Live checks the schema and operational limits when it loads
+the file. Keep this local file free of secrets. Automatic recording is disabled
+in the template. Running Live still requires separate deployment setup.
+
 It installs the `mf` and `marketforge` entry points under `~/.local/bin`. If they are missing from your PATH, add that directory using your shell’s setup or run `~/.local/bin/mf` directly. An occupied launcher path is reported and left alone. Run workspace commands from the checkout or pass `--project-root PATH` before the command.
 
 For the development installer and testing registry, see [contributor setup](../development/setup.md).

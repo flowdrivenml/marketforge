@@ -1,5 +1,17 @@
 # Live configuration
 
+## General configuration
+
+The tracked `data/.config/live/general.example.toml` provides the installation
+defaults. The installer copies it to the local, Git-ignored
+`data/.config/live/general.toml` when that file is absent. For manual setup,
+copy the template only if the local file is missing.
+
+The `live_config` integration target uses the tracked fixture at
+`engine/tests/live/support/data/config/general.toml` for value assertions and
+checks the installation template separately through the Live loader. Operator
+settings and production credentials are unnecessary for these tests.
+
 ## Application
 
 Existing general configuration remains the loader and authority. Optional `[runtime.application]` defaults:

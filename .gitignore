@@ -127,6 +127,13 @@ handoff.md
 /data/*
 !/data/.config/
 /data/.config/**
+!/data/.config/live/
+!/data/.config/live/general.example.toml
+!/engine/tests/live/support/data/
+/engine/tests/live/support/data/*
+!/engine/tests/live/support/data/config/
+/engine/tests/live/support/data/config/*
+!/engine/tests/live/support/data/config/general.toml
 
 # Maintained workload and persistent normalization test outputs.
 !engine/tests/historical/fixtures/normalize.json

@@ -30,6 +30,7 @@ print_plan() {
         fi
     done
     printf '  Plan: native dependencies via %s, locked Forge %s environment, managed normalize/merge/convert.\n' "$native_manager" "$mode"
+    printf '  Plan: initialize missing Live general configuration and preserve any existing file.\n'
     if [[ $mode == dev ]]; then
         printf '  Plan: dev and lab groups, Rust formatting/lint components, isolated Zensical environment.\n'
     fi

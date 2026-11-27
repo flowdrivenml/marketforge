@@ -1,0 +1,57 @@
+# Copy to general.toml for workspace-specific settings.
+schema_version = 1
+
+[runtime]
+# Upper bound for graceful shutdown, in seconds.
+shutdown_timeout_seconds = 15
+
+[runtime.processing]
+# Dedicated processing threads and scheduling limits.
+workers = 1
+# Each registered processor reserves one slot, including retained failures.
+ready_queue_capacity = 1024
+max_events_per_turn = 512
+# Aggregate queued, in-flight, and pending output limits.
+buffered_events = 65536
+buffered_bytes = 67108864
+
+[publication]
+# Unix socket path relative to the workspace. The connection limit counts each connection separately.
+socket_path = "data/.live/marketforge-data.sock"
+max_connections = 64
+# Maximum queued payload per subscriber. Slow subscribers are disconnected.
+subscriber_queue_bytes = 16777216
+
+[control]
+# The management REST API requires a loopback IP. Running it also requires credentials supplied separately.
+listen_address = "127.0.0.1:8080"
+
+[recording]
+# Keep disabled. Live application startup rejects automatic recording.
+enabled = false
+batch_max_records = 10000
+batch_max_delay_ms = 100
+
+[metrics]
+enabled = true
+snapshot_interval_ms = 1000
+
+[metrics.prometheus]
+# Serve metrics over HTTP only when explicitly enabled with metrics.enabled.
+enabled = false
+listen_address = "127.0.0.1:9091"
+path = "/metrics"
+# At most 128 requests and 16 MiB per response, with a combined bound of 64 MiB.
+max_concurrent_requests = 8
+max_response_bytes = 4194304
+cache_interval_ms = 1000
+
+[logging]
+# Supported levels are trace, debug, info, warn and error.
+level = "info"
+
+[defaults.recovery]
+# Recovery retry backoff starts in milliseconds and is capped in seconds.
+initial_backoff_ms = 500
+max_backoff_seconds = 60
+jitter = true
