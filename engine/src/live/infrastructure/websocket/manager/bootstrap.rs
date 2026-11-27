@@ -169,6 +169,14 @@ impl WebSocketManager {
                 }
             }
 
+            profile
+                .exchange
+                .websocket
+                .handshake_headers()
+                .map_err(|error| {
+                    WebSocketManagerError::Initialization(format!("{name}: {error}"))
+                })?;
+
             exchanges.push(profile.exchange.clone());
 
             resolved.insert(name, Arc::new(profile.into()));

@@ -85,6 +85,8 @@ pub fn compile_websocket(
     for name in configs.names() {
         let exchange = configs.get_shared(name).unwrap();
         let ws = &exchange.websocket;
+        ws.handshake_headers()
+            .map_err(|error| format!("{name}: {error}"))?;
         let default = overrides
             .get(name)
             .cloned()

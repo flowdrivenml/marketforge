@@ -266,10 +266,30 @@ impl WebSocketSupervisor {
                 frame = socket.next() => {
                     match frame {
                         Some(Ok(Message::Ping(_))) => {
-                            // Tungstenite queues the appropriate
-                            // echoed Pong automatically.
-                            //
-                            // Promptly flush that response.
+                            // Tungstenite already queued the echoed Pong. Do not
+                            // poll the socket again until it is admitted, because
+                            // a read or write could flush it without charging the quota.
+                            if pending_send.as_ref().is_some_and(|pending| !pending.job.is_heartbeat()) {
+                                deferred = pending_send.take().map(|pending| pending.job);
+                            }
+                            tokio::select! {
+                                _ = &mut shutdown => {
+                                    // Closing would flush the unadmitted Pong.
+                                    return Ok(SupervisorExit::Shutdown);
+                                }
+                                _ = wait_until(control_response_deadline) => {
+                                    return Err(WebSocketTransportError::HeartbeatTimeout);
+                                }
+                                _ = wait_until(application_response_deadline) => {
+                                    return Err(WebSocketTransportError::ApplicationHeartbeatTimeout);
+                                }
+                                admitted = time::timeout(
+                                    ADMISSION_TIMEOUT,
+                                    limiter.acquire_outbound(RequestPriority::High),
+                                ) => {
+                                    admitted.map_err(|_| WebSocketTransportError::OperationTimeout)??;
+                                }
+                            }
                             time::timeout(
                                 WIRE_SEND_TIMEOUT,
                                 socket.flush(),

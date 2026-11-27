@@ -315,3 +315,99 @@ async fn inactivity_timer_resets_on_market_data() {
 
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn server_pong_obeys_the_outbound_quota_and_preempts_a_waiting_subscription() {
+    use marketforge_engine::live::infrastructure::websocket::OutboundMessage;
+
+    let listener = crate::websocket_server::listen().await;
+    let address = listener.local_addr().unwrap();
+    let (first_seen, first_sent) = oneshot::channel();
+    let (second_queued, send_ping) = oneshot::channel();
+    let (second_received, second_sent) = oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut socket = accept_async(stream).await.unwrap();
+
+        assert_eq!(
+            socket.next().await.unwrap().unwrap().into_text().unwrap(),
+            "first"
+        );
+        first_seen.send(()).unwrap();
+        send_ping.await.unwrap();
+        socket
+            .send(Message::Ping(b"echo".as_slice().into()))
+            .await
+            .unwrap();
+        socket
+            .send(Message::Text("market-data".into()))
+            .await
+            .unwrap();
+
+        // The first subscription consumed the only slot in the one-second window.
+        // Check for any early wire frame, allowing headroom before the window expires.
+        assert!(
+            time::timeout(Duration::from_millis(100), socket.next())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            socket.next().await.unwrap().unwrap(),
+            Message::Pong(b"echo".as_slice().into())
+        );
+        assert_eq!(
+            socket.next().await.unwrap().unwrap().into_text().unwrap(),
+            "second"
+        );
+        second_received.send(()).unwrap();
+        assert!(matches!(socket.next().await, Some(Ok(Message::Close(_)))));
+    });
+
+    let mut config = load("binance_spot");
+    config.websocket.max_client_messages_per_second = Some(1);
+    let connection = connect(address, &config, 304).await;
+    let (inbound_tx, mut inbound_rx) = mpsc::channel(8);
+    let (outbound_tx, outbound_rx) = mpsc::channel(8);
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let supervisor = tokio::spawn(WebSocketSupervisor::run_with_plan(
+        connection,
+        inbound_tx,
+        outbound_rx,
+        shutdown_rx,
+        plan(&config),
+    ));
+    time::timeout(Duration::from_secs(5), async {
+        outbound_tx
+            .send(OutboundMessage::Subscription("first".into()))
+            .await
+            .unwrap();
+        first_sent.await.unwrap();
+        outbound_tx
+            .send(OutboundMessage::Subscription("second".into()))
+            .await
+            .unwrap();
+        second_queued.send(()).unwrap();
+        assert_eq!(
+            inbound_rx.recv().await.unwrap().into_text().unwrap(),
+            "market-data"
+        );
+        second_sent.await.unwrap();
+    })
+    .await
+    .unwrap();
+
+    shutdown_tx.send(()).unwrap();
+    assert_eq!(
+        time::timeout(Duration::from_secs(5), supervisor)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        SupervisorExit::Shutdown
+    );
+    time::timeout(Duration::from_secs(5), server)
+        .await
+        .unwrap()
+        .unwrap();
+}
