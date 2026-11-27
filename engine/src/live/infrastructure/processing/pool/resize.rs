@@ -241,6 +241,73 @@ mod tests {
         assert!(p.stats().joined);
     }
     #[test]
+    fn growth_runs_queued_work_while_an_existing_turn_is_in_flight() {
+        struct Stateful {
+            runs: usize,
+            entered: mpsc::Sender<()>,
+            release: Option<mpsc::Receiver<()>>,
+            completed: mpsc::Sender<usize>,
+        }
+        impl Processor for Stateful {
+            fn run_turn(&mut self, _: usize) -> bool {
+                if let Some(release) = self.release.take() {
+                    self.entered.send(()).unwrap();
+                    release.recv_timeout(Duration::from_secs(3)).unwrap();
+                }
+                self.runs += 1;
+                self.completed.send(self.runs).unwrap();
+                false
+            }
+        }
+
+        let mut p = pool(1);
+        let (entered, active) = mpsc::channel();
+        let (release, gate) = mpsc::channel();
+        let (done, existing) = mpsc::channel();
+        let (other_done, other) = mpsc::channel();
+        let original = p.fresh_token(1);
+        let independent = p.fresh_token(2);
+        p.register(
+            original,
+            Stateful {
+                runs: 0,
+                entered: entered.clone(),
+                release: Some(gate),
+                completed: done,
+            },
+        )
+        .unwrap();
+        p.register(
+            independent,
+            Stateful {
+                runs: 0,
+                entered,
+                release: None,
+                completed: other_done,
+            },
+        )
+        .unwrap();
+        p.notify(original).unwrap();
+        active.recv_timeout(Duration::from_secs(2)).unwrap();
+        p.notify(original).unwrap();
+        p.notify(independent).unwrap();
+
+        p.set_workers(2, 0).unwrap();
+        settled(&p, 2);
+        assert_eq!(other.recv_timeout(Duration::from_secs(2)).unwrap(), 1);
+        assert!(matches!(
+            existing.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert_eq!(p.stats().registered, 2);
+
+        release.send(()).unwrap();
+        assert_eq!(existing.recv_timeout(Duration::from_secs(2)).unwrap(), 1);
+        assert_eq!(existing.recv_timeout(Duration::from_secs(2)).unwrap(), 2);
+        p.shutdown();
+    }
+
+    #[test]
     fn failed_staged_growth_preserves_original_pool() {
         let mut p = pool(2);
         lock(&p.shared).spawn_failure_after = Some(1);

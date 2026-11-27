@@ -328,24 +328,29 @@ pub(super) async fn execute(s: &Shared, job: &ApplyJob) -> Result<()> {
     match &job.plan.action {
         Action::ResizeWorkers { workers, save } => {
             if *save {
-                save_config(s, "workers", *workers as u64).await?;
+                let synced = save_config(s, "workers", *workers as u64).await?;
                 saved(s, &job.id);
                 {
                     let mut state = s.state.lock().unwrap();
                     state.saved_workers = Some(*workers);
                     state.config_revision += 1;
                 }
+                check_config_durability(synced)?;
+            }
+            if s.app.status().shutting_down || s.closed.load(Ordering::Acquire) {
+                return Err(error("shutting_down", "worker resize was not applied"));
             }
             let pool = s.app.processing.pool_handle();
             let mut updates = pool.subscribe_changes();
-            pool.set_workers(
-                *workers,
-                job.plan
-                    .pool_revision
-                    .parse()
-                    .map_err(|_| error("invalid_revision", "pool revision invalid"))?,
-            )
-            .map_err(|e| error("resize_rejected", &e.to_string()))?;
+            let resize_revision = pool
+                .set_workers(
+                    *workers,
+                    job.plan
+                        .pool_revision
+                        .parse()
+                        .map_err(|_| error("invalid_revision", "pool revision invalid"))?,
+                )
+                .map_err(|e| error("resize_rejected", &e.to_string()))?;
             loop {
                 let stats = pool.stats();
                 if stats.shutdown {
@@ -359,6 +364,12 @@ pub(super) async fn execute(s: &Shared, job: &ApplyJob) -> Result<()> {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 }
+                if stats.resize_revision != resize_revision {
+                    return Err(error(
+                        "resize_superseded",
+                        "another resize replaced this allocation",
+                    ));
+                }
                 if !stats.resize_pending {
                     if let Some(reason) = pool.resize_error() {
                         return Err(error("resize_failed", &reason));
@@ -366,19 +377,33 @@ pub(super) async fn execute(s: &Shared, job: &ApplyJob) -> Result<()> {
                     if stats.running_workers == *workers {
                         return Ok(());
                     }
+                    return Err(error(
+                        "resize_failed",
+                        "worker allocation differs from target",
+                    ));
                 }
                 tokio::select! {_=updates.changed()=>(),_=tokio::time::sleep(Duration::from_millis(50))=>()}
             }
         }
         Action::SetObservationInterval { milliseconds, save } => {
             if *save {
-                save_config(s, "overview_interval_ms", *milliseconds).await?;
+                let synced = save_config(s, "overview_interval_ms", *milliseconds).await?;
                 saved(s, &job.id);
-                s.state.lock().unwrap().saved_observation_interval = Some(*milliseconds);
+                let mut state = s.state.lock().unwrap();
+                state.saved_observation_interval = Some(*milliseconds);
+                state.config_revision += 1;
+                check_config_durability(synced)?;
             }
+            if s.app.status().shutting_down || s.closed.load(Ordering::Acquire) {
+                return Err(error(
+                    "shutting_down",
+                    "observation interval was not applied",
+                ));
+            }
+            let mut state = s.state.lock().unwrap();
             s.observation_interval
                 .store(*milliseconds, Ordering::Release);
-            s.state.lock().unwrap().config_revision += 1;
+            state.config_revision += 1;
             Ok(())
         }
         Action::Shutdown => {
@@ -613,7 +638,18 @@ pub(super) async fn execute(s: &Shared, job: &ApplyJob) -> Result<()> {
         }
     }
 }
-async fn save_config(s: &Shared, key: &str, value: u64) -> Result<()> {
+fn check_config_durability(synced: bool) -> Result<()> {
+    if synced {
+        Ok(())
+    } else {
+        Err(error(
+            "config_durability_unknown",
+            "configuration was replaced but directory synchronization failed",
+        ))
+    }
+}
+
+async fn save_config(s: &Shared, key: &str, value: u64) -> Result<bool> {
     #[cfg(feature = "management-api")]
     {
         s.config_file

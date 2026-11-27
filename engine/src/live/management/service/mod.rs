@@ -71,6 +71,7 @@ struct Shared {
     closed: AtomicBool,
     changed: Notify,
     mutation: tokio::sync::Mutex<()>,
+    configuration_mutation: tokio::sync::Mutex<()>,
     observation_interval: AtomicU64,
     #[cfg(feature = "management-api")]
     config_file: Option<config_file::ConfigFile>,
@@ -159,6 +160,7 @@ impl ManagementService {
             closed: AtomicBool::new(false),
             changed: Notify::new(),
             mutation: tokio::sync::Mutex::new(()),
+            configuration_mutation: tokio::sync::Mutex::new(()),
             observation_interval: AtomicU64::new(limits.overview_interval_ms),
             #[cfg(feature = "management-api")]
             config_file,
@@ -322,7 +324,37 @@ impl ManagementHandle {
         {
             return Err(error("capacity", "change plan capacity"));
         }
-        let plan=ChangePlan{id:format!("{}-{}",self.shared.instance,id(&mut state,"plan")?),daemon_instance:self.shared.instance.clone(),action:request.action,graph_revision:graph_revision.to_string(),pool_revision:pool_revision.to_string(),config_revision:state.config_revision.to_string(),demand_revision:if mutation.affected.is_empty(){None}else{Some(demand_revision.to_string())},affected_streams:mutation.affected.into_iter().collect(),transitions:mutation.transitions,continuity_impact:mutation.impact,persistence:if self.shared.store.durable(){"definition edits transactionally saved in PostgreSQL; runtime activation is separate"}else{"explicit non-durable embedding store"}.into(),warnings:mutation.warnings,expires_in_seconds:self.shared.limits.plan_seconds};
+        let persistence = match &request.action {
+            Action::ResizeWorkers { save: true, .. }
+            | Action::SetObservationInterval { save: true, .. } => {
+                "general configuration saved first; runtime application reported separately"
+            }
+            Action::ResizeWorkers { save: false, .. }
+            | Action::SetObservationInterval { save: false, .. } => "runtime only",
+            _ if self.shared.store.durable() => {
+                "definition edits transactionally saved in PostgreSQL; runtime activation is separate"
+            }
+            _ => "explicit non-durable embedding store",
+        };
+        let plan = ChangePlan {
+            id: format!("{}-{}", self.shared.instance, id(&mut state, "plan")?),
+            daemon_instance: self.shared.instance.clone(),
+            action: request.action,
+            graph_revision: graph_revision.to_string(),
+            pool_revision: pool_revision.to_string(),
+            config_revision: state.config_revision.to_string(),
+            demand_revision: if mutation.affected.is_empty() {
+                None
+            } else {
+                Some(demand_revision.to_string())
+            },
+            affected_streams: mutation.affected.into_iter().collect(),
+            transitions: mutation.transitions,
+            continuity_impact: mutation.impact,
+            persistence: persistence.into(),
+            warnings: mutation.warnings,
+            expires_in_seconds: self.shared.limits.plan_seconds,
+        };
         state.plans.insert(
             plan.id.clone(),
             PlanRecord {
@@ -840,13 +872,12 @@ fn check_revisions(s: &Shared, state: &State, plan: &ChangePlan) -> Result<()> {
     }
 }
 async fn execute(s: Arc<Shared>, job: ApplyJob) {
-    let _gate = if matches!(
-        job.plan.action,
-        Action::ResizeWorkers { .. } | Action::Shutdown
-    ) {
-        None
-    } else {
-        Some(s.mutation.lock().await)
+    let _gate = match job.plan.action {
+        Action::ResizeWorkers { .. } | Action::SetObservationInterval { .. } => {
+            Some(s.configuration_mutation.lock().await)
+        }
+        Action::Shutdown => None,
+        _ => Some(s.mutation.lock().await),
     };
     {
         if let Some(op) = s.state.lock().unwrap().operations.get_mut(&job.id) {
