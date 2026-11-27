@@ -83,12 +83,81 @@ reconnect, dynamic shared-slot acquisition, and conservative fallback after
 an uncertain unsubscribe.
 
 Public WebSocket acceptance requires explicit opt-in and coordination with
-other workloads on the same egress. The ignored bulk test runs selected
-profile and channel cases sequentially under one shared limiter and
-reports selected, executed, passed, failed and blocked counts. Its baseline
-cases exercise the low-level transport through native acknowledgment and
-data receipt. Verifying live automatic settlement routing additionally
-requires authoritative current instrument metadata and the production
-Source preparation and manager path. A transport ACK and native
-observations establish acquisition. Financial continuity requires the
-downstream Source integrity and recovery checks.
+other workloads on the same egress. Run the 30-case baseline sequentially
+under one shared limiter. The report counts physical upgrades, internally
+correlated native ACKs, and validated data separately. The 30-second
+observation window starts after confirmation. A case is **PASS** after
+matching data and clean shutdown, or **IDLE** after a healthy, confirmed
+subscription sees no matching observations during that window and shuts
+down cleanly. A disconnect, invalid or unrelated frame, ACK deadline, or
+shutdown error is **FAIL**. An established external access restriction or
+missing verified prerequisite is **BLOCKED**, which leaves verification
+incomplete. An explicit HTTP 429 pauses the remaining checks for that
+exchange.
+
+`MF_LIVE_REQUIRE_DATA=1` requires a data observation in every selected
+case. Fixture collection always requires valid native observations and
+publishes only after successful shutdown. It preserves the existing
+95-file inventory and cannot publish an idle capture.
+
+```bash
+env -u MF_LIVE_FILTER cargo test --locked --manifest-path engine/Cargo.toml \
+  --no-default-features --features management-api,management-tui,stream-client \
+  --test live_network all_exchange_profiles_live -- --ignored --nocapture --test-threads=1
+```
+
+On 27 November 2026, the baseline selected and executed 30 cases.
+All 30 completed physical upgrade and internal ACK confirmation. Matching
+native data was observed in 29 cases, with zero failures and zero blockers.
+Gate.io inverse `BTC_USD` trades was **IDLE** after a confirmed ACK and
+clean shutdown. Its depth subscription passed with native order-book
+updates. Offline replay confirmed the exact supplied native trade ACK.
+The quiet observation window does not establish whether the exchange
+executed any trades during that interval.
+
+The additional native variant test accepts fresh, unmodified public exchange
+instrument catalogue JSON files. Fetch each catalogue once on the coordinated
+egress. Stop if either endpoint throttles or rejects the request.
+
+```bash
+curl --fail-with-body --max-time 12 -o /tmp/gate-usd1-contracts.json \
+  https://api.gateio.ws/api/v4/futures/usd1/contracts
+curl --fail-with-body --max-time 12 -o /tmp/bitget-usdc-instruments.json \
+  'https://api.bitget.com/api/v3/market/instruments?category=USDC-FUTURES'
+MF_GATE_USD1_METADATA=/tmp/gate-usd1-contracts.json \
+MF_BITGET_USDC_METADATA=/tmp/bitget-usdc-instruments.json \
+  cargo test --locked --manifest-path engine/Cargo.toml \
+  --no-default-features --features management-api,management-tui,stream-client \
+  --test live_network native_linear_variants_live -- --ignored --nocapture --test-threads=1
+```
+
+The variant test uses the exchange metadata for contract and asset semantics
+with test-local registration identities. It uses the production Source builder,
+transport manager and native ACK correlation. It establishes acquisition without
+starting recovery, REST depth snapshots, or database writes. Financial readiness
+and continuity require downstream normalization, integrity and recovery checks.
+
+The same day, the additional variant run selected and executed four cases.
+All four completed physical connection and internal ACK confirmation.
+Two depth checks passed, two trade subscriptions were idle, and there
+were zero failures or blockers.
+
+| Profile | Settlement | Listed instrument | Resolved WebSocket route or product | Trades | Depth |
+| --- | --- | --- | --- | --- | --- |
+| Gate.io linear | USD1 | `BTC_USD1` | `usd1` | ACK confirmed, idle | ACK and native update |
+| Bitget linear | USDC | `BTCPERP` | `usdc-futures` | ACK confirmed, idle | ACK and native snapshot |
+
+The prepared Gate.io source connected to the configured USD1 endpoint
+with decimal-size header configuration. The returned native depth quantity
+was a string. Gate.io's upgrade header was independently inspected on
+the same production connector in loopback. Bitget's ACK and depth
+envelopes identified both `usdc-futures` and `BTCPERP`. Its public
+instrument catalogue identified the REST product as `USDC-FUTURES`.
+Both variant runs used fresh public catalogue responses because no
+matching registrations were available from the accessible testing
+catalogue and the production catalogue lookup failed.
+
+The reviewed reconciliation branch separately passed
+`websocket_manager_shared_slot_lifecycle_live` against public Binance futures
+in 4.68 seconds. That run verified representative shared-slot subscription
+lifecycle behavior on a real exchange.
