@@ -11,3 +11,53 @@ Graph, schemas, Source subscription parameters, shared limiter identity, recordi
 Shutdown stops admissions/reconciliation, closes Unix sessions, retires processing and Source ownership, then shuts down WebSocket/recovery infrastructure. CPU retirement is awaited asynchronously by existing owners, never joined on an async executor thread. Executing CPU code is not forcibly cancellable. Final collection occurs after cleanup and before exporter retirement. Handles can read the retained final snapshot/report. `ShutdownReport.complete` requires completed cleanup without errors. `discarded_publications` counts retained work disposed in the final report drain, not records committed or earlier retired work. Errors are capped at 64 entries of 512 bytes.
 
 A timed-out `shutdown()` returns `complete=false, cleanup_continues=true`, increments the incomplete-wait counter, and retains the task; another wait can observe completion. Drop requests owned cleanup without blocking. The executable exits nonzero for incomplete/fatal shutdown; its Tokio runtime has a one-second shutdown wait, so process exit may abandon still-incomplete work. This is reported, not described as a successful drain. SIGINT and SIGTERM follow the same explicit protocol.
+
+## WebSocket subscription ownership
+
+The manager admits a bounded number of attachment and detachment mutations
+and owns their tasks through completion. A successful attach reply carries a
+binding that the caller claims before returning. If the caller cancels
+before claiming it, the task detaches the binding, even if the exchange has
+already acknowledged it. Detachment continues after caller cancellation.
+Shutdown closes mutation admission, drains admitted operations, then stops
+the slots. Cancelling the shutdown waiter leaves the owned shutdown running.
+
+A slot publishes its latest desired subscriptions through a watch channel.
+The physical session compares that projection with acknowledged native
+subscriptions and keeps one transaction in flight through ACK completion.
+The callback-only embedding path retains its 25 ms bounded poll. Managed
+slots wake on demand changes and coalesce intermediate revisions. Each
+pending wire outcome belongs to its original transaction and physical
+generation. Gate.io refreshes initial subscription timestamps at command
+admission while retaining the request ID and ACK identity.
+
+Detach revokes local delivery before updating demand. Pending native
+unsubscribe holds capacity until acknowledgment or physical generation
+revocation. The event loop retains the retired selector to discard matching
+late frames. After publishing removal, the manager records the last
+generation that could have read old demand. Once its fence loses authority,
+the event loop removes the selector before clearing the manager's
+allocation exclusion. The history is bounded. Reattachment to a matching
+identity uses a different slot while the selector remains unsafe to reuse.
+
+Correlated native errors, ambiguous or missing ACKs, uncertain sends, and
+rejected unsubscribes recycle the physical generation. The reviewed public
+market protocols expose correlation and failure fields. The supported
+profiles lack a verified correlated rejection class that establishes
+non-application. For example, Binance documents parser errors without a
+request ID, and Gate documents duplicate-subscription errors that can
+coexist with an active subscription. Definitive isolation would require
+a verified no-mutation error class or authoritative native inventory.
+[Binance Spot](https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md#error-messages)
+[Binance USD-M](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/Live-Subscribing-Unsubscribing-to-streams)
+[Bybit](https://bybit-exchange.github.io/docs/v5/ws/connect)
+[OKX](https://app.okx.com/docs-v5/en/)
+[Bitget](https://www.bitget.com/docs/uta/error-code/websocket)
+[Gate](https://www.gate.com/docs/developers/futures/ws/)
+
+Loopback regressions cover unclaimed bindings after native ACK, cancelled
+retirement and shutdown, selector reuse across successive generations,
+Bybit and OKX shared-slot mutations, rejected unsubscribe, and serialized
+restoration while heartbeat and demand changes remain active. Subscription
+restoration establishes transport acquisition authority. The existing
+Source lifecycle owns financial recovery.
