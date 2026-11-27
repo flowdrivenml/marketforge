@@ -7,9 +7,9 @@ edition = "2024"
 default = []
 stream-client = ["dep:tokio"]
 management-api = ["live", "dep:axum", "dep:tokio-stream", "dep:toml_edit"]
-management-client = ["dep:reqwest", "dep:tokio", "dep:futures-util"]
+management-client = ["dep:libc", "dep:reqwest", "dep:tokio", "dep:futures-util"]
 management-tui = ["management-client", "monitor-tui"]
-postgres = ["dep:sqlx"]
+postgres = ["dep:sqlx", "dep:libc", "dep:tracing", "dep:url"]
 # Synchronization hooks for deterministic production-path regression tests only.
 normalization-test-hooks = ["historical"]
 historical-real-tests = ["historical"]

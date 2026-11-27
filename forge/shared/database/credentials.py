@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 from pathlib import Path
 
 from forge.shared.errors import MarketForgeError
@@ -11,6 +12,7 @@ from forge.shared.paths import resolve_project_root
 
 TEST_DATABASE_KEY = "TEST_DATABASE_KEY"
 PRODUCTION_DATABASE_KEY = "PRODUCTION_DATABASE_KEY"
+_MAX_FILE_BYTES = 65_536
 _ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
 
 
@@ -52,32 +54,61 @@ def _dotenv_value(text: str, *, key: str, line: int) -> str:
     )
 
 
+def _read_private_dotenv(source: Path) -> str:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    with os.fdopen(os.open(source, flags), "rb") as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > _MAX_FILE_BYTES:
+            raise OSError("expected a bounded regular file")
+        if os.name == "posix" and (metadata.st_uid != os.geteuid() or metadata.st_mode & 0o077):
+            raise OSError("expected a private file owned by the running user")
+        content = stream.read(_MAX_FILE_BYTES + 1)
+        if len(content) > _MAX_FILE_BYTES:
+            raise OSError("credential file exceeds size limit")
+        return content.decode("utf-8-sig")
+
+
 def resolve_database_dsn(*, testing: bool, project_root: Path | None = None) -> str:
     """Use a nonblank environment value, then the same key in the project file.
 
     Empty environment values do not mask file credentials. The two environments
-    never substitute for each other. Values are literal: no shell, interpolation,
-    environment mutation, connection attempt or cached credential state.
+    never substitute for each other. Values are literal. The selected file key must occur at most once.
     """
     key = TEST_DATABASE_KEY if testing else PRODUCTION_DATABASE_KEY
     environment = os.environ.get(key)
     if environment is not None and environment.strip():
+        try:
+            environment.encode("utf-8")
+        except UnicodeEncodeError:
+            raise DatabaseCredentialsError(f"Invalid UTF-8 in {key}.") from None
         return environment.strip()
 
     source = resolve_project_root(project_root) / ".secrets" / "postgres.env"
     value: str | None = None
     try:
-        with source.open(encoding="utf-8-sig") as stream:
-            for number, line in enumerate(stream, 1):
-                assignment = _ASSIGNMENT.match(line.rstrip("\r\n"))
-                if assignment is not None and assignment[1] == key:
-                    value = _dotenv_value(assignment[2], key=key, line=number)
+        contents = _read_private_dotenv(source)
     except FileNotFoundError:
-        pass
+        contents = ""
     except (OSError, UnicodeError):
         raise DatabaseCredentialsError(
-            f"Cannot read PostgreSQL credentials for {key} from .secrets/postgres.env."
+            f"Cannot read PostgreSQL credentials for {key} from .secrets/postgres.env. "
+            "Use a private regular UTF-8 file owned by the running user."
         ) from None
+    for number, line in enumerate(contents.split("\n"), 1):
+        assignment = _ASSIGNMENT.match(line.rstrip("\r"))
+        if assignment is None:
+            if line.strip() == key or line.strip().split(maxsplit=1) == ["export", key]:
+                raise DatabaseCredentialsError(
+                    f"Invalid assignment for {key} in .secrets/postgres.env at line {number}."
+                )
+            continue
+        if assignment[1] != key:
+            continue
+        if value is not None:
+            raise DatabaseCredentialsError(
+                f"Duplicate assignment for {key} in .secrets/postgres.env at line {number}."
+            )
+        value = _dotenv_value(assignment[2], key=key, line=number)
     if value is None or not value.strip():
         raise MissingDatabaseCredentials(
             f"Set {key} to a nonempty value in the environment or in "

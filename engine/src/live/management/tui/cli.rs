@@ -13,15 +13,12 @@ struct Args {
 pub async fn run() -> std::process::ExitCode {
     use crate::live::management::client::{ClientOptions, MarketForgeManagementClient};
     let args = Args::parse();
-    let client = if let Some(path) = args.token_file {
-        MarketForgeManagementClient::from_token_file(&args.endpoint, path, ClientOptions::default())
-    } else {
-        MarketForgeManagementClient::from_environment(
-            &args.endpoint,
-            &args.token_env,
-            ClientOptions::default(),
-        )
-    };
+    let client = MarketForgeManagementClient::resolve_credentials(
+        &args.endpoint,
+        args.token_file.as_deref(),
+        &args.token_env,
+        ClientOptions::default(),
+    );
     match client {
         Ok(client) => match super::run(client).await {
             Ok(()) => std::process::ExitCode::SUCCESS,

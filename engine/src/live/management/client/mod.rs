@@ -19,6 +19,16 @@ pub enum ClientError {
     Protocol,
     #[error("mutation outcome unknown; resolve using the same idempotency key: {key}")]
     UnknownMutation { key: String },
+    #[error(
+        "invalid or unavailable management token file; use a private regular file owned by the running user"
+    )]
+    TokenFile,
+    #[error("invalid or unavailable management token environment variable")]
+    TokenEnvironment,
+    #[error(
+        "invalid or unavailable workspace .secrets/live-management-token; provision a private token file or set MARKETFORGE_MANAGEMENT_TOKEN"
+    )]
+    WorkspaceToken,
     #[error("management client closed")]
     Closed,
 }
@@ -60,25 +70,73 @@ impl MarketForgeManagementClient {
         path: impl AsRef<Path>,
         options: ClientOptions,
     ) -> Result<Self, ClientError> {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let m =
-                std::fs::symlink_metadata(path.as_ref()).map_err(|_| ClientError::Connection)?;
-            if !m.is_file() || m.len() > 4096 || m.permissions().mode() & 0o077 != 0 {
-                return Err(ClientError::Protocol);
-            }
+        let token = crate::shared::secret_file::read(path.as_ref(), 4096)
+            .map_err(|_| ClientError::TokenFile)?;
+        let token = token.trim();
+        if !Self::valid_token(token) {
+            return Err(ClientError::TokenFile);
         }
-        let token = std::fs::read_to_string(path).map_err(|_| ClientError::Connection)?;
-        Self::new(endpoint, token.trim().into(), options)
+        Self::new(endpoint, token.into(), options)
+    }
+
+    pub fn resolve_credentials(
+        endpoint: &str,
+        token_file: Option<&Path>,
+        token_env: &str,
+        options: ClientOptions,
+    ) -> Result<Self> {
+        Self::resolve_with(
+            endpoint,
+            token_file,
+            token_env,
+            options,
+            |key| std::env::var(key),
+            || crate::shared::workspace::resolve(None, &std::env::current_dir()?),
+        )
+    }
+
+    fn resolve_with(
+        endpoint: &str,
+        token_file: Option<&Path>,
+        token_env: &str,
+        options: ClientOptions,
+        environment: impl FnOnce(&str) -> std::result::Result<String, std::env::VarError>,
+        workspace: impl FnOnce() -> std::io::Result<std::path::PathBuf>,
+    ) -> Result<Self> {
+        if let Some(file) = token_file {
+            return Self::from_token_file(endpoint, file, options);
+        }
+        match environment(token_env) {
+            Ok(token) if Self::valid_token(&token) => Self::new(endpoint, token, options),
+            Ok(_) => Err(ClientError::TokenEnvironment),
+            Err(std::env::VarError::NotPresent) if token_env == "MARKETFORGE_MANAGEMENT_TOKEN" => {
+                let root = workspace().map_err(|_| ClientError::WorkspaceToken)?;
+                match Self::from_token_file(
+                    endpoint,
+                    root.join(".secrets/live-management-token"),
+                    options,
+                ) {
+                    Err(ClientError::TokenFile) => Err(ClientError::WorkspaceToken),
+                    result => result,
+                }
+            }
+            Err(_) => Err(ClientError::TokenEnvironment),
+        }
     }
     pub fn from_environment(
         endpoint: &str,
         variable: &str,
         options: ClientOptions,
     ) -> Result<Self, ClientError> {
-        let token = std::env::var(variable).map_err(|_| ClientError::Connection)?;
+        let token = std::env::var(variable).map_err(|_| ClientError::TokenEnvironment)?;
+        if !Self::valid_token(&token) {
+            return Err(ClientError::TokenEnvironment);
+        }
         Self::new(endpoint, token, options)
+    }
+
+    fn valid_token(token: &str) -> bool {
+        (24..=256).contains(&token.len()) && !token.chars().any(char::is_whitespace)
     }
     /// Embedding boundary. Credentials are never included in Debug or errors.
     pub fn new(endpoint: &str, token: String, options: ClientOptions) -> Result<Self, ClientError> {
@@ -94,9 +152,7 @@ impl MarketForgeManagementClient {
                         .parse::<std::net::IpAddr>()
                         .is_ok_and(|i| i.is_loopback())
             })
-            || token.len() < 24
-            || token.len() > 256
-            || token.chars().any(char::is_whitespace)
+            || !Self::valid_token(&token)
             || options.max_concurrent_requests == 0
             || options.max_concurrent_requests > 1024
             || !(4096..=16 * 1024 * 1024).contains(&options.max_response_bytes)
@@ -524,5 +580,61 @@ impl Drop for Notifications {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::{env::VarError, fs, os::unix::fs::PermissionsExt};
+
+    #[test]
+    fn token_resolution_selects_only_the_authorized_client_token() {
+        const FILE_TOKEN: &str = "synthetic-client-file-token";
+        const ENV_TOKEN: &str = "synthetic-client-environment-token";
+        const SERVER_TOKEN: &str = "synthetic-unrelated-administrator-token";
+        let root = tempfile::tempdir().unwrap();
+        let secrets = root.path().join(".secrets");
+        fs::create_dir(&secrets).unwrap();
+        let server_inventory = secrets.join("live-management.json");
+        fs::write(
+            &server_inventory,
+            format!(r#"[{{"identity":"admin","role":"administrator","token":"{SERVER_TOKEN}"}}]"#),
+        )
+        .unwrap();
+        fs::set_permissions(&server_inventory, fs::Permissions::from_mode(0o600)).unwrap();
+        let resolve = |file: Option<&Path>, token: Option<&str>| {
+            MarketForgeManagementClient::resolve_with(
+                "http://127.0.0.1:8080",
+                file,
+                "MARKETFORGE_MANAGEMENT_TOKEN",
+                ClientOptions::default(),
+                |_| token.map(str::to_owned).ok_or(VarError::NotPresent),
+                || Ok(root.path().to_owned()),
+            )
+        };
+        assert!(matches!(
+            resolve(None, None),
+            Err(ClientError::WorkspaceToken)
+        ));
+        let file = secrets.join("live-management-token");
+        fs::write(&file, format!("{FILE_TOKEN}\n")).unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+        let client = resolve(None, None).unwrap();
+        assert!(client.inner.token == FILE_TOKEN);
+        assert!(!format!("{client:?}").contains(FILE_TOKEN));
+        assert!(resolve(None, Some(ENV_TOKEN)).unwrap().inner.token == ENV_TOKEN);
+        assert!(resolve(Some(&file), Some(ENV_TOKEN)).unwrap().inner.token == FILE_TOKEN);
+        assert!(resolve(None, Some("invalid")).is_err());
+
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(matches!(
+            resolve(Some(&file), Some(ENV_TOKEN)),
+            Err(ClientError::TokenFile)
+        ));
+        assert!(matches!(
+            resolve(None, None),
+            Err(ClientError::WorkspaceToken)
+        ));
     }
 }

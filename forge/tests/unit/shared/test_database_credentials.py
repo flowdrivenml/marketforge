@@ -1,5 +1,6 @@
 """Credential resolution is literal, isolated by environment and independent of cwd."""
 
+import os
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -28,7 +29,9 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def write_credentials(root: Path, content: str) -> None:
-    (root / ".secrets/postgres.env").write_text(content, encoding="utf-8")
+    source = root / ".secrets/postgres.env"
+    source.write_text(content, encoding="utf-8")
+    source.chmod(0o600)
 
 
 @pytest.mark.parametrize(
@@ -88,9 +91,10 @@ def test_dotenv_syntax_is_data(workspace: Path, assignment: str, expected: str) 
     assert not (workspace / "never").exists()
 
 
-def test_duplicate_assignments_follow_last_definition(workspace: Path) -> None:
+def test_duplicate_assignments_are_rejected(workspace: Path) -> None:
     write_credentials(workspace, f"{TEST_DATABASE_KEY}=first\n{TEST_DATABASE_KEY}=last\n")
-    assert load_testing_dsn(workspace) == "last"
+    with pytest.raises(DatabaseCredentialsError, match="Duplicate assignment"):
+        resolve_database_dsn(testing=True, project_root=workspace)
 
 
 @pytest.mark.parametrize(
@@ -183,7 +187,19 @@ def test_unreadable_file_has_a_credential_safe_error(
     workspace: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(Path, "open", Mock(side_effect=PermissionError("private-token")))
+    monkeypatch.setattr(os, "open", Mock(side_effect=PermissionError("private-token")))
     with pytest.raises(DatabaseCredentialsError, match="Cannot read") as error:
         resolve_database_dsn(testing=True, project_root=workspace)
     assert "private-token" not in str(error.value)
+
+
+def test_refuses_unsafe_or_oversized_file(workspace: Path) -> None:
+    write_credentials(workspace, f"{TEST_DATABASE_KEY}=synthetic-test-credential")
+    source = workspace / ".secrets/postgres.env"
+    source.chmod(0o644)
+    with pytest.raises(DatabaseCredentialsError, match="private regular UTF-8"):
+        resolve_database_dsn(testing=True, project_root=workspace)
+    source.chmod(0o600)
+    source.write_text("x" * 65_537, encoding="utf-8")
+    with pytest.raises(DatabaseCredentialsError, match="private regular UTF-8"):
+        resolve_database_dsn(testing=True, project_root=workspace)

@@ -1,4 +1,6 @@
 pub mod config;
+mod credentials;
+pub use credentials::DatabaseEnvironment;
 pub mod pool;
 pub mod schema;
 pub mod streams;

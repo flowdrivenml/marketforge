@@ -71,29 +71,61 @@ impl Credentials {
         Ok(Self(entries))
     }
     pub fn load(config: &crate::live::config::general::ManagementConfig) -> Result<Self> {
-        let text = if let Some(file) = &config.credentials_file {
-            #[cfg(unix)]
+        Self::resolve(
+            config,
+            |key| std::env::var(key),
+            || crate::shared::workspace::resolve(None, &std::env::current_dir()?),
+        )
+    }
+
+    pub fn load_workspace(
+        config: &crate::live::config::general::ManagementConfig,
+        root: &std::path::Path,
+    ) -> Result<Self> {
+        Self::resolve(config, |key| std::env::var(key), || Ok(root.to_owned()))
+    }
+
+    fn resolve(
+        config: &crate::live::config::general::ManagementConfig,
+        environment: impl FnOnce(&str) -> std::result::Result<String, std::env::VarError>,
+        workspace: impl FnOnce() -> std::io::Result<std::path::PathBuf>,
+    ) -> Result<Self> {
+        if let Some(file) = &config.credentials_file {
+            return Self::from_file(std::path::Path::new(file));
+        }
+        match environment(&config.credentials_env) {
+            Ok(text) => Self::from_json(&text),
+            Err(std::env::VarError::NotPresent)
+                if config.credentials_env == "MARKETFORGE_MANAGEMENT_CREDENTIALS" =>
             {
-                use std::os::unix::fs::PermissionsExt;
-                let m = std::fs::symlink_metadata(file)
-                    .map_err(|_| error("credentials_unavailable", "credential file unavailable"))?;
-                if !m.is_file() || m.len() > 65536 || m.permissions().mode() & 0o077 != 0 {
-                    return Err(error(
-                        "credentials_invalid",
-                        "credential file must be a private regular file",
-                    ));
-                }
+                let root = workspace().map_err(|_| {
+                    error(
+                        "credentials_unavailable",
+                        "cannot resolve management credential workspace",
+                    )
+                })?;
+                Self::from_file(&root.join(".secrets/live-management.json")).map_err(|cause| {
+                    error(
+                        &cause.code,
+                        &format!("workspace .secrets/live-management.json ({})", cause.detail),
+                    )
+                })
             }
-            std::fs::read_to_string(file)
-                .map_err(|_| error("credentials_unavailable", "credential file unavailable"))?
-        } else {
-            std::env::var(&config.credentials_env).map_err(|_| {
-                error(
-                    "credentials_unavailable",
-                    "configured credential environment variable missing",
-                )
-            })?
-        };
+            Err(_) => Err(error(
+                "credentials_unavailable",
+                "configured management credential environment variable missing or invalid",
+            )),
+        }
+    }
+
+    fn from_file(file: &std::path::Path) -> Result<Self> {
+        let text = crate::shared::secret_file::read(file, 65536).map_err(|cause| {
+            if cause.kind() == std::io::ErrorKind::InvalidData {
+                error("credentials_invalid", "management credentials require a bounded private regular UTF-8 JSON file owned by the running user")
+            } else {
+                error("credentials_unavailable", &format!("cannot read the selected management credential file ({})", cause.kind()))
+            }
+        })?;
         Self::from_json(&text)
     }
     pub fn authenticate(&self, token: &str) -> Result<Principal> {
@@ -138,6 +170,57 @@ mod tests {
         assert!(Credentials::from_json(&duplicate).is_err());
         assert!(Credentials::from_json(&"x".repeat(65537)).is_err());
     }
+    #[cfg(unix)]
+    #[test]
+    fn workspace_credentials_preserve_selected_source_precedence() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let config = ManagementConfig::default();
+        let missing = |_: &str| Err(std::env::VarError::NotPresent);
+        assert!(
+            Credentials::resolve(&config, missing, || Ok(root.to_owned()))
+                .err()
+                .unwrap()
+                .detail
+                .contains(".secrets/live-management.json")
+        );
+        std::fs::create_dir(root.join(".secrets")).unwrap();
+        let file = root.join(".secrets/live-management.json");
+        std::fs::write(&file, json()).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let credentials = Credentials::resolve(&config, missing, || Ok(root.to_owned())).unwrap();
+        assert_eq!(
+            credentials.authenticate(TOKEN).unwrap().role(),
+            Role::Viewer
+        );
+
+        let environment = |_: &str| Ok(json().replace("viewer", "operator"));
+        let credentials =
+            Credentials::resolve(&config, environment, || Ok(root.to_owned())).unwrap();
+        assert_eq!(
+            credentials.authenticate(TOKEN).unwrap().role(),
+            Role::Operator
+        );
+        assert!(
+            Credentials::resolve(&config, |_| Ok(TOKEN.to_owned()), || Ok(root.to_owned()))
+                .is_err()
+        );
+
+        let explicit = ManagementConfig {
+            credentials_file: Some(file.display().to_string()),
+            ..config
+        };
+        let credentials =
+            Credentials::resolve(&explicit, environment, || Ok(root.to_owned())).unwrap();
+        assert_eq!(
+            credentials.authenticate(TOKEN).unwrap().role(),
+            Role::Viewer
+        );
+        std::fs::remove_file(file).unwrap();
+        assert!(Credentials::resolve(&explicit, environment, || Ok(root.to_owned())).is_err());
+    }
+
     #[test]
     fn credential_files_must_be_private_regular_files() {
         use std::os::unix::fs::{PermissionsExt, symlink};
