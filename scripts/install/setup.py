@@ -10,9 +10,64 @@ import sys
 import tempfile
 from pathlib import Path
 
+import tomlkit
+from tomlkit.exceptions import TOMLKitError
+
 from forge.shared.errors import MarketForgeError
 from forge.shared.terminal.editor import editor_command
 from forge.startup.context import build_context
+
+
+def read_live_toml(path: Path, *, description: str) -> bytes:
+    if not path.is_file():
+        raise MarketForgeError(f"{description} is missing or not a file: {path}")
+    content = path.read_bytes()
+    try:
+        tomlkit.parse(content.decode("utf-8"))
+    except (TOMLKitError, UnicodeError) as error:
+        raise MarketForgeError(
+            f"{description} contains invalid TOML: {path}"
+        ) from error
+    return content
+
+
+def initialize_live_general(root: Path) -> None:
+    # Live resolves this path from the checkout, independently of Forge storage settings.
+    directory = root / "data/.config/live"
+    target = directory / "general.toml"
+    template = directory / "general.example.toml"
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        try:
+            target.lstat()
+        except FileNotFoundError:
+            content = read_live_toml(
+                template, description="Live configuration template"
+            )
+            initialized = False
+            with tempfile.NamedTemporaryFile(dir=directory) as temporary:
+                temporary.write(content)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+                # Publish complete contents atomically without replacing an operator file.
+                try:
+                    os.link(temporary.name, target)
+                except FileExistsError:
+                    pass
+                else:
+                    initialized = True
+            if initialized:
+                print(f"  Initialized Live configuration at {target}.")
+                return
+
+        read_live_toml(target, description="Existing Live configuration")
+        print(f"  Preserved existing Live configuration at {target}.")
+    except OSError as error:
+        # Print filesystem context without reading or displaying configuration values.
+        raise MarketForgeError(
+            f"Could not initialize or check Live configuration at {target} "
+            f"using {template}: {error.strerror}"
+        ) from error
 
 
 def workspace(root: Path) -> None:
@@ -35,6 +90,7 @@ def workspace(root: Path) -> None:
             "in the existing application configuration."
         )
     context.paths.ensure_application_directories()
+    initialize_live_general(context.paths.root)
     print("  Workspace ready. Forge's editor command resolves on PATH.")
 
 

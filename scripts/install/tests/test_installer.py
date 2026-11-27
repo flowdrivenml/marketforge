@@ -18,6 +18,7 @@ from scripts.install import provision, setup
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS = ROOT / "scripts/install"
+LIVE_CONFIG = Path("data/.config/live")
 
 
 def bash(source: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -237,11 +238,112 @@ def test_postgres_stage_stops_before_dependent_actions(
     assert ("provision\n" in result.stdout) == (code == 4 and not skip)
 
 
+@pytest.fixture
+def live_template(workspace: Path) -> Path:
+    path = workspace / LIVE_CONFIG / "general.example.toml"
+    path.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / LIVE_CONFIG / path.name, path)
+    return path
+
+
+@pytest.mark.parametrize(
+    "problem", ["missing", "unreadable", "invalid", "link", "mkdir"]
+)
+def test_live_configuration_initialization_failure(
+    workspace: Path,
+    live_template: Path,
+    problem: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = live_template.with_name("general.toml")
+    expected = "Live configuration template"
+    if problem == "missing":
+        live_template.unlink()
+    elif problem == "unreadable":
+        read_bytes = Path.read_bytes
+
+        def fail_template_read(path: Path) -> bytes:
+            if path == live_template:
+                raise PermissionError(13, "Permission denied", path)
+            return read_bytes(path)
+
+        monkeypatch.setattr(Path, "read_bytes", fail_template_read)
+        expected = "Permission denied"
+    elif problem == "invalid":
+        live_template.write_text("[invalid")
+        expected = "contains invalid TOML"
+    elif problem == "link":
+
+        def fail_publish(*_args: object) -> None:
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(os, "link", fail_publish)
+        expected = "No space left on device"
+    else:
+        live_template.unlink()
+        live_template.parent.rmdir()
+        live_template.parent.touch()
+        expected = "Could not initialize or check Live configuration"
+
+    with pytest.raises(MarketForgeError, match=expected):
+        setup.initialize_live_general(workspace)
+    assert not target.exists()
+    assert "Initialized" not in capsys.readouterr().out
+    if problem == "link":
+        assert list(live_template.parent.iterdir()) == [live_template]
+
+
+def test_live_configuration_invalid_operator_file_is_preserved(
+    workspace: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = workspace / LIVE_CONFIG / "general.toml"
+    target.parent.mkdir(parents=True)
+    invalid = b"[invalid\r\n"
+    target.write_bytes(invalid)
+
+    with pytest.raises(
+        MarketForgeError, match="Existing Live configuration contains invalid TOML"
+    ):
+        setup.initialize_live_general(workspace)
+    assert target.read_bytes() == invalid
+    assert "Initialized" not in capsys.readouterr().out
+
+
+def test_live_configuration_dangling_operator_symlink_is_preserved(
+    workspace: Path, live_template: Path
+) -> None:
+    target = live_template.with_name("general.toml")
+    target.symlink_to("operator-settings.toml")
+    with pytest.raises(MarketForgeError, match="Existing Live configuration"):
+        setup.initialize_live_general(workspace)
+    assert target.readlink() == Path("operator-settings.toml")
+
+
 def test_workspace_and_launcher_reuse(
-    workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    workspace: Path,
+    live_template: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(shutil, "which", lambda _: "/fixture/editor")
     setup.workspace(workspace)
+    target = live_template.with_name("general.toml")
+    defaults = live_template.read_bytes()
+    assert target.read_bytes() == defaults
+    assert "Initialized Live configuration" in capsys.readouterr().out
+    setup.workspace(workspace)
+    assert target.read_bytes() == defaults
+    assert "Preserved existing Live configuration" in capsys.readouterr().out
+    operator_config = (
+        defaults.replace(b"workers = 1", b"workers = 3").replace(
+            b"127.0.0.1:8080", b"127.0.0.1:8180"
+        )
+        + b"\r\n# Operator settings\r\n"
+    )
+    target.write_bytes(operator_config)
+    live_template.unlink()
     config = workspace / "data/.config/forge/marketforge.toml"
     assert 'editor = "nvim"' in config.read_text()
     config.write_text('[presentation]\neditor = "custom-editor"\n')
@@ -250,6 +352,8 @@ def test_workspace_and_launcher_reuse(
     setup.workspace(workspace)
     assert 'editor = "custom-editor"' in config.read_text()
     assert raw.read_bytes() == b"preserve"
+    assert target.read_bytes() == operator_config
+    assert "Preserved existing Live configuration" in capsys.readouterr().out
     profile = tmp_path / "profile"
     monkeypatch.setattr(Path, "home", classmethod(lambda _: profile))
     setup.launchers(workspace, "runtime")

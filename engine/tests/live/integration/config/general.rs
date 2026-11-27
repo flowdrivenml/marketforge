@@ -13,12 +13,13 @@ use marketforge_engine::live::config::{ConfigError, GeneralConfig, LogLevel};
 fn general_config_path() -> PathBuf {
     PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../data/.config/live/general.toml"
+        "/tests/live/support/data/config/general.toml"
     ))
 }
 
 fn load_general() -> GeneralConfig {
-    GeneralConfig::load(general_config_path()).expect("Failed to load general.toml")
+    GeneralConfig::load(general_config_path())
+        .expect("Failed to load the general configuration fixture")
 }
 
 // ============================================================
@@ -66,7 +67,7 @@ impl Drop for TempToml {
 // ============================================================
 
 #[test]
-fn load_real_general_config() {
+fn load_general_config_fixture() {
     let config = load_general();
 
     assert_eq!(config.schema_version, 1);
@@ -75,7 +76,7 @@ fn load_real_general_config() {
 }
 
 #[test]
-fn verify_real_general_config_values() {
+fn verify_general_config_fixture_values() {
     let config = load_general();
 
     assert_eq!(config.runtime.shutdown_timeout_seconds, 15);
@@ -120,7 +121,7 @@ fn verify_real_general_config_values() {
 // ============================================================
 
 #[test]
-fn real_general_config_preserves_all_fields() {
+fn general_config_fixture_preserves_all_fields() {
     let path = general_config_path();
 
     let original = fs::read_to_string(&path).unwrap();
@@ -284,6 +285,7 @@ fn loaded_config_is_independent_of_original_file() {
 
     assert_eq!(config.schema_version, 1);
     assert_eq!(config.publication.max_connections, 64);
+    assert_eq!(fs::read_to_string(general_config_path()).unwrap(), original);
 
     config.validate().unwrap();
 }
@@ -295,4 +297,18 @@ fn cloned_config_preserves_all_values() {
     let cloned = config.clone();
 
     assert_eq!(config, cloned);
+}
+
+#[test]
+fn installation_template_loads_and_keeps_recording_disabled() {
+    let template = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../data/.config/live/general.example.toml"
+    ));
+    // Loading requires all mandatory sections and runs semantic validation.
+    let config = GeneralConfig::load(template).expect("Installation template must load");
+
+    assert!(!config.recording.enabled);
+    assert!(!config.metrics.prometheus.enabled);
+    assert_eq!(config.runtime.processing.unwrap(), Default::default());
 }

@@ -1,49 +1,6 @@
 use marketforge_engine::live::config::GeneralConfig;
 
-const VALID_CONFIG: &str = r#"
-schema_version = 1
-
-[runtime]
-shutdown_timeout_seconds = 15
-
-[runtime.processing]
-workers = 4
-ready_queue_capacity = 1024
-max_events_per_turn = 512
-
-[publication]
-socket_path = "data/.live/marketforge-data.sock"
-max_connections = 64
-subscriber_queue_bytes = 16777216
-
-[control]
-listen_address = "127.0.0.1:8080"
-
-[recording]
-enabled = false
-batch_max_records = 10000
-batch_max_delay_ms = 100
-
-[metrics]
-enabled = true
-snapshot_interval_ms = 1000
-
-[metrics.prometheus]
-enabled = false
-listen_address = "127.0.0.1:9091"
-path = "/metrics"
-max_concurrent_requests = 8
-max_response_bytes = 4194304
-cache_interval_ms = 1000
-
-[logging]
-level = "info"
-
-[defaults.recovery]
-initial_backoff_ms = 500
-max_backoff_seconds = 60
-jitter = true
-"#;
+const VALID_CONFIG: &str = include_str!("../../support/data/config/general.toml");
 
 fn config() -> GeneralConfig {
     toml::from_str(VALID_CONFIG).unwrap()
