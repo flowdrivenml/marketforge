@@ -51,6 +51,7 @@ pub(crate) enum SlotEventLoopError {
 pub(crate) enum SlotEventCommand {
     RetireRoute {
         stream_id: String,
+        selector: NativeMessageSelector,
         response: oneshot::Sender<()>,
     },
 
@@ -137,10 +138,13 @@ impl SlotEventLoop {
         mut coordinator: SlotEventCoordinator,
     ) -> Result<(), SlotEventLoopError> {
         let mut generations = ObservedGenerations::default();
+        let retired = coordinator.retired_routes();
 
         loop {
+            coordinator.reclaim_routes()?;
             tokio::select! {
                             biased;
+            _ = retired.changed.notified() => {}
             // ============================================
             // INTERNAL ROUTING CONTROL
             // ============================================
@@ -153,8 +157,8 @@ impl SlotEventLoop {
                 };
 
                 match command {
-                    SlotEventCommand::RetireRoute { stream_id, response } => {
-                        coordinator.retire_route(stream_id);
+                    SlotEventCommand::RetireRoute { stream_id, selector, response } => {
+                        coordinator.retire_route(stream_id, selector);
                         let _ = response.send(());
                     }
 

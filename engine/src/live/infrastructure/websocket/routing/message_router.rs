@@ -312,7 +312,6 @@ impl NativeMessageRouter {
     // UNREGISTER
     // ========================================================
 
-    #[cfg(test)]
     pub fn unregister(&mut self, stream_id: &str) -> Result<(), NativeMessageRouterError> {
         self.selectors
             .remove(stream_id)

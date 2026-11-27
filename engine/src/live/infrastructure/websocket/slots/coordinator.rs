@@ -9,8 +9,13 @@ use crate::live::infrastructure::websocket::routing::frame_dispatcher::{
 };
 use crate::live::infrastructure::websocket::routing::message_router::NativeMessageSelector;
 use crate::live::infrastructure::websocket::subscriptions::driver::SubscriptionDriverEvent;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use crate::live::infrastructure::websocket::subscriptions::restoration::PendingRetirements;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::{Arc, Mutex},
+};
 use thiserror::Error;
+use tokio::sync::Notify;
 use tokio_tungstenite::tungstenite::Message;
 
 // ============================================================
@@ -41,6 +46,44 @@ pub(crate) enum SlotEventCoordinatorError {
     Availability(#[from] StreamAvailabilityError),
 }
 
+enum RetirementBoundary {
+    Unpublished,
+    Published(Option<ConnectionStamp>),
+}
+
+struct RetiredRoute {
+    selector: NativeMessageSelector,
+    boundary: RetirementBoundary,
+}
+
+/// The event loop removes selectors before releasing the manager's exclusion.
+#[derive(Default)]
+pub(crate) struct RouteRetirements {
+    routes: Mutex<BTreeMap<String, RetiredRoute>>,
+    pub changed: Notify,
+}
+
+impl RouteRetirements {
+    pub fn blocks(&self, stream_id: &str, selector: &NativeMessageSelector) -> bool {
+        let routes = self.routes.lock().expect("retired routes lock");
+        routes.contains_key(stream_id) || routes.values().any(|route| &route.selector == selector)
+    }
+
+    pub fn len(&self) -> usize {
+        self.routes.lock().expect("retired routes lock").len()
+    }
+
+    pub fn publish(&self, cutoff: Option<ConnectionStamp>) {
+        let mut routes = self.routes.lock().expect("retired routes lock");
+        for route in routes.values_mut() {
+            if matches!(route.boundary, RetirementBoundary::Unpublished) {
+                route.boundary = RetirementBoundary::Published(cutoff.clone());
+            }
+        }
+        self.changed.notify_one();
+    }
+}
+
 // ============================================================
 // COORDINATOR
 // ============================================================
@@ -66,7 +109,8 @@ pub(crate) struct SlotEventCoordinator {
     early: BTreeMap<String, VecDeque<FencedMessage<Message>>>,
 
     early_count: usize,
-    retired: BTreeSet<String>,
+    retired: Arc<RouteRetirements>,
+    pending_retirements: PendingRetirements,
 
     maximum_early_frames: usize,
 }
@@ -92,7 +136,8 @@ impl SlotEventCoordinator {
             availability,
             early: BTreeMap::new(),
             early_count: 0,
-            retired: BTreeSet::new(),
+            retired: Arc::default(),
+            pending_retirements: PendingRetirements::default(),
             maximum_early_frames,
         })
     }
@@ -114,12 +159,62 @@ impl SlotEventCoordinator {
 
         Ok(())
     }
-    pub fn retire_route(&mut self, stream_id: String) {
+    pub fn retired_routes(&self) -> Arc<RouteRetirements> {
+        self.retired.clone()
+    }
+
+    pub fn retirement_state(&mut self, pending: PendingRetirements) -> Arc<RouteRetirements> {
+        self.pending_retirements = pending;
+        self.retired.clone()
+    }
+
+    pub fn retire_route(&mut self, stream_id: String, selector: NativeMessageSelector) {
         if let Some(frames) = self.early.remove(&stream_id) {
             self.early_count -= frames.len();
         }
         self.availability.retire(&stream_id);
-        self.retired.insert(stream_id);
+        self.retired
+            .routes
+            .lock()
+            .expect("retired routes lock")
+            .insert(
+                stream_id,
+                RetiredRoute {
+                    selector,
+                    boundary: RetirementBoundary::Unpublished,
+                },
+            );
+    }
+
+    pub fn reclaim_routes(&mut self) -> Result<(), SlotEventCoordinatorError> {
+        let mut routes = self.retired.routes.lock().expect("retired routes lock");
+        if routes.is_empty() {
+            return Ok(());
+        }
+        let current = self.fence.current_stamp();
+        let reclaim: Vec<_> = routes
+            .iter()
+            .filter_map(|(id, route)| match &route.boundary {
+                RetirementBoundary::Published(None) => Some(id.clone()),
+                RetirementBoundary::Published(Some(cutoff))
+                    if current.as_ref().is_none_or(|stamp| {
+                        stamp.generation().get() > cutoff.generation().get()
+                    }) =>
+                {
+                    Some(id.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        for id in reclaim {
+            self.frames.remove_route(&id)?;
+            self.pending_retirements
+                .lock()
+                .expect("pending retirement lock")
+                .remove(&id);
+            routes.remove(&id);
+        }
+        Ok(())
     }
 
     pub fn on_frame(
@@ -139,7 +234,10 @@ impl SlotEventCoordinator {
         }
 
         let mut routed = self.frames.route(message)?;
-        routed.retain(|(id, _)| !self.retired.contains(id));
+        {
+            let retired = self.retired.routes.lock().expect("retired routes lock");
+            routed.retain(|(id, _)| !retired.contains_key(id));
+        }
         let needed = routed
             .iter()
             .filter(|(stream_id, _)| !self.availability.is_connected(stream_id))
@@ -179,7 +277,13 @@ impl SlotEventCoordinator {
             SubscriptionDriverEvent::Confirmed { token, .. } => {
                 let stream_id = token.stream_id().to_owned();
 
-                if self.retired.contains(&stream_id) {
+                if self
+                    .retired
+                    .routes
+                    .lock()
+                    .expect("retired routes lock")
+                    .contains_key(&stream_id)
+                {
                     return Ok(());
                 }
                 let stamp = token.connection().clone();
@@ -339,6 +443,37 @@ mod tests {
     // ========================================================
     // EARLY-FRAME BUFFERING
     // ========================================================
+
+    #[tokio::test]
+    async fn reclamation_preserves_fenced_delivery_after_selector_reuse() {
+        let (mut coordinator, fence, old, mut rx) = setup(8);
+        let selector =
+            NativeMessageSelector::new(vec![("/stream".into(), json!("btcusdt@trade"))]).unwrap();
+        let state = coordinator.retired_routes();
+        coordinator.retire_route("btc".into(), selector.clone());
+        state.publish(Some(old.clone()));
+        coordinator.reclaim_routes().unwrap();
+        assert!(state.blocks("btc", &selector));
+        coordinator.on_frame(native_frame(old.clone())).unwrap();
+        assert_eq!(coordinator.early_frame_count(), 0);
+
+        fence.failed(&old).unwrap();
+        coordinator.on_connection_lost(&old).unwrap();
+        let current = fence.begin_connect().unwrap();
+        fence.connected(&current).unwrap();
+        coordinator.reclaim_routes().unwrap();
+        assert_eq!(state.len(), 0);
+        coordinator
+            .extend_routes(vec![("btc".into(), selector)])
+            .unwrap();
+        assert!(matches!(
+            coordinator.on_frame(native_frame(old)),
+            Err(SlotEventCoordinatorError::StaleGeneration)
+        ));
+        assert!(rx.try_recv().is_err());
+        coordinator.on_frame(native_frame(current)).unwrap();
+        assert_eq!(coordinator.early_frame_count(), 1);
+    }
 
     #[tokio::test]
     async fn buffers_data_before_subscription_confirmation() {

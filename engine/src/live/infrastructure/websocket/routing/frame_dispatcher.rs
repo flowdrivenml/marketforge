@@ -97,6 +97,10 @@ impl NativeFrameDispatcher {
 
         Ok(())
     }
+    pub fn remove_route(&mut self, stream_id: &str) -> Result<(), NativeFrameDispatchError> {
+        Ok(self.router.unregister(stream_id)?)
+    }
+
     pub fn route(
         &self,
         message: Message,

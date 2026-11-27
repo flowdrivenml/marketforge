@@ -1,5 +1,4 @@
 use crate::live::infrastructure::websocket::subscriptions::restoration::PendingRetirements;
-use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 use thiserror::Error;
 
@@ -108,7 +107,7 @@ impl Drop for EventLoopTerminationGuard {
 ///
 /// Stream processors never interact with this type.
 pub(crate) struct ManagedConnectionSlot {
-    retired_routes: BTreeMap<String, NativeMessageSelector>,
+    retired_routes: Arc<super::coordinator::RouteRetirements>,
     retirements: PendingRetirements,
     retirement_capacity: usize,
     task: Option<ConnectionSlotTask>,
@@ -173,12 +172,14 @@ impl ManagedConnectionSlot {
 
         let availability = StreamAvailability::new(streams);
 
-        let coordinator = SlotEventCoordinator::new(
+        let mut coordinator = SlotEventCoordinator::new(
             fence.clone(),
             frame_dispatcher,
             availability,
             maximum_early_frames,
         )?;
+
+        let retired_routes = coordinator.retirement_state(retirements.clone());
 
         // ====================================================
         // SUPERVISION
@@ -222,7 +223,7 @@ impl ManagedConnectionSlot {
         });
 
         Ok(Self {
-            retired_routes: BTreeMap::new(),
+            retired_routes,
             retirements,
             retirement_capacity: event_capacity,
             task: Some(task),
@@ -243,7 +244,7 @@ impl ManagedConnectionSlot {
             .take()
             .map(|receiver| (Arc::downgrade(&self.liveness), receiver))
     }
-    /// Add routing identities and then publish updated demand.
+    /// Add routing identities before the manager publishes updated demand.
     ///
     /// The ordering is intentional:
     ///
@@ -251,13 +252,11 @@ impl ManagedConnectionSlot {
     /// 2. Wait until the event-loop owner acknowledges them.
     /// 3. Publish the complete new subscription snapshot.
     ///
-    /// This method supports additive routing updates.
-    ///
-    /// Removing or changing existing selectors requires
-    /// supervised slot replacement.
-    pub async fn extend_demand(
+    /// Active selectors remain immutable. The event loop removes retired
+    /// selectors after their physical generation loses authority.
+    pub async fn install_routes(
         &mut self,
-        desired: DesiredSubscriptionSnapshot,
+        revision: u64,
         additional_routes: Vec<(String, NativeMessageSelector)>,
     ) -> Result<(), ManagedConnectionSlotError> {
         if self.event_loop_finished() {
@@ -275,7 +274,7 @@ impl ManagedConnectionSlot {
             .ok_or(ManagedConnectionSlotError::EventLoopTerminated)?
             .demand_revision();
 
-        if desired.revision() <= current_revision {
+        if revision <= current_revision {
             return Err(ManagedConnectionSlotError::Task(
                 ConnectionSlotTaskError::StaleRevision,
             ));
@@ -295,9 +294,7 @@ impl ManagedConnectionSlot {
             .await
             .map_err(|_| ManagedConnectionSlotError::ControlChannelUnavailable)??;
 
-        // New routes are installed before the runner can
-        // observe the increased desired-demand revision.
-        self.publish_demand(desired)
+        Ok(())
     }
 
     pub fn accepts(
@@ -306,16 +303,17 @@ impl ManagedConnectionSlot {
         selector: &NativeMessageSelector,
         remaining: Option<usize>,
     ) -> bool {
-        !self.retired_routes.contains_key(stream_id)
-            && !self
-                .retired_routes
-                .values()
-                .any(|retired| retired == selector)
+        !self.retired_routes.blocks(stream_id, selector)
             && remaining.is_none_or(|remaining| {
                 self.retirements
                     .lock()
                     .is_ok_and(|pending| pending.len() < remaining)
             })
+    }
+
+    #[cfg(test)]
+    pub fn exhaust_retirement_capacity(&mut self) {
+        self.retirement_capacity = 0;
     }
 
     pub fn has_retirement_capacity(&self) -> bool {
@@ -331,6 +329,7 @@ impl ManagedConnectionSlot {
         self.commands
             .send(SlotEventCommand::RetireRoute {
                 stream_id: stream_id.clone(),
+                selector,
                 response,
             })
             .await
@@ -340,8 +339,7 @@ impl ManagedConnectionSlot {
         self.retirements
             .lock()
             .map_err(|_| ManagedConnectionSlotError::ControlChannelUnavailable)?
-            .insert(stream_id.clone());
-        self.retired_routes.insert(stream_id, selector);
+            .insert(stream_id);
         Ok(())
     }
 
@@ -350,10 +348,14 @@ impl ManagedConnectionSlot {
         mut desired: DesiredSubscriptionSnapshot,
     ) -> Result<(), ManagedConnectionSlotError> {
         desired.retirements = Some(self.retirements.clone());
-        self.task
+        let task = self
+            .task
             .as_mut()
-            .ok_or(ManagedConnectionSlotError::EventLoopTerminated)?
-            .update_demand(desired)?;
+            .ok_or(ManagedConnectionSlotError::EventLoopTerminated)?;
+        task.update_demand(desired)?;
+        // Sample after publishing so a generation that read old demand is
+        // included even if its handshake overlapped the manager update.
+        self.retired_routes.publish(task.fence().current_stamp());
         Ok(())
     }
 
