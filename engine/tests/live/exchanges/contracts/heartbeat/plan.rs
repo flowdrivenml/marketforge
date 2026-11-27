@@ -149,3 +149,28 @@ fn periodic_heartbeats_preserve_native_messages() {
         assert!(!application.protocol.request_text().is_empty());
     }
 }
+
+#[test]
+fn gateio_disabled_channel_heartbeat_is_optional_but_composition_is_unsupported() {
+    for profile in ["gateio_spot", "gateio_linear", "gateio_inverse"] {
+        let mut config = load(profile);
+        let optional = config.websocket.application_heartbeat.as_ref().unwrap();
+        assert!(!optional.enabled);
+        assert_eq!(
+            HeartbeatPlanCompiler::compile(&config).unwrap().mode(),
+            HeartbeatExecutionMode::ServerControl
+        );
+        config
+            .websocket
+            .application_heartbeat
+            .as_mut()
+            .unwrap()
+            .enabled = true;
+        let error = HeartbeatPlanCompiler::compile(&config).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("requires a combined heartbeat plan")
+        );
+    }
+}
