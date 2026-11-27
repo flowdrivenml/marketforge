@@ -15,6 +15,7 @@ use super::{error::ConfigError, exchange::ExchangeConfig};
 #[derive(Debug, Clone, Default)]
 pub struct ExchangeConfigStore {
     profiles: BTreeMap<String, Arc<ExchangeConfig>>,
+    unavailable: BTreeMap<String, String>,
 }
 
 impl ExchangeConfigStore {
@@ -91,7 +92,7 @@ impl ExchangeConfigStore {
         Ok(store)
     }
 
-    /// Restrict immutable configuration to the explicitly restored Source profiles.
+    /// Restrict immutable configuration to the explicitly selected profiles.
     pub fn selected(&self, names: &std::collections::BTreeSet<String>) -> Result<Self, String> {
         let mut profiles = BTreeMap::new();
         for name in names {
@@ -99,12 +100,38 @@ impl ExchangeConfigStore {
                 name.clone(),
                 self.profiles
                     .get(name)
-                    .ok_or_else(|| format!("missing exchange profile {name}"))?
+                    .ok_or_else(|| self.unavailable_message(name))?
                     .clone(),
             );
         }
-        Ok(Self { profiles })
+        Ok(Self {
+            profiles,
+            unavailable: BTreeMap::new(),
+        })
     }
+    /// Retain diagnostics for installed profiles excluded from operational use.
+    pub fn without_unavailable(mut self, unavailable: BTreeMap<String, String>) -> Self {
+        for (name, reason) in unavailable {
+            if self.profiles.remove(&name).is_some() {
+                self.unavailable.insert(name, reason);
+            }
+        }
+        self
+    }
+
+    /// Resolve a requested Source profile, including any startup prerequisite failure.
+    pub fn require_operational(&self, profile: &str) -> Result<&ExchangeConfig, String> {
+        self.get(profile)
+            .ok_or_else(|| self.unavailable_message(profile))
+    }
+
+    fn unavailable_message(&self, profile: &str) -> String {
+        match self.unavailable.get(profile) {
+            Some(reason) => format!("exchange profile {profile} unavailable: {reason}"),
+            None => format!("missing exchange profile {profile}"),
+        }
+    }
+
     /// Retrieve a profile by its unique name.
     ///
     /// Example: "binance_spot".

@@ -3,6 +3,7 @@
 mod acquisition;
 #[path = "../integration/derived/harness.rs"]
 mod definitions;
+mod deployment;
 #[path = "../integration/rest/support.rs"]
 mod rest_support;
 #[path = "../support/websocket_server.rs"]
@@ -316,6 +317,8 @@ async fn unsupported_recording_and_binding_failure_are_preflighted() {
 }
 #[test]
 fn executable_validation_is_offline_and_rejects_invalid_configuration() {
+    let dir = tempfile::tempdir().unwrap();
+    let general = deployment::general(dir.path());
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_marketforge-live"))
         .args([
             "--validate-only",
@@ -326,6 +329,8 @@ fn executable_validation_is_offline_and_rejects_invalid_configuration() {
             "--rest-weight",
             "binance_spot=6000/60",
         ])
+        .arg("--general")
+        .arg(general)
         .env_remove("MARKETFORGE_DATABASE_URL")
         .output()
         .unwrap();
