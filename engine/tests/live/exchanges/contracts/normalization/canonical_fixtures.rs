@@ -19,7 +19,7 @@ use marketforge_engine::live::{
 // ============================================================
 
 fn fixture_directory() -> PathBuf {
-    crate::support::data(".cache/live/websocket-fixtures/trades")
+    crate::support::data("tests/live/websocket-fixtures/trades")
 }
 
 fn format_directory() -> PathBuf {

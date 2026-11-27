@@ -24,7 +24,7 @@ fn config_directory() -> PathBuf {
     crate::support::data(".config/live/exchanges")
 }
 
-fn load_configs() -> ExchangeConfigStore {
+pub(super) fn load_configs() -> ExchangeConfigStore {
     ExchangeConfigStore::load_dir(config_directory()).expect("exchange configurations must load")
 }
 
@@ -90,7 +90,10 @@ fn websocket_service(config: &ExchangeConfig) -> String {
 // REST BINDINGS
 // ============================================================
 
-fn rest_bindings(config: &ExchangeConfig) -> RestLimiterBindings {
+fn rest_bindings(
+    config: &ExchangeConfig,
+    weights: Option<&BTreeMap<String, (u64, u64)>>,
+) -> RestLimiterBindings {
     let service = rest_service(config);
 
     let shared = RestBudgetBinding::new(service.clone(), egress());
@@ -124,11 +127,18 @@ fn rest_bindings(config: &ExchangeConfig) -> RestLimiterBindings {
     };
 
     let shared_weight = binance_capacity.map(|capacity| {
+        let (capacity, seconds) = match weights {
+            Some(weights) => weights
+                .get(&config.exchange.profile)
+                .copied()
+                .expect("fixture collection requires verified Binance REST weights"),
+            None => (capacity, 60),
+        };
         let id = BudgetId::new(config.exchange.id, service, "request_weight", egress()).unwrap();
 
         ResolvedRestBudget {
             id,
-            quota: WindowQuota::new(capacity, Duration::from_secs(60)).unwrap(),
+            quota: WindowQuota::new(capacity, Duration::from_secs(seconds)).unwrap(),
         }
     });
 
@@ -144,7 +154,7 @@ fn rest_bindings(config: &ExchangeConfig) -> RestLimiterBindings {
 // WEBSOCKET BINDINGS
 // ============================================================
 
-fn websocket_bindings(config: &ExchangeConfig) -> WebSocketLimiterBindings {
+pub(crate) fn websocket_bindings(config: &ExchangeConfig) -> WebSocketLimiterBindings {
     let service = websocket_service(config);
 
     let shared = WebSocketBudgetBinding::new(service.clone(), egress());
@@ -170,6 +180,22 @@ fn websocket_bindings(config: &ExchangeConfig) -> WebSocketLimiterBindings {
 /// The returned ExchangeLimiters owns its compiled
 /// catalogs and shared manager.
 fn build_profiles(store: &ExchangeConfigStore, names: &[&str]) -> ExchangeLimiters {
+    build_with_weights(store, names, None)
+}
+
+pub(super) fn build_capture_limiters(
+    store: &ExchangeConfigStore,
+    names: &[&str],
+    weights: &BTreeMap<String, (u64, u64)>,
+) -> ExchangeLimiters {
+    build_with_weights(store, names, Some(weights))
+}
+
+fn build_with_weights(
+    store: &ExchangeConfigStore,
+    names: &[&str],
+    weights: Option<&BTreeMap<String, (u64, u64)>>,
+) -> ExchangeLimiters {
     let bindings = names
         .iter()
         .map(|name| {
@@ -177,7 +203,7 @@ fn build_profiles(store: &ExchangeConfigStore, names: &[&str]) -> ExchangeLimite
                 .get(name)
                 .unwrap_or_else(|| panic!("missing profile: {name}"));
 
-            (rest_bindings(config), websocket_bindings(config))
+            (rest_bindings(config, weights), websocket_bindings(config))
         })
         .collect::<Vec<_>>();
 
@@ -551,15 +577,19 @@ fn live_rest_request(
 /// No trading.
 /// No automatic retries.
 ///
-/// Successful native JSON responses are saved as fixtures.
+/// The fixture workflow reuses this execution loop with an explicit capture plan.
 #[tokio::test]
 #[ignore = "explicit live exchange acceptance test"]
 async fn production_rest_service_bulk_live_acceptance() {
-    use std::{env, fs};
+    let configs = load_configs();
+    run(&configs, None).await;
+}
 
-    use marketforge_engine::live::infrastructure::rest::{
-        ExchangeRestBootstrap, RestClientConfig, RestFactoryFeedbackPolicy,
-    };
+pub(super) async fn run(
+    configs: &ExchangeConfigStore,
+    capture: Option<(&crate::capture::Capture, &ExchangeLimiters)>,
+) {
+    use std::env;
 
     // ========================================================
     // EXPLICIT LIVE TEST CONTROLS
@@ -575,7 +605,7 @@ async fn production_rest_service_bulk_live_acceptance() {
     let run_all = env::var("LIVE_REST_ALL").ok().as_deref() == Some("1");
 
     assert!(
-        run_all || profile_filter.is_some(),
+        capture.is_some() || run_all || profile_filter.is_some(),
         "set LIVE_REST_PROFILE=<profile> or LIVE_REST_ALL=1"
     );
 
@@ -603,9 +633,9 @@ async fn production_rest_service_bulk_live_acceptance() {
     // LOAD ALL 15 REAL CONFIGURATIONS
     // ========================================================
 
-    let configs = load_configs();
-
-    assert_eq!(configs.len(), 15);
+    if capture.is_none() {
+        assert_eq!(configs.len(), 15);
+    }
 
     let names = configs.names().collect::<Vec<_>>();
 
@@ -613,9 +643,15 @@ async fn production_rest_service_bulk_live_acceptance() {
     // INITIALIZE SHARED LIMITER INFRASTRUCTURE
     // ========================================================
 
-    let limiters = build_profiles(&configs, &names);
+    let owned_limiters;
+    let limiters = if let Some((_, limiters)) = capture {
+        limiters
+    } else {
+        owned_limiters = build_profiles(configs, &names);
+        &owned_limiters
+    };
 
-    assert_eq!(limiters.profile_count(), 15,);
+    assert_eq!(limiters.profile_count(), configs.len());
 
     let observer = limiters.manager();
 
@@ -648,8 +684,8 @@ async fn production_rest_service_bulk_live_acceptance() {
     // ========================================================
 
     let service = ExchangeRestBootstrap::build(
-        &configs,
-        &limiters,
+        configs,
+        limiters,
         feedback_policies,
         RestClientConfig {
             max_concurrent_requests: 1,
@@ -657,20 +693,6 @@ async fn production_rest_service_bulk_live_acceptance() {
         },
     )
     .expect("production REST bootstrap failed");
-
-    // ========================================================
-    // FIXTURE DIRECTORY
-    // ========================================================
-
-    // Keep these separate from fixtures collected
-    // through standalone reqwest.
-    //
-    // This lets us compare both execution paths.
-
-    let fixtures_dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/live-rest-service-fixtures");
-
-    fs::create_dir_all(&fixtures_dir).expect("cannot create fixture directory");
 
     // ========================================================
     // COUNTERS
@@ -718,6 +740,10 @@ async fn production_rest_service_bulk_live_acceptance() {
         // ====================================================
 
         for (endpoint_name, endpoint) in &config.rest.endpoints {
+            let relative = format!("rest-service-fixtures/{profile}__{endpoint_name}.json");
+            if capture.is_some_and(|(capture, _)| !capture.wants(&relative)) {
+                continue;
+            }
             let authentication = endpoint.authentication.as_deref().unwrap_or("none");
 
             // ================================================
@@ -791,14 +817,15 @@ async fn production_rest_service_bulk_live_acceptance() {
                     // SAVE NATIVE JSON FIXTURE
                     // ========================================
 
-                    let filename = format!("{profile}__{endpoint_name}.json");
-
-                    let path = fixtures_dir.join(filename);
-
-                    let bytes = serde_json::to_vec_pretty(response.body())
-                        .expect("cannot serialize response");
-
-                    fs::write(&path, bytes).expect("cannot save REST fixture");
+                    if let Some((capture, _)) = capture {
+                        let bytes =
+                            serde_json::to_vec(response.body()).expect("cannot serialize response");
+                        if let Err(error) = capture.save(&relative, &bytes) {
+                            failed += 1;
+                            failures.push(format!("{relative}: {error}"));
+                            continue;
+                        }
+                    }
 
                     passed += 1;
 
@@ -820,6 +847,11 @@ async fn production_rest_service_bulk_live_acceptance() {
 
                     println!("  FAIL       {detail}");
 
+                    if capture.is_some() && matches!(error.http_status(), Some(401 | 403)) {
+                        println!(
+                            "  IMPORT     {relative} (public capture denied: authentication or access policy)"
+                        );
+                    }
                     failures.push(detail);
 
                     // Stop on rate-limit feedback.
@@ -905,8 +937,6 @@ async fn production_rest_service_bulk_live_acceptance() {
     println!("Authentication skips:  {skipped_auth}");
     println!("Registered budgets:    {budget_count_before}");
     println!("Budgets with usage:    {used_budgets}");
-
-    println!("Fixtures directory:    {}", fixtures_dir.display(),);
 
     if stopped_on_throttle {
         println!();

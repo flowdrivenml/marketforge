@@ -451,11 +451,14 @@ mod tests {
         let compiled = DepthNormalizationCompiler::compile_levels(&config, 20_000).unwrap();
 
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../data/.cache/live/websocket-fixtures/depth")
+            .join("../data/tests/live/websocket-fixtures/depth")
             .join("binance_spot.json");
 
         let fixtures: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            serde_json::from_slice(&std::fs::read(&path).unwrap_or_else(|error| panic!(
+            "{}: {error}. Prepare Live fixtures with scripts/engine/live/fixtures.py (import or collect)",
+            path.display()
+        ))).unwrap();
 
         let message = &fixtures[0];
 

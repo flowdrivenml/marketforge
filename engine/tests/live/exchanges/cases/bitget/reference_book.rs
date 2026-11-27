@@ -45,7 +45,7 @@ fn fixtures(profile: &str) -> Vec<Value> {
     serde_json::from_slice(
         &crate::fixtures::read(
             data_root()
-                .join(".cache/live/websocket-fixtures/depth")
+                .join("tests/live/websocket-fixtures/depth")
                 .join(format!("{profile}.json")),
         )
         .unwrap(),

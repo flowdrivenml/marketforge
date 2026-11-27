@@ -17,10 +17,19 @@ credential provisioning, REST quota bindings and egress identity. See
 [Live runtime configuration wiring](../../development/live/runtime-configuration.md)
 for startup settings and the two supported live configuration mutations.
 
-The full offline Rust regression also uses captured exchange JSON under
-`data/.cache/live/rest-fixtures`, `rest-service-fixtures`, and
-`websocket-fixtures`. When verifying from a separate worktree, populate those
-ignored directories from the regression baseline's local captures.
+Offline exchange tests read native captures from the Git-ignored
+`data/tests/live/` directory. Prepare each worktree with the explicit fixture
+workflow before running those tests.
+
+```bash
+python3 scripts/engine/live/fixtures.py import --from /path/to/existing/captures
+python3 scripts/engine/live/fixtures.py check
+```
+
+Use `python3 scripts/engine/live/fixtures.py collect --help` to capture missing
+data from public endpoints. Normal test runs never collect from exchanges.
+The fixture inventory, verified quota inputs, and offline test commands are
+documented in the [Live fixture workflow](https://github.com/flowdrivenml/marketforge/blob/main/scripts/engine/live/README.md).
 
 ## Application
 

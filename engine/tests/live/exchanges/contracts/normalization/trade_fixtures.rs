@@ -17,7 +17,7 @@ use marketforge_engine::live::infrastructure::normalization::{
 // ============================================================
 
 fn fixture_directory() -> PathBuf {
-    crate::support::data(".cache/live/rest-service-fixtures")
+    crate::support::data("tests/live/rest-service-fixtures")
 }
 
 // ============================================================
@@ -259,7 +259,7 @@ fn extracts_all_real_rest_trade_fixtures() {
 
     assert!(
         root.is_dir(),
-        "REST fixture directory missing: {}",
+        "REST fixture directory missing: {}. Prepare Live fixtures with scripts/engine/live/fixtures.py (import or collect)",
         root.display()
     );
 
@@ -278,7 +278,11 @@ fn extracts_all_real_rest_trade_fixtures() {
 
     files.sort();
 
-    assert_eq!(files.len(), 35, "expected 35 REST fixtures");
+    assert_eq!(
+        files.len(),
+        35,
+        "expected 35 REST fixtures. Run scripts/engine/live/fixtures.py check"
+    );
 
     // ========================================================
     // SELECT TRADE ENDPOINTS

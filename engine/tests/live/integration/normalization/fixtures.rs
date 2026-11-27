@@ -7,7 +7,6 @@ use marketforge_engine::live::{
     stream::request::{CreateSourceStreamRequest, QuantityType, SourceChannel},
 };
 use std::{
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -33,11 +32,11 @@ pub const PROFILES: [&str; 15] = [
 ];
 
 pub fn data_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../data")
+    crate::support::data("")
 }
 
 pub fn fixture_root() -> PathBuf {
-    data_root().join(".cache/live")
+    data_root().join("tests/live")
 }
 
 pub fn factory() -> NormalizerFactory {
@@ -61,8 +60,7 @@ pub fn factory() -> NormalizerFactory {
 pub fn load_fixture(path: impl AsRef<Path>) -> Value {
     let path = path.as_ref();
 
-    let bytes = fs::read(path)
-        .unwrap_or_else(|error| panic!("missing fixture {}: {error}", path.display(),));
+    let bytes = crate::support::read_fixture(path).unwrap();
 
     serde_json::from_slice(&bytes)
         .unwrap_or_else(|error| panic!("invalid JSON fixture {}: {error}", path.display(),))

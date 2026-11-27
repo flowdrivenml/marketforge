@@ -1,11 +1,14 @@
-use std::{env, fs, path::PathBuf, time::Duration};
+use std::{env, time::Duration};
+
+use crate::capture::Capture;
 
 use marketforge_engine::live::{
     config::ExchangeConfigStore,
     config::exchange::RestEndpoint,
+    infrastructure::limiter::factory::{ExchangeLimiters, WeightParameters},
     infrastructure::rest::{
-        RestApplicationOutcome, RestApplicationRuleCompiler, RestApplicationValidator, RestRequest,
-        RestRequestResolver,
+        RestApplicationOutcome, RestApplicationRuleCompiler, RestApplicationValidator,
+        RestFeedbackInterpreter, RestRequest, RestRequestResolver, RestResponseHeaders,
     },
 };
 
@@ -113,7 +116,9 @@ async fn probe_endpoint(
     endpoint_name: &str,
     endpoint: &RestEndpoint,
     rules: &marketforge_engine::live::infrastructure::rest::CompiledRestApplicationRules,
-    fixtures_dir: &PathBuf,
+    config: &marketforge_engine::live::config::exchange::ExchangeConfig,
+    capture: Option<(&Capture, &ExchangeLimiters)>,
+    relative: &str,
 ) -> Result<usize, String> {
     // ========================================================
     // RESOLVE USING MARKETFORGE
@@ -133,15 +138,52 @@ async fn probe_endpoint(
     // EXECUTE ONE HTTPS REQUEST
     // ========================================================
 
+    if let Some((_, limiters)) = capture {
+        let mut weights = WeightParameters::new();
+        for (name, value) in resolved.query() {
+            if let Ok(number) = value.parse() {
+                weights.insert(name.clone(), number);
+            }
+        }
+        let operation = limiters
+            .profile(profile)
+            .ok_or("missing compiled limiter")?
+            .rest
+            .operation(endpoint_name, &weights, resolved.priority())
+            .map_err(|error| error.to_string())?;
+        tokio::time::timeout(resolved.timeout(), limiters.manager().acquire(&operation))
+            .await
+            .map_err(|_| "REST quota admission timed out")?
+            .map_err(|error| error.to_string())?;
+    }
+
     let response = client
         .get(resolved.url())
         .query(resolved.query())
+        .timeout(
+            resolved
+                .timeout()
+                .min(Duration::from_secs(REQUEST_TIMEOUT_SECONDS)),
+        )
         .send()
         .await
         .map_err(|error| format!("HTTP transport error: {error}"))?;
 
     let status = response.status();
 
+    let headers = RestResponseHeaders::new();
+    let rate_limits = config.rest.rate_limiting.as_ref();
+    if RestFeedbackInterpreter::inspect(rate_limits, status.as_u16(), &headers, None)
+        .requires_cooldown()
+    {
+        return Err(format!("exchange throttled (HTTP {})", status.as_u16()));
+    }
+    if capture.is_some() && matches!(status.as_u16(), 401 | 403) {
+        return Err(format!(
+            "HTTP {}: public capture denied; import an existing {relative}",
+            status.as_u16()
+        ));
+    }
     let body = read_bounded(response).await?;
 
     let json: serde_json::Value = serde_json::from_slice(&body)
@@ -151,6 +193,11 @@ async fn probe_endpoint(
     // VERIFY HTTP STATUS
     // ========================================================
 
+    if RestFeedbackInterpreter::inspect(rate_limits, status.as_u16(), &headers, Some(&json))
+        .requires_cooldown()
+    {
+        return Err(format!("exchange throttled (HTTP {})", status.as_u16()));
+    }
     if !status.is_success() {
         return Err(format!("HTTP {}: {}", status.as_u16(), json,));
     }
@@ -171,13 +218,11 @@ async fn probe_endpoint(
     // SAVE VERIFIED RAW JSON
     // ========================================================
 
-    let filename = format!("{profile}__{endpoint_name}.json");
-
-    let path = fixtures_dir.join(filename);
-
-    let pretty = serde_json::to_vec_pretty(&json).map_err(|error| error.to_string())?;
-
-    fs::write(&path, pretty).map_err(|error| format!("cannot save fixture: {error}"))?;
+    if let Some((capture, _)) = capture {
+        capture
+            .save(relative, &body)
+            .map_err(|error| error.to_string())?;
+    }
 
     Ok(body.len())
 }
@@ -198,7 +243,15 @@ async fn verifies_public_rest_endpoints_in_bulk() {
     let configs =
         ExchangeConfigStore::load_dir(&root).expect("cannot load exchange configurations");
 
-    let resolver = RestRequestResolver::new(&configs);
+    run(&configs, None).await;
+}
+
+/// Returns whether the next capture family may proceed without ignoring a throttle.
+pub(super) async fn run(
+    configs: &ExchangeConfigStore,
+    capture: Option<(&Capture, &ExchangeLimiters)>,
+) -> bool {
+    let resolver = RestRequestResolver::new(configs);
 
     // Optional filter:
     //
@@ -220,14 +273,6 @@ async fn verifies_public_rest_endpoints_in_bulk() {
                 .expect("LIVE_REST_MAX must be an integer")
         })
         .unwrap_or(usize::MAX);
-
-    // ========================================================
-    // OUTPUT DIRECTORY
-    // ========================================================
-
-    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/live-rest-fixtures");
-
-    fs::create_dir_all(&fixtures_dir).expect("cannot create fixture directory");
 
     // ========================================================
     // HTTP CLIENT
@@ -261,25 +306,7 @@ async fn verifies_public_rest_endpoints_in_bulk() {
     // ITERATE PROFILES
     // ========================================================
 
-    let profiles = [
-        "binance_spot",
-        "binance_linear",
-        "binance_inverse",
-        "bybit_spot",
-        "bybit_linear",
-        "bybit_inverse",
-        "okx_spot",
-        "okx_linear",
-        "okx_inverse",
-        "bitget_spot",
-        "bitget_linear",
-        "bitget_inverse",
-        "gateio_spot",
-        "gateio_linear",
-        "gateio_inverse",
-    ];
-
-    'profiles: for profile in profiles {
+    'profiles: for profile in configs.names() {
         if profile_filter
             .as_deref()
             .is_some_and(|filter| filter != profile)
@@ -302,6 +329,10 @@ async fn verifies_public_rest_endpoints_in_bulk() {
         // ====================================================
 
         for (endpoint_name, endpoint) in &config.rest.endpoints {
+            let relative = format!("rest-fixtures/{profile}__{endpoint_name}.json");
+            if capture.is_some_and(|(capture, _)| !capture.wants(&relative)) {
+                continue;
+            }
             let authentication = endpoint.authentication.as_deref().unwrap_or("none");
 
             if authentication != "none" {
@@ -337,7 +368,9 @@ async fn verifies_public_rest_endpoints_in_bulk() {
                 endpoint_name,
                 endpoint,
                 &rules,
-                &fixtures_dir,
+                config,
+                capture,
+                &relative,
             )
             .await;
 
@@ -363,7 +396,7 @@ async fn verifies_public_rest_endpoints_in_bulk() {
 
                     // Stop on exchange throttling rather
                     // than continuing to send requests.
-                    if error.starts_with("HTTP 429") {
+                    if error.starts_with("exchange throttled") {
                         stop_on_throttle = true;
                         break 'profiles;
                     }
@@ -385,10 +418,9 @@ async fn verifies_public_rest_endpoints_in_bulk() {
     println!("Passed:             {passed}");
     println!("Failed:             {failed}");
     println!("Authentication skips: {skipped_auth}");
-    println!("Fixtures directory: {}", fixtures_dir.display());
 
     if stop_on_throttle {
-        println!("STOPPED: exchange returned HTTP 429");
+        println!("STOPPED: exchange throttling detected");
     }
 
     if !failures.is_empty() {
@@ -406,6 +438,10 @@ async fn verifies_public_rest_endpoints_in_bulk() {
         "request accounting mismatch",
     );
 
+    if capture.is_some() {
+        return !stop_on_throttle;
+    }
+
     assert!(
         !stop_on_throttle,
         "bulk verification stopped on exchange throttling"
@@ -416,4 +452,5 @@ async fn verifies_public_rest_endpoints_in_bulk() {
         "{} live REST endpoint(s) failed",
         failures.len(),
     );
+    true
 }

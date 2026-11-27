@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 // ============================================================
 
 fn fixture_root() -> PathBuf {
-    crate::support::data(".cache/live/websocket-fixtures/depth")
+    crate::support::data("tests/live/websocket-fixtures/depth")
 }
 
 fn format_root() -> PathBuf {

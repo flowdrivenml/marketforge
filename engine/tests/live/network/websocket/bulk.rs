@@ -11,8 +11,11 @@ use marketforge_engine::live::{
     config::exchange::ExchangeConfig,
     infrastructure::{
         limiter::{
-            BudgetScope, RateLimitManager,
-            factory::{WebSocketBudgetBinding, WebSocketLimiterBindings, WebSocketLimiterCompiler},
+            BudgetScope, RateLimitManager, RateLimitPolicySet,
+            factory::{
+                CompiledWebSocketLimiters, WebSocketBudgetBinding, WebSocketLimiterBindings,
+                WebSocketLimiterCompiler,
+            },
         },
         websocket::{
             CompiledSubscriptionAckBinding, ConnectionBootstrapLimits, ConnectionFence,
@@ -309,7 +312,11 @@ fn reconnect_policy() -> ReconnectPolicy {
 // ONE LIVE CHECK
 // ============================================================
 
-async fn check(case: ProfileCase, channel: &'static str) -> Result<String, String> {
+async fn check(
+    case: ProfileCase,
+    channel: &'static str,
+    capture: Option<(&crate::capture::Capture, &RateLimitManager)>,
+) -> Result<String, String> {
     let config = load_config(case.name)?;
 
     let route = connection_route(&config, channel, case)?;
@@ -320,27 +327,23 @@ async fn check(case: ProfileCase, channel: &'static str) -> Result<String, Strin
     let heartbeat = HeartbeatPlanCompiler::compile(&config)
         .map_err(|error| format!("heartbeat compilation: {error}"))?;
     let native_ack_bindings = ack_bindings(&config, channel)?;
-    // Use the real MarketForge limiter compiler.
-    //
-    // Each check has its own local budget state.
-    // Checks run sequentially to avoid bursts of
-    // simultaneous connections to exchange servers.
-
-    let scope = BudgetScope::Egress("bulk-live-test".into());
-
-    let binding = WebSocketBudgetBinding::new(format!("bulk-live-{}", case.name), scope);
-
-    let bindings = WebSocketLimiterBindings {
-        connection_attempts: Some(binding.clone()),
-        connection_attempts_per_second: Some(binding),
-        connection_service: Some(format!("bulk-live-{}", case.name)),
+    let (compiled, shared_limiter) = if let Some((_, shared)) = capture {
+        (compile_capture_limits(&config)?, shared.clone())
+    } else {
+        let scope = BudgetScope::Egress("bulk-live-test".into());
+        let service = format!("bulk-live-{}", case.name);
+        let binding = WebSocketBudgetBinding::new(service.clone(), scope);
+        let bindings = WebSocketLimiterBindings {
+            connection_attempts: Some(binding.clone()),
+            connection_attempts_per_second: Some(binding),
+            connection_service: Some(service),
+        };
+        let compiled = WebSocketLimiterCompiler::compile(&config, &bindings)
+            .map_err(|error| format!("limiter compilation: {error}"))?;
+        let manager = RateLimitManager::new(compiled.shared.policies.clone(), 32)
+            .map_err(|error| error.to_string())?;
+        (compiled, manager)
     };
-
-    let compiled = WebSocketLimiterCompiler::compile(&config, &bindings)
-        .map_err(|error| format!("limiter compilation: {error}"))?;
-
-    let shared_limiter = RateLimitManager::new(compiled.shared.policies.clone(), 32)
-        .map_err(|error| error.to_string())?;
 
     let exchange = Arc::new(config);
 
@@ -389,7 +392,12 @@ async fn check(case: ProfileCase, channel: &'static str) -> Result<String, Strin
     // VALIDATED SUBSCRIPTION ACK
     // --------------------------------------------------------
 
-    let observation = time::timeout(CHECK_TIMEOUT, async {
+    let timeout = if capture.is_some() {
+        Duration::from_secs(60)
+    } else {
+        CHECK_TIMEOUT
+    };
+    let observation = time::timeout(timeout, async {
         let event = subscription_rx
             .recv()
             .await
@@ -411,6 +419,10 @@ async fn check(case: ProfileCase, channel: &'static str) -> Result<String, Strin
         // ------------------------------------------------
         // RAW MARKET DATA
         // ------------------------------------------------
+
+        if capture.is_some() {
+            return capture_frames(&mut market_rx, case, channel).await;
+        }
 
         loop {
             let frame = market_rx
@@ -477,13 +489,26 @@ async fn check(case: ProfileCase, channel: &'static str) -> Result<String, Strin
     let diagnostics = format!("{runner_result}; lifecycle: {lifecycle_summary}");
 
     match observation {
-        Ok(Ok(details)) => Ok(details),
+        Ok(Ok(details)) => {
+            if let Some((capture, _)) = capture {
+                if runner_result != "clean shutdown" {
+                    return Err(diagnostics);
+                }
+                let relative = format!("websocket-fixtures/{channel}/{}.json", case.name);
+                capture
+                    .save(&relative, details.as_bytes())
+                    .map_err(|error| error.to_string())?;
+                Ok(format!("captured {relative} ({} bytes)", details.len()))
+            } else {
+                Ok(details)
+            }
+        }
 
         Ok(Err(error)) => Err(format!("{error}; {diagnostics}")),
 
         Err(_) => Err(format!(
             "timed out after {} seconds; {diagnostics}",
-            CHECK_TIMEOUT.as_secs(),
+            timeout.as_secs(),
         )),
     }
 }
@@ -512,7 +537,7 @@ async fn all_exchange_profiles_live() {
 
             // The individual result is recorded even when
             // another exchange or channel has failed.
-            match check(case, channel).await {
+            match check(case, channel, None).await {
                 Ok(details) => {
                     passed += 1;
 
@@ -543,4 +568,135 @@ async fn all_exchange_profiles_live() {
     }
 
     assert!(failed.is_empty(), "{} live checks failed", failed.len(),);
+}
+
+fn compile_capture_limits(config: &ExchangeConfig) -> Result<CompiledWebSocketLimiters, String> {
+    let bindings = crate::rest::service::websocket_bindings(config);
+    WebSocketLimiterCompiler::compile(config, &bindings).map_err(|error| error.to_string())
+}
+
+async fn capture_frames(
+    market: &mut mpsc::Receiver<Message>,
+    case: ProfileCase,
+    channel: &str,
+) -> Result<String, String> {
+    const MAX_BYTES: usize = 16 * 1024 * 1024;
+    let depth = channel == "depth";
+    let count = if depth { 12 } else { 1 };
+    let mut frames = Vec::with_capacity(count);
+    let mut bytes = 2;
+    while frames.len() < count {
+        let frame = market.recv().await.ok_or("market-data channel closed")?;
+        let Message::Text(text) = frame else { continue };
+        let native: serde_json::Value =
+            serde_json::from_str(text.as_str()).map_err(|error| error.to_string())?;
+        if !native.is_object() {
+            return Err("market-data frame is not a native object".into());
+        }
+        if depth {
+            let kind = if case.name.starts_with("bybit_") {
+                Some((native["type"].as_str(), "delta"))
+            } else if case.name.starts_with("bitget_") || case.name.starts_with("okx_") {
+                Some((native["action"].as_str(), "update"))
+            } else {
+                None
+            };
+            if let Some((kind, delta)) = kind {
+                let expected = if frames.is_empty() { "snapshot" } else { delta };
+                if kind != Some(expected) {
+                    return Err(format!(
+                        "expected native depth {expected}, received {kind:?}"
+                    ));
+                }
+            }
+            // The existing Binance Spot fixture test extracts both sides
+            // from the opening delta. Start at a suitable native boundary.
+            if case.name == "binance_spot"
+                && frames.is_empty()
+                && ["b", "a"]
+                    .iter()
+                    .any(|side| native[side].as_array().is_none_or(Vec::is_empty))
+            {
+                continue;
+            }
+        }
+        bytes += text.len() + 1;
+        if bytes > MAX_BYTES {
+            return Err("WebSocket capture exceeds 16 MiB".into());
+        }
+        frames.push(text);
+    }
+    // Preserve the raw JSON spelling, including native decimal tokens.
+    Ok(format!(
+        "[{}]",
+        frames
+            .iter()
+            .map(|text| text.as_str())
+            .collect::<Vec<_>>()
+            .join(",")
+    ))
+}
+
+#[tokio::test]
+#[ignore = "explicit public WebSocket fixture collection via fixtures.py"]
+async fn collect_websocket_fixtures() {
+    let capture = crate::capture::Capture::from_env();
+    let requested = CASES
+        .into_iter()
+        .flat_map(|case| ["trades", "depth"].map(move |channel| (case, channel)))
+        .filter(|(case, channel)| {
+            capture.wants(&format!("websocket-fixtures/{channel}/{}.json", case.name))
+        })
+        .collect::<Vec<_>>();
+    assert!(!requested.is_empty(), "no WebSocket fixtures requested");
+
+    let mut policies = RateLimitPolicySet::new();
+    for (case, _) in &requested {
+        let config = load_config(case.name).unwrap();
+        let compiled = compile_capture_limits(&config).unwrap();
+        for (id, quota) in compiled.shared.policies.iter() {
+            policies.insert(id.clone(), *quota).unwrap();
+        }
+    }
+    let manager = RateLimitManager::new(policies, 32).unwrap();
+    let mut failures = Vec::new();
+    for (case, channel) in requested {
+        match check(case, channel, Some((&capture, &manager))).await {
+            Ok(details) => println!("{details}"),
+            Err(error) => {
+                eprintln!("{} {channel}: {error}", case.name);
+                failures.push((case.name, channel, error));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} WebSocket fixture captures failed",
+        failures.len()
+    );
+}
+
+#[tokio::test]
+async fn captures_original_depth_frames_without_inventing_a_snapshot() {
+    let (send, mut receive) = mpsc::channel(12);
+    let native =
+        r#"{"e":"depthUpdate","s":"BTCUSDT","b":[["1.000","2"]],"a":[["3","4"]],"time":1.2300}"#;
+    for _ in 0..12 {
+        send.try_send(Message::Text(native.into())).unwrap();
+    }
+    let raw = capture_frames(&mut receive, CASES[0], "depth")
+        .await
+        .unwrap();
+    assert_eq!(raw, format!("[{}]", [native; 12].join(",")));
+}
+
+#[tokio::test]
+async fn rejects_depth_capture_without_its_native_opening_snapshot() {
+    let (send, mut receive) = mpsc::channel(1);
+    send.try_send(Message::Text(r#"{"type":"delta"}"#.into()))
+        .unwrap();
+    let error = capture_frames(&mut receive, CASES[3], "depth")
+        .await
+        .unwrap_err();
+    assert!(error.contains("expected native depth snapshot"));
 }

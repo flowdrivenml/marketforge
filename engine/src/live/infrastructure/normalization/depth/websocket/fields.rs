@@ -435,10 +435,13 @@ mod tests {
 
     fn fixtures(profile: &str) -> Vec<Value> {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../data/.cache/live/websocket-fixtures/depth")
+            .join("../data/tests/live/websocket-fixtures/depth")
             .join(format!("{profile}.json"));
 
-        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+        serde_json::from_slice(&std::fs::read(&path).unwrap_or_else(|error| panic!(
+            "{}: {error}. Prepare Live fixtures with scripts/engine/live/fixtures.py (import or collect)",
+            path.display()
+        ))).unwrap()
     }
 
     fn kind(profile: &str, message: &Value) -> DepthMessageKind {

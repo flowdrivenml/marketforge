@@ -2918,11 +2918,11 @@ mod tests {
 
             // 4. Load the full, unmodified exchange response.
             let path = root.join(format!(
-                ".cache/live/rest-fixtures/{profile}__{endpoint_name}.json"
+                "tests/live/rest-fixtures/{profile}__{endpoint_name}.json"
             ));
 
             let raw = fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("{profile}: cannot read {}: {e}", path.display()));
+                .unwrap_or_else(|e| panic!("{profile}: cannot read {}: {e}. Prepare Live fixtures with scripts/engine/live/fixtures.py (import or collect)", path.display()));
 
             // Parse directly from original JSON text.
             // This is essential for Gate.io decimal timestamps.

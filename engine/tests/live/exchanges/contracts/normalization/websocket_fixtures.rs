@@ -16,7 +16,7 @@ use marketforge_engine::live::{
 // ============================================================
 
 fn fixture_directory() -> PathBuf {
-    crate::support::data(".cache/live/websocket-fixtures/trades")
+    crate::support::data("tests/live/websocket-fixtures/trades")
 }
 
 fn format_directory() -> PathBuf {
@@ -46,7 +46,7 @@ fn normalizes_all_real_websocket_trade_fields() {
 
     assert!(
         fixture_root.is_dir(),
-        "missing fixture directory: {}",
+        "missing fixture directory: {}. Prepare Live fixtures with scripts/engine/live/fixtures.py (import or collect)",
         fixture_root.display(),
     );
 
@@ -68,7 +68,7 @@ fn normalizes_all_real_websocket_trade_fields() {
 
         assert!(
             fixture_path.is_file(),
-            "{profile}: missing WebSocket fixture: {}",
+            "{profile}: missing WebSocket fixture: {}. Prepare Live fixtures with scripts/engine/live/fixtures.py (import or collect)",
             fixture_path.display(),
         );
 

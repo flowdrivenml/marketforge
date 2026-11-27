@@ -399,10 +399,13 @@ mod tests {
         let reader = RestDepthSnapshotReader::compile(plan, &endpoint).unwrap();
 
         let fixture_path = root
-            .join(".cache/live/rest-fixtures")
+            .join("tests/live/rest-fixtures")
             .join(format!("{profile}__depth_snapshot.json"));
 
-        let fixture: Value = serde_json::from_slice(&std::fs::read(fixture_path).unwrap()).unwrap();
+        let fixture: Value = serde_json::from_slice(&std::fs::read(&fixture_path).unwrap_or_else(|error| panic!(
+            "{}: {error}. Prepare Live fixtures with scripts/engine/live/fixtures.py (import or collect)",
+            fixture_path.display()
+        ))).unwrap();
 
         (reader, fixture)
     }

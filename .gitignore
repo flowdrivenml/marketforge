@@ -139,6 +139,7 @@ handoff.md
 !engine/tests/historical/fixtures/normalize.json
 !engine/tests/historical/fixtures/merge.json
 /data/tests/historical/normalize/
+/data/tests/live/
 
 # Persistent historical benchmark metadata and generated datasets.
 /data/benchmarks/

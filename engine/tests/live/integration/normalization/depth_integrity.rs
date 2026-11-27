@@ -36,9 +36,9 @@ fn depth_format() -> DepthFormatConfig {
 }
 
 fn websocket_messages() -> Vec<Value> {
-    let path = data_root().join(".cache/live/websocket-fixtures/depth/bybit_spot.json");
+    let path = data_root().join("tests/live/websocket-fixtures/depth/bybit_spot.json");
 
-    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    serde_json::from_slice(&crate::support::read_fixture(path).unwrap()).unwrap()
 }
 
 fn epoch() -> DepthSourceEpoch {

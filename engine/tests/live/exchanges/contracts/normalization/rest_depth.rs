@@ -43,7 +43,7 @@ fn rest_endpoint(profile: &str) -> Value {
 
 fn fixture_bytes(profile: &str) -> Vec<u8> {
     let path = data_root()
-        .join(".cache/live/rest-fixtures")
+        .join("tests/live/rest-fixtures")
         .join(format!("{profile}__depth_snapshot.json"));
 
     crate::fixtures::read(path).unwrap()
