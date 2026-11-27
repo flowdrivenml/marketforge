@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use thiserror::Error;
 
@@ -126,7 +127,7 @@ impl DesiredSubscription {
         self.route.as_deref()
     }
 
-    fn resolution_context(
+    pub(crate) fn resolution_context(
         &self,
     ) -> Result<SubscriptionResolutionContext, SubscriptionResolutionError> {
         let mut context = SubscriptionResolutionContext::new(self.native_symbol.clone())?
@@ -144,6 +145,10 @@ impl DesiredSubscription {
 // DESIRED DEMAND SNAPSHOT
 // ============================================================
 
+// Reservations retained by the slot until unsubscribe is confirmed or the
+// old connection generation no longer owns the subscription.
+pub(crate) type PendingRetirements = Arc<Mutex<std::collections::BTreeSet<String>>>;
+
 /// Immutable projection of current desired stream demand.
 ///
 /// The revision is assigned by the authoritative demand
@@ -155,6 +160,7 @@ impl DesiredSubscription {
 pub struct DesiredSubscriptionSnapshot {
     revision: u64,
     entries: BTreeMap<String, DesiredSubscription>,
+    pub(crate) retirements: Option<PendingRetirements>,
 }
 
 impl DesiredSubscriptionSnapshot {
@@ -176,7 +182,11 @@ impl DesiredSubscriptionSnapshot {
             }
         }
 
-        Ok(Self { revision, entries })
+        Ok(Self {
+            revision,
+            entries,
+            retirements: None,
+        })
     }
 
     pub fn revision(&self) -> u64 {

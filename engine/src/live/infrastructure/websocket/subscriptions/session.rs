@@ -1,3 +1,4 @@
+use super::ack::SubscriptionAction;
 use std::{collections::BTreeMap, time::Duration};
 
 use serde_json::Value;
@@ -48,8 +49,8 @@ pub enum SubscriptionSessionError {
 pub enum SubscriptionSessionEvent {
     Unrelated,
 
-    /// The subscription was acknowledged, and its
-    /// recovery token advanced to AwaitingRecovery.
+    /// A native transaction was acknowledged. A subscribe advances its
+    /// recovery token to AwaitingRecovery; unsubscribe leaves retirement to the session owner.
     Confirmed {
         transaction_id: SubscriptionTransactionId,
         token: StreamRecoveryToken,
@@ -84,7 +85,7 @@ pub struct SubscriptionSession {
     pending: SubscriptionPendingManager,
 
     /// Associates transactions with exact stream epochs.
-    tokens: BTreeMap<SubscriptionTransactionId, StreamRecoveryToken>,
+    tokens: BTreeMap<SubscriptionTransactionId, (StreamRecoveryToken, SubscriptionAction)>,
 }
 
 impl SubscriptionSession {
@@ -106,8 +107,12 @@ impl SubscriptionSession {
         })
     }
     pub fn pending_token(&self, id: SubscriptionTransactionId) -> Option<StreamRecoveryToken> {
-        self.tokens.get(&id).cloned()
+        self.tokens.get(&id).map(|(token, _)| token.clone())
     }
+    pub(crate) fn has_idless_pending(&self) -> bool {
+        self.pending.has_idless_pending()
+    }
+
     pub fn pending_count(&self) -> usize {
         self.pending.pending_count()
     }
@@ -141,15 +146,20 @@ impl SubscriptionSession {
             return Err(SubscriptionSessionError::StaleRecoveryToken);
         }
 
-        if recovery.phase(token.stream_id()) != Some(StreamRecoveryPhase::AwaitingSubscription) {
+        let phase = match expected.action {
+            SubscriptionAction::Subscribe => StreamRecoveryPhase::AwaitingSubscription,
+            SubscriptionAction::Unsubscribe => StreamRecoveryPhase::AwaitingRecovery,
+        };
+        if recovery.phase(token.stream_id()) != Some(phase) {
             return Err(SubscriptionSessionError::InvalidRecoveryPhase);
         }
 
+        let action = expected.action;
         let id = self
             .pending
             .reserve(&self.fence, &self.stamp, token.stream_id(), expected)?;
 
-        self.tokens.insert(id, token.clone());
+        self.tokens.insert(id, (token.clone(), action));
 
         Ok(id)
     }
@@ -212,7 +222,7 @@ impl SubscriptionSession {
 
         match completion.kind {
             SubscriptionCompletionKind::Confirmed => {
-                let token = token.ok_or(SubscriptionSessionError::StaleRecoveryToken)?;
+                let (token, action) = token.ok_or(SubscriptionSessionError::StaleRecoveryToken)?;
 
                 // Fail closed if stream rebinding occurred
                 // while the subscription was pending.
@@ -220,7 +230,9 @@ impl SubscriptionSession {
                     return Err(SubscriptionSessionError::StaleRecoveryToken);
                 }
 
-                recovery.subscription_confirmed(&self.fence, &token)?;
+                if action == SubscriptionAction::Subscribe {
+                    recovery.subscription_confirmed(&self.fence, &token)?;
+                }
 
                 Ok(SubscriptionSessionEvent::Confirmed {
                     transaction_id: completion.transaction_id,

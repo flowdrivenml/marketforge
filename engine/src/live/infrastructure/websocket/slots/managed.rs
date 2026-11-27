@@ -1,3 +1,5 @@
+use crate::live::infrastructure::websocket::subscriptions::restoration::PendingRetirements;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 use thiserror::Error;
 
@@ -106,6 +108,9 @@ impl Drop for EventLoopTerminationGuard {
 ///
 /// Stream processors never interact with this type.
 pub(crate) struct ManagedConnectionSlot {
+    retired_routes: BTreeMap<String, NativeMessageSelector>,
+    retirements: PendingRetirements,
+    retirement_capacity: usize,
     task: Option<ConnectionSlotTask>,
 
     commands: mpsc::Sender<SlotEventCommand>,
@@ -146,6 +151,9 @@ impl ManagedConnectionSlot {
         // START EXISTING CONNECTION RUNNER
         // ====================================================
 
+        let retirements = PendingRetirements::default();
+        let mut config = config;
+        config.initial_demand.retirements = Some(retirements.clone());
         let task = ConnectionSlotTask::start_fenced(
             config,
             market_data_tx,
@@ -214,6 +222,9 @@ impl ManagedConnectionSlot {
         });
 
         Ok(Self {
+            retired_routes: BTreeMap::new(),
+            retirements,
+            retirement_capacity: event_capacity,
             task: Some(task),
             commands: commands_tx,
             event_loop: Some(event_loop),
@@ -286,11 +297,63 @@ impl ManagedConnectionSlot {
 
         // New routes are installed before the runner can
         // observe the increased desired-demand revision.
+        self.publish_demand(desired)
+    }
+
+    pub fn accepts(
+        &self,
+        stream_id: &str,
+        selector: &NativeMessageSelector,
+        remaining: Option<usize>,
+    ) -> bool {
+        !self.retired_routes.contains_key(stream_id)
+            && !self
+                .retired_routes
+                .values()
+                .any(|retired| retired == selector)
+            && remaining.is_none_or(|remaining| {
+                self.retirements
+                    .lock()
+                    .is_ok_and(|pending| pending.len() < remaining)
+            })
+    }
+
+    pub fn has_retirement_capacity(&self) -> bool {
+        self.retired_routes.len() < self.retirement_capacity
+    }
+
+    pub async fn retire_route(
+        &mut self,
+        stream_id: String,
+        selector: NativeMessageSelector,
+    ) -> Result<(), ManagedConnectionSlotError> {
+        let (response, done) = oneshot::channel();
+        self.commands
+            .send(SlotEventCommand::RetireRoute {
+                stream_id: stream_id.clone(),
+                response,
+            })
+            .await
+            .map_err(|_| ManagedConnectionSlotError::ControlChannelUnavailable)?;
+        done.await
+            .map_err(|_| ManagedConnectionSlotError::ControlChannelUnavailable)?;
+        self.retirements
+            .lock()
+            .map_err(|_| ManagedConnectionSlotError::ControlChannelUnavailable)?
+            .insert(stream_id.clone());
+        self.retired_routes.insert(stream_id, selector);
+        Ok(())
+    }
+
+    pub fn publish_demand(
+        &mut self,
+        mut desired: DesiredSubscriptionSnapshot,
+    ) -> Result<(), ManagedConnectionSlotError> {
+        desired.retirements = Some(self.retirements.clone());
         self.task
             .as_mut()
             .ok_or(ManagedConnectionSlotError::EventLoopTerminated)?
             .update_demand(desired)?;
-
         Ok(())
     }
 

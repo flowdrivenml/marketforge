@@ -433,6 +433,12 @@ impl StreamRecoveryCoordinator {
     // OBSERVABILITY
     // ========================================================
 
+    pub(crate) fn retire_subscription(&mut self, token: &StreamRecoveryToken) {
+        if self.token(token.stream_id()) == Some(token) {
+            self.entries.remove(token.stream_id());
+        }
+    }
+
     pub fn phase(&self, stream_id: &str) -> Option<StreamRecoveryPhase> {
         self.entries.get(stream_id).map(|entry| entry.phase)
     }

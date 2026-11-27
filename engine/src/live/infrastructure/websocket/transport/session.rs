@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    collections::BTreeMap,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use thiserror::Error;
 
@@ -27,6 +30,194 @@ use crate::live::infrastructure::websocket::subscriptions::restoration_dispatch:
     RestorationDispatchError, SubscriptionRestorationDispatcher,
 };
 use crate::live::infrastructure::websocket::subscriptions::session::SubscriptionSession;
+
+use crate::live::config::ExchangeConfig;
+use crate::live::infrastructure::websocket::{
+    streams::recovery::{RecoveryStreamKind, StreamRecoveryToken},
+    subscriptions::{
+        ack::SubscriptionAction,
+        command_factory::SubscriptionCommandFactory,
+        resolver::SubscriptionResolver,
+        restoration::{DesiredSubscription, DesiredSubscriptionSnapshot},
+    },
+};
+
+pub(crate) struct DemandReconciliation<'a> {
+    pub exchange: &'a ExchangeConfig,
+    pub factory: SubscriptionCommandFactory,
+    pub initial: DesiredSubscriptionSnapshot,
+    pub desired: &'a (dyn Fn() -> DesiredSubscriptionSnapshot + Sync),
+}
+
+impl DemandReconciliation<'_> {
+    async fn run(
+        mut self,
+        initial_commands: Vec<SubscriptionCommand>,
+        commands: mpsc::Sender<SubscriptionCommand>,
+        mut events: mpsc::Receiver<SubscriptionDriverEvent>,
+        downstream: mpsc::Sender<SubscriptionDriverEvent>,
+        fence: &ConnectionFence,
+        stamp: &ConnectionStamp,
+        recovery: &SharedStreamRecovery,
+        send_timeout: Duration,
+    ) -> Result<(), ConnectionSessionError> {
+        let failure = |detail: &str| ConnectionSessionError::Reconciliation(detail.into());
+        let config = self
+            .exchange
+            .websocket
+            .subscription
+            .as_ref()
+            .ok_or_else(|| failure("missing subscription configuration"))?;
+        let mut acknowledged: BTreeMap<String, (DesiredSubscription, StreamRecoveryToken)> =
+            BTreeMap::new();
+        let mut initial_commands = initial_commands.into_iter();
+        let mut checks = time::interval(Duration::from_millis(25));
+        checks.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+        loop {
+            let latest = (self.desired)();
+            let next = if let Some(command) = initial_commands.next() {
+                let id = command.token.stream_id();
+                let subscription = self
+                    .initial
+                    .get(id)
+                    .expect("initial command has desired subscription");
+                if latest.get(id) != Some(subscription) {
+                    recovery
+                        .lock()
+                        .map_err(|e| failure(&e.to_string()))?
+                        .retire_subscription(&command.token);
+                    continue;
+                }
+                Some((subscription.clone(), command))
+            } else {
+                if let Some(retirements) = &latest.retirements {
+                    retirements
+                        .lock()
+                        .map_err(|_| failure("retirement state poisoned"))?
+                        .retain(|id| latest.get(id).is_some() || acknowledged.contains_key(id));
+                }
+                if let Some((id, (subscription, token))) = acknowledged
+                    .iter()
+                    .find(|(id, (subscription, _))| latest.get(id) != Some(subscription))
+                {
+                    if config.supports_unsubscribe != Some(true) {
+                        return Err(failure(
+                            "native unsubscribe unavailable; restoration required",
+                        ));
+                    }
+                    if latest.get(id).is_some() {
+                        return Err(failure("native identity replaced; restoration required"));
+                    }
+                    Some((
+                        subscription.clone(),
+                        self.operation(
+                            subscription,
+                            token.clone(),
+                            SubscriptionAction::Unsubscribe,
+                        )?,
+                    ))
+                } else if let Some(subscription) = latest
+                    .iter()
+                    .find(|subscription| !acknowledged.contains_key(&subscription.stream_id))
+                {
+                    if config.supports_dynamic_subscriptions != Some(true) {
+                        return Err(failure(
+                            "dynamic subscribe unavailable; restoration required",
+                        ));
+                    }
+                    let kind = match subscription.channel_name.as_str() {
+                        "trades" => RecoveryStreamKind::Trades,
+                        "depth" => RecoveryStreamKind::Depth,
+                        _ => return Err(failure("unsupported Source channel")),
+                    };
+                    let token = {
+                        let mut recovery = recovery.lock().map_err(|e| failure(&e.to_string()))?;
+                        recovery
+                            .register(&subscription.stream_id, kind)
+                            .map_err(|e| failure(&e.to_string()))?;
+                        recovery
+                            .begin_binding(fence, stamp, &subscription.stream_id)
+                            .map_err(|e| failure(&e.to_string()))?
+                    };
+                    Some((
+                        subscription.clone(),
+                        self.operation(subscription, token, SubscriptionAction::Subscribe)?,
+                    ))
+                } else {
+                    None
+                }
+            };
+
+            let Some((subscription, command)) = next else {
+                tokio::select! {
+                    _ = checks.tick() => continue,
+                    _ = events.recv() => return Err(failure("unexpected subscription completion")),
+                }
+            };
+            let action = command.expected.action;
+            let token = command.token.clone();
+            time::timeout(send_timeout, commands.send(command))
+                .await
+                .map_err(|_| failure("subscription command admission timed out"))?
+                .map_err(|_| failure("subscription driver unavailable"))?;
+            // A wire outcome belongs to the original token even when demand changes.
+            // Serializing through ACK completion also preserves ID-less correlation.
+            let event = events
+                .recv()
+                .await
+                .ok_or_else(|| failure("subscription event monitor unavailable"))?;
+            match &event {
+                SubscriptionDriverEvent::Confirmed { token: actual, .. } if actual == &token => {}
+                _ => {
+                    return Err(failure(
+                        "subscription failed or completed with obsolete authority",
+                    ));
+                }
+            }
+            match action {
+                SubscriptionAction::Subscribe => {
+                    acknowledged.insert(
+                        subscription.stream_id.clone(),
+                        (subscription.clone(), token),
+                    );
+                    if (self.desired)().get(&subscription.stream_id) == Some(&subscription) {
+                        downstream
+                            .try_send(event)
+                            .map_err(|_| failure("subscription event backpressure"))?;
+                    }
+                }
+                SubscriptionAction::Unsubscribe => {
+                    acknowledged.remove(&subscription.stream_id);
+                    recovery
+                        .lock()
+                        .map_err(|e| failure(&e.to_string()))?
+                        .retire_subscription(&token);
+                }
+            }
+        }
+    }
+
+    fn operation(
+        &mut self,
+        subscription: &DesiredSubscription,
+        token: StreamRecoveryToken,
+        action: SubscriptionAction,
+    ) -> Result<SubscriptionCommand, ConnectionSessionError> {
+        let error = |detail: String| ConnectionSessionError::Reconciliation(detail);
+        let context = subscription
+            .resolution_context()
+            .map_err(|e| error(e.to_string()))?;
+        let resolved =
+            SubscriptionResolver::resolve(self.exchange, &subscription.channel_name, &context)
+                .map_err(|e| error(e.to_string()))?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| error(e.to_string()))?;
+        self.factory
+            .operation(self.exchange, resolved, token, action, now.as_secs())
+            .map_err(|e| error(e.to_string()))
+    }
+}
 
 // ============================================================
 // CHANNEL LIMITS
@@ -102,6 +293,9 @@ pub enum ConnectionSessionError {
 
     #[error("subscription event monitor exited unexpectedly")]
     EventMonitorExited,
+
+    #[error("subscription reconciliation failed: {0}")]
+    Reconciliation(String),
 }
 
 // ============================================================
@@ -173,12 +367,54 @@ impl ConnectionSession {
         outputs: ConnectionSessionOutputs,
         fence: &ConnectionFence,
         current_demand_revision: F,
-        mut shutdown: oneshot::Receiver<()>,
+        shutdown: oneshot::Receiver<()>,
         limits: ConnectionSessionLimits,
     ) -> Result<SupervisorExit, ConnectionSessionError>
     where
         F: Fn() -> u64,
     {
+        Self::run_internal(
+            inputs,
+            outputs,
+            fence,
+            current_demand_revision,
+            shutdown,
+            limits,
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn run_reconciled(
+        inputs: ConnectionSessionInputs,
+        outputs: ConnectionSessionOutputs,
+        fence: &ConnectionFence,
+        shutdown: oneshot::Receiver<()>,
+        limits: ConnectionSessionLimits,
+        reconciliation: DemandReconciliation<'_>,
+    ) -> Result<SupervisorExit, ConnectionSessionError> {
+        let revision = inputs.demand_revision;
+        Self::run_internal(
+            inputs,
+            outputs,
+            fence,
+            move || revision,
+            shutdown,
+            limits,
+            Some(reconciliation),
+        )
+        .await
+    }
+
+    async fn run_internal<F: Fn() -> u64>(
+        inputs: ConnectionSessionInputs,
+        outputs: ConnectionSessionOutputs,
+        fence: &ConnectionFence,
+        current_demand_revision: F,
+        mut shutdown: oneshot::Receiver<()>,
+        limits: ConnectionSessionLimits,
+        reconciliation: Option<DemandReconciliation<'_>>,
+    ) -> Result<SupervisorExit, ConnectionSessionError> {
         limits.validate()?;
 
         // ----------------------------------------------------
@@ -275,9 +511,15 @@ impl ConnectionSession {
 
         tokio::pin!(driver);
 
+        let (validated_tx, validated_rx) = mpsc::channel(limits.event_capacity);
+        let monitored = if reconciliation.is_some() {
+            validated_tx
+        } else {
+            subscription_events.clone()
+        };
         let event_monitor = SubscriptionEventMonitor::run(
             internal_events_rx,
-            subscription_events,
+            monitored,
             fence,
             &stamp,
             &recovery_for_monitor,
@@ -290,17 +532,34 @@ impl ConnectionSession {
         // INITIAL RESTORATION DISPATCH
         // ----------------------------------------------------
 
-        let dispatcher = SubscriptionRestorationDispatcher::new(limits.dispatch_timeout)?;
-
-        let dispatch = dispatcher.dispatch(
-            restoration_commands,
-            &command_tx,
-            fence,
-            &stamp,
-            demand_revision,
-            &current_demand_revision,
-        );
-
+        let dispatch = async {
+            if let Some(reconciliation) = reconciliation {
+                return reconciliation
+                    .run(
+                        restoration_commands,
+                        command_tx,
+                        validated_rx,
+                        subscription_events,
+                        fence,
+                        &stamp,
+                        &recovery_for_monitor,
+                        limits.dispatch_timeout,
+                    )
+                    .await;
+            }
+            let dispatcher = SubscriptionRestorationDispatcher::new(limits.dispatch_timeout)?;
+            dispatcher
+                .dispatch(
+                    restoration_commands,
+                    &command_tx,
+                    fence,
+                    &stamp,
+                    demand_revision,
+                    &current_demand_revision,
+                )
+                .await?;
+            Ok::<_, ConnectionSessionError>(())
+        };
         tokio::pin!(dispatch);
 
         let mut dispatch_complete = false;
@@ -412,31 +671,8 @@ impl ConnectionSession {
                     if !dispatch_complete =>
                 {
                     match outcome {
-                        Ok(receipt) => {
-                            // Admission is complete.
-                            //
-                            // Actual socket transmission and
-                            // ACK confirmation remain owned
-                            // by the driver and supervisor.
-                            debug_assert_eq!(
-                                receipt.demand_revision,
-                                demand_revision,
-                            );
-
-                            dispatch_complete = true;
-                        }
-
-                        Err(error) => {
-                            // Including PartialAdmission:
-                            // terminate rather than permit a
-                            // partially restored session to
-                            // continue indefinitely.
-                            return Err(
-                                ConnectionSessionError::Dispatch(
-                                    error
-                                )
-                            );
-                        }
+                        Ok(()) => dispatch_complete = true,
+                        Err(error) => return Err(error),
                     }
                 }
             }

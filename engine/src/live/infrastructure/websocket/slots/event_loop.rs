@@ -49,6 +49,11 @@ pub(crate) enum SlotEventLoopError {
 ///
 /// Commands are private to the WebSocket infrastructure.
 pub(crate) enum SlotEventCommand {
+    RetireRoute {
+        stream_id: String,
+        response: oneshot::Sender<()>,
+    },
+
     /// Extend the router before changing subscription demand.
     ///
     /// Response acknowledges that the event-processing owner
@@ -148,6 +153,11 @@ impl SlotEventLoop {
                 };
 
                 match command {
+                    SlotEventCommand::RetireRoute { stream_id, response } => {
+                        coordinator.retire_route(stream_id);
+                        let _ = response.send(());
+                    }
+
                     SlotEventCommand::ExtendRoutes {
                         entries,
                         response,

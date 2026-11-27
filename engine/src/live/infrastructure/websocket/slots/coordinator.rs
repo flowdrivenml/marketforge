@@ -9,7 +9,7 @@ use crate::live::infrastructure::websocket::routing::frame_dispatcher::{
 };
 use crate::live::infrastructure::websocket::routing::message_router::NativeMessageSelector;
 use crate::live::infrastructure::websocket::subscriptions::driver::SubscriptionDriverEvent;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -66,6 +66,7 @@ pub(crate) struct SlotEventCoordinator {
     early: BTreeMap<String, VecDeque<FencedMessage<Message>>>,
 
     early_count: usize,
+    retired: BTreeSet<String>,
 
     maximum_early_frames: usize,
 }
@@ -91,6 +92,7 @@ impl SlotEventCoordinator {
             availability,
             early: BTreeMap::new(),
             early_count: 0,
+            retired: BTreeSet::new(),
             maximum_early_frames,
         })
     }
@@ -112,6 +114,14 @@ impl SlotEventCoordinator {
 
         Ok(())
     }
+    pub fn retire_route(&mut self, stream_id: String) {
+        if let Some(frames) = self.early.remove(&stream_id) {
+            self.early_count -= frames.len();
+        }
+        self.availability.retire(&stream_id);
+        self.retired.insert(stream_id);
+    }
+
     pub fn on_frame(
         &mut self,
         frame: FencedMessage<Message>,
@@ -128,7 +138,8 @@ impl SlotEventCoordinator {
             return Err(SlotEventCoordinatorError::StaleGeneration);
         }
 
-        let routed = self.frames.route(message)?;
+        let mut routed = self.frames.route(message)?;
+        routed.retain(|(id, _)| !self.retired.contains(id));
         let needed = routed
             .iter()
             .filter(|(stream_id, _)| !self.availability.is_connected(stream_id))
@@ -168,6 +179,9 @@ impl SlotEventCoordinator {
             SubscriptionDriverEvent::Confirmed { token, .. } => {
                 let stream_id = token.stream_id().to_owned();
 
+                if self.retired.contains(&stream_id) {
+                    return Ok(());
+                }
                 let stamp = token.connection().clone();
 
                 // The event originates from the existing
@@ -190,7 +204,8 @@ impl SlotEventCoordinator {
                     self.early_count -= pending.len();
 
                     while let Some(frame) = pending.pop_front() {
-                        let outcome = self.frames.dispatch(frame)?;
+                        let (stamp, message) = frame.into_parts();
+                        let outcome = self.frames.dispatch_to(&stream_id, &stamp, message)?;
 
                         if outcome != NativeFrameDispatchOutcome::Delivered {
                             return Err(SlotEventCoordinatorError::DeliveryUnavailable);

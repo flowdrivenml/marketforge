@@ -156,8 +156,7 @@ async fn gateio_linear_routes_drive_local_slot_allocation_and_reconnect() {
     assert_eq!(manager.stream_count().await, 4);
     assert_eq!(manager.slot_count().await, 2);
 
-    // Finish the existing attachment replay before asking the mock USD1 endpoint
-    // to close its socket. A fresh ACK for the last attachment marks that replay.
+    // Close only the USD1 connection after both subscriptions are confirmed.
     while usd1.acknowledged.try_recv().is_ok() {}
     usd1.send.send(Value::Null).await.unwrap();
     let mut restored = BTreeMap::new();
@@ -188,6 +187,10 @@ async fn bitget_linear_preparation_and_replay_use_native_product_type() {
     let limiters = rest_support::build_limiters(&configs, profile);
     let builder = builder(configs.clone(), SourceInitializationLimits::default());
     let formats = formats();
+    let mut socket = LocalSocket::start(profile).await;
+    let manager = super::harness::manager(&configs, profile, &limiters, &socket.url);
+    let mut attached = Vec::new();
+    let mut bindings = Vec::new();
     for (symbol, asset, inst_type) in [
         ("BTCUSDT", "USDT", "usdt-futures"),
         ("BTCUSDC", "USDC", "usdc-futures"),
@@ -196,10 +199,6 @@ async fn bitget_linear_preparation_and_replay_use_native_product_type() {
             (SourceChannel::Trades, "publicTrade"),
             (SourceChannel::Depth, "books"),
         ] {
-            // Exercise wire replay independently of the existing ID-less
-            // multi-subscription dispatch behavior.
-            let mut socket = LocalSocket::start(profile).await;
-            let manager = super::harness::manager(&configs, profile, &limiters, &socket.url);
             let id = format!("{symbol}:{}", channel.as_str());
             let definition = profiles::definition(instrument(profile, symbol, asset, channel), &id);
             let prepared = builder.prepare(definition.clone()).unwrap();
@@ -227,7 +226,7 @@ async fn bitget_linear_preparation_and_replay_use_native_product_type() {
             );
 
             let (tx, mut rx) = mpsc::channel(32);
-            manager
+            let binding = manager
                 .attach_request_with_formats(prepared.stream_request().clone(), tx, &formats)
                 .await
                 .unwrap();
@@ -255,15 +254,34 @@ async fn bitget_linear_preparation_and_replay_use_native_product_type() {
                 assert_eq!(price, "456");
             }
 
-            socket.send.send(Value::Null).await.unwrap();
-            assert_eq!(socket.ack().await["args"], json!([expected]));
-            let current = connected(&mut rx).await;
-            assert_ne!(current.connection, previous.connection);
-            assert!(current.generation > previous.generation);
-            assert_eq!(manager.slot_count().await, 1);
-            manager.shutdown().await.unwrap();
+            if let Some((_, _, first)) = attached.first() {
+                assert_eq!(&previous.connection, first);
+            }
+            attached.push((expected, (rx, previous.generation), previous.connection));
+            bindings.push(binding);
         }
     }
+    assert_eq!(manager.slot_count().await, 1);
+    socket.send.send(Value::Null).await.unwrap();
+    let mut restored = Vec::new();
+    for _ in &attached {
+        restored.push(socket.ack().await["args"][0].clone());
+    }
+    for (expected, (rx, prior_generation), prior_stamp) in &mut attached {
+        assert!(restored.contains(expected));
+        let current = connected(rx).await;
+        assert_ne!(&current.connection, prior_stamp);
+        assert!(current.generation > *prior_generation);
+        *prior_stamp = current.connection;
+    }
+    let (removed, (mut retired, _), _) = attached.pop().unwrap();
+    manager.detach(bindings.pop().unwrap()).await.unwrap();
+    let request = socket.ack().await;
+    assert_eq!(request["op"], "unsubscribe");
+    assert_eq!(request["args"], json!([removed]));
+    assert!(retired.recv().await.is_none());
+    assert_eq!(manager.slot_count().await, 1);
+    manager.shutdown().await.unwrap();
 }
 
 #[test]

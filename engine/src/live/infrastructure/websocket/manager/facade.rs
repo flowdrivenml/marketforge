@@ -299,25 +299,7 @@ impl WebSocketManager {
             drop(failed_slot);
         });
     }
-    /// Detach one stream attachment.
-    ///
-    /// This implementation supports detaching the last stream
-    /// assigned to a connection slot.
-    ///
-    /// Shared-slot detachment is deliberately rejected until
-    /// coordinated slot replacement is implemented.
-    ///
-    /// Rejection does not modify local attachment state.
-    /// Detach one stream from WebSocket transport.
-    ///
-    /// If other streams share the same connection slot,
-    /// the slot is stopped and rebuilt with the remaining demand.
-    ///
-    /// No old physical generation remains active when the
-    /// replacement connection starts.
-    ///
-    /// On a failed replacement, all remaining attachments
-    /// belonging to this slot are retired.
+    /// Revoke local delivery while the slot reconciles surviving native demand.
     pub async fn detach(&self, binding: StreamBinding) -> Result<(), WebSocketManagerError> {
         let mut inner = self.inner.lock().await;
 
@@ -329,6 +311,65 @@ impl WebSocketManager {
             .ownership
             .slot_for_binding(binding)
             .ok_or(WebSocketManagerError::UnknownBinding)?;
+
+        let source = inner
+            .ownership
+            .source_for_binding(binding)
+            .ok_or(WebSocketManagerError::UnknownBinding)?;
+        let stream_id = source.stream_id().to_owned();
+        let selector = source.routing().clone();
+        let last = inner
+            .ownership
+            .slot_stream_count(slot_id)
+            .map_err(|error| WebSocketManagerError::Attachment(error.to_string()))?
+            == 1;
+
+        if last {
+            if let Some(slot) = inner.slots.get_mut(&slot_id) {
+                // Revoke the route before removing the final destination.
+                let _ = slot.retire_route(stream_id, selector).await;
+            }
+            inner
+                .ownership
+                .detach_local(binding)
+                .map_err(|error| WebSocketManagerError::Attachment(error.to_string()))?;
+            let slot = inner.slots.remove(&slot_id).ok_or_else(|| {
+                WebSocketManagerError::InconsistentState("missing final managed slot".into())
+            })?;
+            drop(inner);
+            return slot
+                .shutdown()
+                .await
+                .map_err(|error| WebSocketManagerError::ConnectionSlot(error.to_string()));
+        }
+
+        {
+            let slot = inner.slots.get_mut(&slot_id).ok_or_else(|| {
+                WebSocketManagerError::InconsistentState("missing managed slot".into())
+            })?;
+            if slot.has_retirement_capacity()
+                && slot.retire_route(stream_id, selector).await.is_ok()
+            {
+                let desired = inner
+                    .ownership
+                    .detach_local(binding)
+                    .map_err(|error| WebSocketManagerError::Attachment(error.to_string()))?
+                    .desired
+                    .expect("surviving subscriptions");
+                let slot = inner
+                    .slots
+                    .get_mut(&slot_id)
+                    .expect("managed slot checked above");
+                if let Err(error) = slot.publish_demand(desired) {
+                    let failed = inner.slots.remove(&slot_id);
+                    let _ = inner.ownership.retire_slot_local(slot_id);
+                    drop(inner);
+                    drop(failed);
+                    return Err(WebSocketManagerError::ConnectionSlot(error.to_string()));
+                }
+                return Ok(());
+            }
+        }
 
         // ========================================================
         // STOP OLD CONNECTION SLOT
@@ -529,10 +570,19 @@ impl WebSocketManager {
         // RESERVE LOCAL ATTACHMENT
         // ====================================================
 
-        let attachment = inner
-            .ownership
-            .attach_local(source, destination)
-            .map_err(|error| WebSocketManagerError::Attachment(error.to_string()))?;
+        let attachment = {
+            let selector = source.routing().clone();
+            let ManagerInner {
+                ownership, slots, ..
+            } = &mut *inner;
+            ownership
+                .attach_local_eligible(source, destination, |id, remaining| {
+                    slots
+                        .get(&id)
+                        .is_some_and(|slot| slot.accepts(&stream_id, &selector, remaining))
+                })
+                .map_err(|error| WebSocketManagerError::Attachment(error.to_string()))?
+        };
 
         let binding = attachment.binding;
 
@@ -618,6 +668,12 @@ impl WebSocketManager {
 
         match result {
             Ok(()) => Ok(binding),
+
+            Err(crate::live::infrastructure::websocket::slots::managed::ManagedConnectionSlotError::Routing(error)) => {
+                inner.ownership.detach_local(binding)
+                    .map_err(|rollback| WebSocketManagerError::InconsistentState(rollback.to_string()))?;
+                Err(WebSocketManagerError::Attachment(error.to_string()))
+            }
 
             Err(error) => {
                 // The routing extension and desired-demand update

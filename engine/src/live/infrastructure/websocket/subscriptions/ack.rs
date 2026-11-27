@@ -140,10 +140,30 @@ pub struct CompiledSubscriptionAck {
     error_code_field: Option<String>,
     error_message_field: Option<String>,
 
+    operation: Option<(String, String, String)>,
     channel_field: Option<String>,
 }
 
 impl CompiledSubscriptionAck {
+    pub(crate) fn is_ack_candidate(&self, message: &Value) -> bool {
+        if let Some(event) = self
+            .acknowledgement_field
+            .as_deref()
+            .and_then(|field| read(message, field))
+            .and_then(Value::as_str)
+        {
+            return [
+                self.subscribe_acknowledgement.as_deref(),
+                self.unsubscribe_acknowledgement.as_deref(),
+                self.error_event.as_deref(),
+            ]
+            .contains(&Some(event));
+        }
+        self.request_id_field
+            .as_deref()
+            .is_some_and(|field| read(message, field).is_some())
+    }
+
     pub fn classify(
         &self,
         message: &Value,
@@ -153,6 +173,18 @@ impl CompiledSubscriptionAck {
 
         if !message.is_object() {
             return Result::Unrelated;
+        }
+
+        if let Some((field, subscribe, unsubscribe)) = &self.operation {
+            if let Some(actual) = read(message, field).and_then(Value::as_str) {
+                let expected = match expected.action {
+                    SubscriptionAction::Subscribe => subscribe,
+                    SubscriptionAction::Unsubscribe => unsubscribe,
+                };
+                if actual != expected {
+                    return Result::Unrelated;
+                }
+            }
         }
 
         // ----------------------------------------------------
@@ -471,6 +503,18 @@ impl SubscriptionAckCompiler {
             error_code_field: config.error_code_field.clone(),
             error_message_field: config.error_message_field.clone(),
 
+            operation: if config.acknowledgement_field.is_none()
+                && config.request_id_field.is_some()
+            {
+                config
+                    .operation_field
+                    .clone()
+                    .zip(config.subscribe_method.clone())
+                    .zip(config.unsubscribe_method.clone())
+                    .map(|((field, subscribe), unsubscribe)| (field, subscribe, unsubscribe))
+            } else {
+                None
+            },
             channel_field,
         })
     }

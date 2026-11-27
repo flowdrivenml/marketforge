@@ -148,7 +148,6 @@ impl WebSocketManagerState {
     }
 
     /// Number of subscribed streams assigned to one slot.
-    #[cfg(test)]
     pub fn slot_stream_count(&self, slot_id: SlotId) -> Result<usize, WebSocketManagerStateError> {
         let snapshot = self
             .slots
@@ -247,10 +246,20 @@ impl WebSocketManagerState {
     /// This is a LOCAL ownership transaction only.
     /// The asynchronous manager must still coordinate
     /// starting or updating the physical connection.
+    #[cfg(test)]
     pub fn attach_local(
         &mut self,
         source: StreamSource,
         destination: mpsc::Sender<StreamInput>,
+    ) -> Result<ManagerAttachment, WebSocketManagerStateError> {
+        self.attach_local_eligible(source, destination, |_, _| true)
+    }
+
+    pub fn attach_local_eligible(
+        &mut self,
+        source: StreamSource,
+        destination: mpsc::Sender<StreamInput>,
+        accepts: impl Fn(SlotId, Option<usize>) -> bool,
     ) -> Result<ManagerAttachment, WebSocketManagerStateError> {
         let profile = source.profile();
 
@@ -301,9 +310,12 @@ impl WebSocketManagerState {
 
         let stream_id = source.stream_id().to_owned();
 
-        let assignment =
-            self.slots
-                .assign(SlotKey::new(profile, route), subscription.clone(), capacity)?;
+        let assignment = self.slots.assign_eligible(
+            SlotKey::new(profile, route),
+            subscription.clone(),
+            capacity,
+            accepts,
+        )?;
 
         // Attach the stream destination after the slot
         // assignment has succeeded.
@@ -391,6 +403,10 @@ impl WebSocketManagerState {
 
     pub fn dispatcher(&self) -> StreamDispatcher {
         self.dispatcher.clone()
+    }
+
+    pub fn source_for_binding(&self, binding: StreamBinding) -> Option<&StreamSource> {
+        self.source(self.bindings.get(&binding.id())?)
     }
 
     pub fn source(&self, stream_id: &str) -> Option<&StreamSource> {
@@ -527,6 +543,40 @@ base_url = "https://example.invalid"
         assert_eq!(
             plan.entries()[1].resolved.request.arguments[0]["instType"],
             "usdc-futures"
+        );
+        use crate::live::infrastructure::websocket::subscriptions::ack::SubscriptionAckClassification;
+        use crate::live::infrastructure::websocket::{
+            CompiledSubscriptionAckBinding, SubscriptionAckCompiler, SubscriptionAckFieldBinding,
+        };
+        let binding = CompiledSubscriptionAckBinding::new(
+            ["instType", "topic", "symbol"]
+                .into_iter()
+                .map(|field| SubscriptionAckFieldBinding::object(0, field, format!("arg.{field}")))
+                .collect(),
+        )
+        .unwrap();
+        let expected = binding
+            .expected_subscribe(&plan.entries()[0].resolved)
+            .unwrap()
+            .with_single_flight();
+        let protocol = SubscriptionAckCompiler::compile(&config).unwrap();
+        let ack = |event, index: usize| {
+            json!({
+                "event": event,
+                "arg": plan.entries()[index].resolved.request.arguments[0],
+            })
+        };
+        assert_eq!(
+            protocol.classify(&ack("subscribe", 1), &expected),
+            SubscriptionAckClassification::Unrelated
+        );
+        assert_eq!(
+            protocol.classify(&ack("unsubscribe", 0), &expected),
+            SubscriptionAckClassification::Unrelated
+        );
+        assert_eq!(
+            protocol.classify(&ack("subscribe", 0), &expected),
+            SubscriptionAckClassification::Confirmed
         );
     }
 

@@ -102,8 +102,7 @@ async fn shared_instruments_mixed_batches_and_independent_shutdown() {
                     move |payload| tx.try_send(published(payload)).map_err(|e| e.to_string()),
                 )
                 .unwrap();
-            // Demand updates may replay existing subscriptions. Observe this
-            // instrument's ACK rather than consuming an unrelated queued ACK.
+            // Observe this instrument's subscription ACK.
             loop {
                 let ack = server.ack().await;
                 println!("[{profile}] initial ACK {ack}");
@@ -434,13 +433,8 @@ async fn shared_depth_instruments_keep_snapshot_and_delta_ownership() {
         eth.channel = SourceChannel::Depth;
         let (response, gate) = MockResponse::gated(snapshot_body(profile));
         let (second_response, second_gate) = MockResponse::gated(snapshot_body(profile));
-        let http = MockExchange::start(vec![
-            response,
-            second_response,
-            MockResponse::ok(snapshot_body(profile)),
-        ]);
-        // Extending demand re-establishes BTC acquisition as well as ETH.
-        // Gate responses until both native deltas have reached their owners.
+        let http = MockExchange::start(vec![response, second_response]);
+        // One snapshot per instrument. ETH attachment leaves BTC's book live.
         let gates = [gate, second_gate];
         let mut server = LocalSocket::start(profile).await;
         let configs = Arc::new(rest_support::load_profile(profile, http.base_url()));
@@ -503,7 +497,7 @@ async fn shared_depth_instruments_keep_snapshot_and_delta_ownership() {
             if id == "book-eth" {
                 server
                     .send
-                    .send(depth_update(profile, &btc.symbol, 101, 101))
+                    .send(depth_update(profile, &btc.symbol, 102, 102))
                     .await
                     .unwrap();
             }
@@ -523,15 +517,20 @@ async fn shared_depth_instruments_keep_snapshot_and_delta_ownership() {
             .await
             .unwrap();
             gate.release();
-            let mut snapshots = std::collections::BTreeSet::new();
-            let expected = if id == "book-eth" { 2 } else { 1 };
-            while snapshots.len() < expected {
+            let mut saw_btc_delta = id == "book-btc";
+            let mut saw_snapshot = false;
+            while !saw_snapshot || !saw_btc_delta {
                 let (owner, event) = timeout(DEADLINE, rx.recv()).await.unwrap().unwrap();
+                assert_ne!(event, "invalidated");
                 if event == "snapshot" {
-                    assert!(snapshots.insert(owner));
+                    assert_eq!(owner, id);
+                    assert!(!saw_snapshot);
+                    saw_snapshot = true;
+                }
+                if id == "book-eth" && owner == "book-btc" && event == "delta" {
+                    saw_btc_delta = true;
                 }
             }
-            assert!(snapshots.contains(&id));
             wait_running(&mut supervisor, &id).await;
         }
         wait_running(&mut supervisor, "book-btc").await;
@@ -549,7 +548,7 @@ async fn shared_depth_instruments_keep_snapshot_and_delta_ownership() {
             }
         }
         assert_eq!(metrics[0].messages_received_total(), 2);
-        assert_eq!(http.request_count(), 3);
+        assert_eq!(http.request_count(), 2);
         supervisor.stop("book-btc").await.unwrap();
         supervisor.stop("book-eth").await.unwrap();
         assert_eq!(manager.stream_count().await, 0);

@@ -64,10 +64,13 @@ echo_ping_payload = true
 strategy = "json_rpc"
 subscribe_method = "SUBSCRIBE"
 unsubscribe_method = "UNSUBSCRIBE"
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
 request_id_field = "id"
 request_id_type = "signed_integer"
 success_field = "result"
 success_is_null = true
+error_field = "error"
 
 [channels.trades]
 enabled = true
@@ -529,139 +532,100 @@ async fn connection_slot_reconnects_and_restores_current_demand() {
 }
 
 #[tokio::test]
-async fn demand_change_reconnects_healthy_connection() {
-    // --------------------------------------------------------
-    // LOOPBACK SERVER
-    // --------------------------------------------------------
-
+async fn demand_change_reconciles_on_healthy_connection() {
     let listener = crate::websocket_server::listen().await;
-
-    let address = listener.local_addr().unwrap();
-    let url = format!("ws://{address}");
-
-    let (server_first_closed_tx, server_first_closed_rx) = oneshot::channel::<()>();
-
+    let url = format!("ws://{}", listener.local_addr().unwrap());
+    let (release_ack, wait_for_release) = oneshot::channel();
     let server = tokio::spawn(async move {
-        // ====================================================
-        // GENERATION 1
-        // ====================================================
+        let (tcp, _) = listener.accept().await.unwrap();
+        let mut socket = accept_async(tcp).await.unwrap();
+        acknowledge_subscriptions(&mut socket, &["btcusdt@trade", "ethusdt@trade"]).await;
 
-        let (tcp, _) = time::timeout(TIMEOUT, listener.accept())
+        let removal = time::timeout(TIMEOUT, socket.next())
             .await
             .unwrap()
-            .unwrap();
-
-        let mut first = accept_async(tcp).await.unwrap();
-
-        acknowledge_subscriptions(&mut first, &["btcusdt@trade", "ethusdt@trade"]).await;
-
-        // Unlike the previous test, the server does NOT
-        // deliberately disconnect this connection.
-        //
-        // The connection must be closed by MarketForge
-        // in response to the demand change.
-
-        let closed = time::timeout(TIMEOUT, first.next())
-            .await
-            .expect("MarketForge did not close the stale connection");
-
-        assert!(
-            matches!(closed, None | Some(Ok(Message::Close(_))) | Some(Err(_))),
-            "unexpected frame on old connection: {closed:?}"
-        );
-
-        drop(first);
-
-        server_first_closed_tx.send(()).unwrap();
-
-        // ====================================================
-        // GENERATION 2
-        // ====================================================
-
-        let (tcp, _) = time::timeout(TIMEOUT, listener.accept())
-            .await
             .unwrap()
             .unwrap();
+        let request: Value = serde_json::from_str(removal.to_text().unwrap()).unwrap();
+        assert_eq!(request["method"], "UNSUBSCRIBE");
+        assert_eq!(request["params"], json!(["ethusdt@trade"]));
+        socket
+            .send(Message::Text(
+                json!({"result":null,"id":request["id"]}).to_string().into(),
+            ))
+            .await
+            .unwrap();
 
-        let mut second = accept_async(tcp).await.unwrap();
-
-        acknowledge_subscriptions(&mut second, &["btcusdt@trade", "xrpusdt@trade"]).await;
-
-        // Keep the second generation connected until
-        // the test explicitly shuts down the runner.
-        while let Some(frame) = second.next().await {
+        let addition = time::timeout(TIMEOUT, socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let request: Value = serde_json::from_str(addition.to_text().unwrap()).unwrap();
+        assert_eq!(request["method"], "SUBSCRIBE");
+        assert_eq!(request["params"], json!(["xrpusdt@trade"]));
+        socket
+            .send(Message::Text(
+                json!({"stream":"btcusdt@trade","price":"1"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        // A wrong request ID cannot authorize the new subscription.
+        socket
+            .send(Message::Text(
+                json!({"result":null,"id":999999}).to_string().into(),
+            ))
+            .await
+            .unwrap();
+        wait_for_release.await.unwrap();
+        socket
+            .send(Message::Text(
+                json!({"result":null,"id":request["id"]}).to_string().into(),
+            ))
+            .await
+            .unwrap();
+        while let Some(frame) = socket.next().await {
             if frame.is_err() || matches!(frame, Ok(Message::Close(_))) {
                 break;
             }
         }
     });
 
-    // --------------------------------------------------------
-    // REAL MARKETFORGE INFRASTRUCTURE
-    // --------------------------------------------------------
-
     let exchange = Arc::new(config());
-
     let compiled =
         WebSocketLimiterCompiler::compile(&exchange, &WebSocketLimiterBindings::default()).unwrap();
-
-    let shared_limiter = RateLimitManager::new(compiled.shared.policies.clone(), 32).unwrap();
-
+    let limiter = RateLimitManager::new(compiled.shared.policies.clone(), 32).unwrap();
     let heartbeat = HeartbeatPlanCompiler::compile(&exchange).unwrap();
-
-    // --------------------------------------------------------
-    // PERSISTENT CONNECTION-SLOT AUTHORITY
-    // --------------------------------------------------------
-
-    let fence = ConnectionFence::new("demand-reconcile-runtime", "binance-public-slot").unwrap();
-
-    let observer_fence = fence.clone();
-
+    let fence = ConnectionFence::new("reconciliation", "binance-public").unwrap();
+    let observer = fence.clone();
     let recovery = SharedStreamRecovery::new();
-    let observer_recovery = recovery.clone();
-
-    // --------------------------------------------------------
-    // AUTHORITATIVE DEMAND
-    // --------------------------------------------------------
-
+    let authority = recovery.clone();
     let desired = Arc::new(RwLock::new(demand(1, &["BTCUSDT", "ETHUSDT"])));
-
-    let demand_reader = desired.clone();
-
-    // --------------------------------------------------------
-    // RUNTIME CHANNELS
-    // --------------------------------------------------------
-
-    let (market_tx, _market_rx) = mpsc::channel(64);
-
-    let (subscription_tx, mut subscription_rx) = mpsc::channel(16);
-
-    let (events_tx, mut events_rx) = mpsc::channel(64);
-
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-
-    // --------------------------------------------------------
-    // START ACTUAL CONNECTION SLOT RUNNER
-    // --------------------------------------------------------
-
+    let reader = desired.clone();
+    let (market_data, mut frames) = mpsc::channel(32);
+    let (subscription_events, mut confirmations_rx) = mpsc::channel(16);
+    let (events, _lifecycle) = mpsc::channel(64);
+    let (shutdown, stop) = oneshot::channel();
     let runner = tokio::spawn(async move {
         ConnectionSlotRunner::run(
             &url,
             exchange,
             &compiled,
-            &shared_limiter,
+            &limiter,
             reconnect_policy(),
-            shutdown_rx,
-            events_tx,
+            stop,
+            events,
             fence,
             recovery,
             None,
-            move || demand_reader.read().unwrap().clone(),
+            move || reader.read().unwrap().clone(),
             move || heartbeat.clone(),
             BTreeMap::new(),
             ConnectionSessionOutputs {
-                market_data: market_tx,
-                subscription_events: subscription_tx,
+                market_data,
+                subscription_events,
             },
             ConnectionBootstrapLimits {
                 maximum_pending: 16,
@@ -671,145 +635,419 @@ async fn demand_change_reconnects_healthy_connection() {
         )
         .await
     });
-
-    // --------------------------------------------------------
-    // CONFIRM INITIAL SUBSCRIPTIONS
-    // --------------------------------------------------------
-
-    let first = confirmations(&mut subscription_rx, &["BTCUSDT:trades", "ETHUSDT:trades"]).await;
-
-    let first_btc = first["BTCUSDT:trades"].clone();
-
-    let first_eth = first["ETHUSDT:trades"].clone();
-
-    // The first connection is healthy and its
-    // subscriptions have been acknowledged.
-    //
-    // We have not instructed the server to disconnect.
-
-    {
-        let guard = observer_recovery.lock().unwrap();
-
-        assert_eq!(
-            guard.phase("BTCUSDT:trades"),
-            Some(StreamRecoveryPhase::AwaitingRecovery),
-        );
-
-        assert_eq!(
-            guard.phase("ETHUSDT:trades"),
-            Some(StreamRecoveryPhase::AwaitingRecovery),
-        );
-    }
-
-    // --------------------------------------------------------
-    // CHANGE DEMAND WHILE CONNECTION IS HEALTHY
-    // --------------------------------------------------------
-
-    {
-        let mut guard = desired.write().unwrap();
-
-        *guard = demand(2, &["BTCUSDT", "XRPUSDT"]);
-    }
-
-    // --------------------------------------------------------
-    // VERIFY AUTOMATIC DISCONNECTION
-    // --------------------------------------------------------
-
-    time::timeout(TIMEOUT, server_first_closed_rx)
+    let initial = confirmations(&mut confirmations_rx, &["BTCUSDT:trades", "ETHUSDT:trades"]).await;
+    let btc = &initial["BTCUSDT:trades"];
+    let eth = &initial["ETHUSDT:trades"];
+    *desired.write().unwrap() = demand(2, &["BTCUSDT", "XRPUSDT"]);
+    let frame = time::timeout(TIMEOUT, frames.recv())
         .await
-        .expect("demand change did not close the old WebSocket")
-        .expect("server closure notification failed");
-
-    // --------------------------------------------------------
-    // VERIFY OLD GENERATION REVOCATION
-    // --------------------------------------------------------
-
-    time::timeout(TIMEOUT, async {
-        loop {
-            let event = events_rx
-                .recv()
-                .await
-                .expect("reconnect event channel closed");
-
-            if let ReconnectEvent::Disconnected { generation, .. } = event {
-                if generation == first_btc.connection().generation() {
-                    break;
-                }
-            }
-        }
-    })
-    .await
-    .expect("old generation was not revoked");
-
-    assert!(!observer_fence.accepts(first_btc.connection()));
-
-    // --------------------------------------------------------
-    // VERIFY NEW DEMAND WAS RESTORED
-    // --------------------------------------------------------
-
-    let second = confirmations(&mut subscription_rx, &["BTCUSDT:trades", "XRPUSDT:trades"]).await;
-
-    let second_btc = &second["BTCUSDT:trades"];
-
-    assert_ne!(first_btc.connection(), second_btc.connection(),);
-
-    assert!(second_btc.stream_generation() > first_btc.stream_generation());
-
-    assert!(second_btc.subscription_generation() > first_btc.subscription_generation());
-
-    // --------------------------------------------------------
-    // VERIFY PERSISTENT RECOVERY STATE
-    // --------------------------------------------------------
-
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(frame.to_text().unwrap()).unwrap()["stream"],
+        "btcusdt@trade"
+    );
+    assert!(confirmations_rx.try_recv().is_err());
+    release_ack.send(()).unwrap();
+    let added = confirmations(&mut confirmations_rx, &["XRPUSDT:trades"]).await;
+    let xrp = &added["XRPUSDT:trades"];
+    assert_eq!(btc.connection(), xrp.connection());
+    assert_eq!(observer.current_stamp().as_ref(), Some(btc.connection()));
     {
-        let guard = observer_recovery.lock().unwrap();
-
-        assert_eq!(guard.token("BTCUSDT:trades"), Some(second_btc),);
-
-        assert!(guard.token("XRPUSDT:trades").is_some());
-
-        // ETH no longer has authoritative demand.
-        assert!(guard.kind("ETHUSDT:trades").is_none());
-
-        // Neither generation has completed integrity
-        // recovery, so neither may publish.
-        assert!(!guard.may_publish(&observer_fence, &first_btc,));
-
-        assert!(!guard.may_publish(&observer_fence, &first_eth,));
-
-        assert!(!guard.may_publish(&observer_fence, second_btc,));
-
+        let state = authority.lock().unwrap();
+        assert_eq!(state.token("BTCUSDT:trades"), Some(btc));
         assert_eq!(
-            guard.phase("BTCUSDT:trades"),
-            Some(StreamRecoveryPhase::AwaitingRecovery),
+            state.phase("BTCUSDT:trades"),
+            Some(StreamRecoveryPhase::AwaitingRecovery)
         );
-
-        assert_eq!(
-            guard.phase("XRPUSDT:trades"),
-            Some(StreamRecoveryPhase::AwaitingRecovery),
-        );
+        assert!(state.token("ETHUSDT:trades").is_none());
+        assert!(!state.may_publish(&observer, eth));
+        assert!(!state.may_publish(&observer, btc));
+        assert!(!state.may_publish(&observer, xrp));
     }
-
-    // --------------------------------------------------------
-    // TERMINAL SHUTDOWN
-    // --------------------------------------------------------
-
-    shutdown_tx.send(()).unwrap();
-
+    shutdown.send(()).unwrap();
     time::timeout(TIMEOUT, runner)
         .await
-        .expect("runner shutdown timed out")
-        .expect("runner task panicked")
-        .expect("runner failed");
-
-    time::timeout(TIMEOUT, server)
-        .await
-        .expect("server shutdown timed out")
-        .expect("server task panicked");
-
-    assert!(!observer_fence.accepts(second_btc.connection()));
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    time::timeout(TIMEOUT, server).await.unwrap().unwrap();
+    assert!(!observer.accepts(btc.connection()));
 }
 
 // ============================================================
 // W4.7-A1 — REAL BINANCE SPOT
 // ============================================================
+
+async fn local_socket(listener: &tokio::net::TcpListener) -> WebSocketStream<TcpStream> {
+    let (tcp, _) = time::timeout(TIMEOUT, listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    time::timeout(TIMEOUT, accept_async(tcp))
+        .await
+        .unwrap()
+        .unwrap()
+}
+
+async fn native_command(
+    socket: &mut WebSocketStream<TcpStream>,
+    method: &str,
+    stream: &str,
+) -> Value {
+    let frame = time::timeout(TIMEOUT, socket.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let request: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+    assert_eq!(request["method"], method);
+    assert_eq!(request["params"], json!([stream]));
+    request["id"].clone()
+}
+
+async fn reply(socket: &mut WebSocketStream<TcpStream>, id: Value) {
+    socket
+        .send(Message::Text(
+            json!({"result":null,"id":id}).to_string().into(),
+        ))
+        .await
+        .unwrap();
+}
+
+async fn observation(socket: &mut WebSocketStream<TcpStream>, stream: &str, number: u32) {
+    socket
+        .send(Message::Text(
+            json!({"stream":stream,"number":number}).to_string().into(),
+        ))
+        .await
+        .unwrap();
+}
+
+async fn input(
+    receiver: &mut mpsc::Receiver<marketforge_engine::live::infrastructure::websocket::StreamInput>,
+) -> marketforge_engine::live::infrastructure::websocket::StreamInput {
+    time::timeout(TIMEOUT, receiver.recv())
+        .await
+        .unwrap()
+        .unwrap()
+}
+
+async fn acquisition(
+    receiver: &mut mpsc::Receiver<marketforge_engine::live::infrastructure::websocket::StreamInput>,
+) -> marketforge_engine::live::infrastructure::websocket::StreamAcquisition {
+    use marketforge_engine::live::infrastructure::websocket::StreamInput;
+    loop {
+        if let StreamInput::Connected(acquisition) = input(receiver).await {
+            return acquisition;
+        }
+    }
+}
+
+fn managed_binance(
+    listener: &tokio::net::TcpListener,
+    capacity: u32,
+) -> marketforge_engine::live::infrastructure::websocket::WebSocketManager {
+    use marketforge_engine::live::infrastructure::websocket::{
+        WebSocketManager, WebSocketManagerRuntime, WebSocketProfileRuntime,
+    };
+    let mut exchange = config();
+    exchange.websocket.max_subscriptions_per_connection = Some(capacity.into());
+    exchange.websocket.routing = Some(
+        toml::from_str(
+            r#"mode = "combined"
+combined_stream_field = "stream""#,
+        )
+        .unwrap(),
+    );
+    let exchange = Arc::new(exchange);
+    let compiled =
+        WebSocketLimiterCompiler::compile(&exchange, &WebSocketLimiterBindings::default()).unwrap();
+    let shared_limiter = RateLimitManager::new(compiled.shared.policies.clone(), 32).unwrap();
+    WebSocketManager::from_runtime(WebSocketManagerRuntime {
+        runtime_id: "managed-reconciliation".into(),
+        profiles: vec![WebSocketProfileRuntime {
+            heartbeat_plan: HeartbeatPlanCompiler::compile(&exchange).unwrap(),
+            exchange,
+            urls: BTreeMap::from([(None, format!("ws://{}", listener.local_addr().unwrap()))]),
+            compiled_limiters: compiled,
+            ack_bindings: BTreeMap::new(),
+        }],
+        shared_limiter,
+        reconnect_policy: reconnect_policy(),
+        bootstrap_limits: ConnectionBootstrapLimits {
+            maximum_pending: 16,
+            acknowledgement_timeout: Duration::from_secs(3),
+        },
+        session_limits: session_limits(),
+        event_capacity: 64,
+        maximum_early_frames: 16,
+    })
+    .unwrap()
+}
+
+async fn attach(
+    manager: &marketforge_engine::live::infrastructure::websocket::WebSocketManager,
+    symbol: &str,
+) -> (
+    marketforge_engine::live::infrastructure::websocket::StreamBinding,
+    mpsc::Receiver<marketforge_engine::live::infrastructure::websocket::StreamInput>,
+) {
+    use marketforge_engine::live::infrastructure::websocket::StreamRequest;
+    let request = StreamRequest::new("binance_spot", symbol, "trades").unwrap();
+    let (tx, rx) = mpsc::channel(32);
+    let binding = time::timeout(TIMEOUT, manager.attach_request(request, tx))
+        .await
+        .unwrap()
+        .unwrap();
+    (binding, rx)
+}
+
+async fn expect_observation(
+    receiver: &mut mpsc::Receiver<marketforge_engine::live::infrastructure::websocket::StreamInput>,
+    expected: &marketforge_engine::live::infrastructure::websocket::StreamAcquisition,
+    number: u32,
+) {
+    use marketforge_engine::live::infrastructure::websocket::StreamInput;
+    let StreamInput::Data {
+        acquisition,
+        message,
+    } = input(receiver).await
+    else {
+        panic!("surviving stream should receive data without a new acquisition");
+    };
+    assert_eq!(&acquisition, expected);
+    let message: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+    assert_eq!(message["number"], number);
+}
+
+async fn close_peer(mut socket: WebSocketStream<TcpStream>) {
+    while let Some(Ok(frame)) = socket.next().await {
+        if matches!(frame, Message::Close(_)) {
+            let _ = socket.flush().await;
+            break;
+        }
+    }
+}
+
+#[tokio::test]
+async fn managed_removal_discards_only_late_retired_frames_and_reattaches_safely() {
+    let listener = crate::websocket_server::listen().await;
+    let manager = managed_binance(&listener, 2);
+    let (btc_binding, mut btc) = attach(&manager, "BTCUSDT").await;
+    let mut socket = local_socket(&listener).await;
+    acknowledge_subscriptions(&mut socket, &["btcusdt@trade"]).await;
+    let btc_epoch = acquisition(&mut btc).await;
+
+    let (eth_binding, mut eth) = attach(&manager, "ETHUSDT").await;
+    let eth_subscribe = native_command(&mut socket, "SUBSCRIBE", "ethusdt@trade").await;
+    observation(&mut socket, "ethusdt@trade", 1).await;
+    observation(&mut socket, "ethusdt@trade", 2).await;
+    observation(&mut socket, "btcusdt@trade", 3).await;
+    expect_observation(&mut btc, &btc_epoch, 3).await;
+    assert!(eth.try_recv().is_err());
+    reply(&mut socket, eth_subscribe).await;
+    let eth_epoch = acquisition(&mut eth).await;
+    assert_eq!(eth_epoch.connection, btc_epoch.connection);
+    expect_observation(&mut eth, &eth_epoch, 1).await;
+    expect_observation(&mut eth, &eth_epoch, 2).await;
+
+    manager.detach(eth_binding).await.unwrap();
+    let retire = native_command(&mut socket, "UNSUBSCRIBE", "ethusdt@trade").await;
+    assert!(eth.recv().await.is_none());
+    // The old server may still send data before or after processing unsubscribe.
+    observation(&mut socket, "ethusdt@trade", 4).await;
+    observation(&mut socket, "btcusdt@trade", 5).await;
+    expect_observation(&mut btc, &btc_epoch, 5).await;
+
+    // Fresh attachment authority progresses while the old slot waits for an ACK.
+    let (replacement, mut new_eth) = attach(&manager, "ETHUSDT").await;
+    let mut other = local_socket(&listener).await;
+    acknowledge_subscriptions(&mut other, &["ethusdt@trade"]).await;
+    let new_epoch = acquisition(&mut new_eth).await;
+    assert_ne!(new_epoch.connection, eth_epoch.connection);
+    assert_eq!(manager.slot_count().await, 2);
+    reply(&mut socket, retire).await;
+    observation(&mut socket, "ethusdt@trade", 6).await;
+    observation(&mut socket, "btcusdt@trade", 7).await;
+    expect_observation(&mut btc, &btc_epoch, 7).await;
+    observation(&mut other, "ethusdt@trade", 8).await;
+    expect_observation(&mut new_eth, &new_epoch, 8).await;
+
+    let (left, right, _, _) = time::timeout(TIMEOUT, async {
+        tokio::join!(
+            manager.detach(btc_binding),
+            manager.detach(replacement),
+            close_peer(socket),
+            close_peer(other)
+        )
+    })
+    .await
+    .unwrap();
+    left.unwrap();
+    right.unwrap();
+    assert_eq!(manager.slot_count().await, 0);
+    assert_eq!(manager.stream_count().await, 0);
+    manager.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn managed_withdrawal_before_ack_and_socket_failure_restore_latest_demand() {
+    let listener = crate::websocket_server::listen().await;
+    let manager = managed_binance(&listener, 8);
+    let (_, mut btc) = attach(&manager, "BTCUSDT").await;
+    let mut socket = local_socket(&listener).await;
+    let btc_subscribe = native_command(&mut socket, "SUBSCRIBE", "btcusdt@trade").await;
+    let (eth_binding, mut eth) = attach(&manager, "ETHUSDT").await;
+    // ETH became desired while the initial restoration ACK was outstanding.
+    reply(&mut socket, btc_subscribe).await;
+    let previous = acquisition(&mut btc).await;
+
+    let eth_subscribe = native_command(&mut socket, "SUBSCRIBE", "ethusdt@trade").await;
+    let ((sol_binding, mut sol), (xrp_binding, mut xrp)) =
+        tokio::join!(attach(&manager, "SOLUSDT"), attach(&manager, "XRPUSDT"));
+    let (eth_removed, sol_removed) =
+        tokio::join!(manager.detach(eth_binding), manager.detach(sol_binding));
+    eth_removed.unwrap();
+    sol_removed.unwrap();
+    observation(&mut socket, "ethusdt@trade", 1).await;
+    reply(&mut socket, eth_subscribe).await;
+    let eth_unsubscribe = native_command(&mut socket, "UNSUBSCRIBE", "ethusdt@trade").await;
+    assert!(eth.recv().await.is_none());
+    assert!(sol.recv().await.is_none());
+    observation(&mut socket, "btcusdt@trade", 2).await;
+    expect_observation(&mut btc, &previous, 2).await;
+    reply(&mut socket, eth_unsubscribe).await;
+
+    let _unconfirmed = native_command(&mut socket, "SUBSCRIBE", "xrpusdt@trade").await;
+    manager.detach(xrp_binding).await.unwrap();
+    let (_, mut ada) = attach(&manager, "ADAUSDT").await;
+    socket.close(None).await.unwrap();
+    drop(socket);
+
+    let mut replacement = local_socket(&listener).await;
+    acknowledge_subscriptions(&mut replacement, &["adausdt@trade", "btcusdt@trade"]).await;
+    let btc_epoch = acquisition(&mut btc).await;
+    let ada_epoch = acquisition(&mut ada).await;
+    assert_ne!(previous.connection, btc_epoch.connection);
+    assert!(btc_epoch.generation > previous.generation);
+    assert_eq!(btc_epoch.connection, ada_epoch.connection);
+    assert!(xrp.recv().await.is_none());
+    let (shutdown, _) = time::timeout(TIMEOUT, async {
+        tokio::join!(manager.shutdown(), close_peer(replacement))
+    })
+    .await
+    .unwrap();
+    shutdown.unwrap();
+    assert_eq!(manager.stream_count().await, 0);
+}
+
+#[tokio::test]
+async fn uncertain_native_rejection_or_timeout_recycles_generation() {
+    for reject in [true, false] {
+        let listener = crate::websocket_server::listen().await;
+        let manager = managed_binance(&listener, 4);
+        let (_, mut btc) = attach(&manager, "BTCUSDT").await;
+        let mut socket = local_socket(&listener).await;
+        acknowledge_subscriptions(&mut socket, &["btcusdt@trade"]).await;
+        let previous = acquisition(&mut btc).await;
+
+        let (_, mut eth) = attach(&manager, "ETHUSDT").await;
+        let id = native_command(&mut socket, "SUBSCRIBE", "ethusdt@trade").await;
+        if reject {
+            socket
+                .send(Message::Text(
+                    json!({"id":id,"error":{"code":2,"msg":"rejected synthetic subscription"}})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+        }
+        let mut replacement = local_socket(&listener).await;
+        assert!(eth.try_recv().is_err());
+        acknowledge_subscriptions(&mut replacement, &["btcusdt@trade", "ethusdt@trade"]).await;
+        let btc_epoch = acquisition(&mut btc).await;
+        let eth_epoch = acquisition(&mut eth).await;
+        assert_ne!(previous.connection, btc_epoch.connection);
+        assert_eq!(btc_epoch.connection, eth_epoch.connection);
+        let (shutdown, _) = time::timeout(TIMEOUT, async {
+            tokio::join!(manager.shutdown(), close_peer(replacement))
+        })
+        .await
+        .unwrap();
+        shutdown.unwrap();
+        assert_eq!(manager.slot_count().await, 0);
+    }
+}
+
+#[tokio::test]
+async fn dynamic_early_frame_overflow_fails_closed() {
+    let listener = crate::websocket_server::listen().await;
+    let manager = managed_binance(&listener, 4);
+    let (_, mut btc) = attach(&manager, "BTCUSDT").await;
+    let mut socket = local_socket(&listener).await;
+    acknowledge_subscriptions(&mut socket, &["btcusdt@trade"]).await;
+    acquisition(&mut btc).await;
+    let (_, mut eth) = attach(&manager, "ETHUSDT").await;
+    native_command(&mut socket, "SUBSCRIBE", "ethusdt@trade").await;
+    for number in 0..17 {
+        observation(&mut socket, "ethusdt@trade", number).await;
+    }
+    assert!(time::timeout(TIMEOUT, eth.recv()).await.unwrap().is_none());
+    assert!(time::timeout(TIMEOUT, btc.recv()).await.unwrap().is_none());
+    assert_eq!(manager.slot_count().await, 0);
+    manager.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn manager_shutdown_cancels_pending_native_transaction() {
+    let listener = crate::websocket_server::listen().await;
+    let manager = managed_binance(&listener, 4);
+    let (_, mut btc) = attach(&manager, "BTCUSDT").await;
+    let mut socket = local_socket(&listener).await;
+    native_command(&mut socket, "SUBSCRIBE", "btcusdt@trade").await;
+    let (shutdown, _) = time::timeout(TIMEOUT, async {
+        tokio::join!(manager.shutdown(), close_peer(socket))
+    })
+    .await
+    .unwrap();
+    shutdown.unwrap();
+    assert!(btc.recv().await.is_none());
+    assert_eq!(manager.slot_count().await, 0);
+    assert_eq!(manager.stream_count().await, 0);
+}
+
+#[tokio::test]
+async fn managed_capacity_is_reusable_after_unsubscribe_acknowledgment() {
+    let listener = crate::websocket_server::listen().await;
+    let manager = managed_binance(&listener, 3);
+    let (_, mut btc) = attach(&manager, "BTCUSDT").await;
+    let mut socket = local_socket(&listener).await;
+    acknowledge_subscriptions(&mut socket, &["btcusdt@trade"]).await;
+    let first = acquisition(&mut btc).await;
+    let (eth_binding, mut eth) = attach(&manager, "ETHUSDT").await;
+    acknowledge_subscriptions(&mut socket, &["ethusdt@trade"]).await;
+    acquisition(&mut eth).await;
+
+    manager.detach(eth_binding).await.unwrap();
+    let retired = native_command(&mut socket, "UNSUBSCRIBE", "ethusdt@trade").await;
+    let (_, mut sol) = attach(&manager, "SOLUSDT").await;
+    reply(&mut socket, retired).await;
+    let sol_id = native_command(&mut socket, "SUBSCRIBE", "solusdt@trade").await;
+
+    // SOL uses the previously free slot position. ADA needs the position released by ETH.
+    let (_, mut ada) = attach(&manager, "ADAUSDT").await;
+    assert_eq!(manager.slot_count().await, 1);
+    reply(&mut socket, sol_id).await;
+    let ada_id = native_command(&mut socket, "SUBSCRIBE", "adausdt@trade").await;
+    reply(&mut socket, ada_id).await;
+    assert_eq!(acquisition(&mut sol).await.connection, first.connection);
+    assert_eq!(acquisition(&mut ada).await.connection, first.connection);
+    let (shutdown, _) = time::timeout(TIMEOUT, async {
+        tokio::join!(manager.shutdown(), close_peer(socket))
+    })
+    .await
+    .unwrap();
+    shutdown.unwrap();
+}

@@ -139,11 +139,22 @@ impl ConnectionSlots {
     // ASSIGN STREAM
     // ========================================================
 
+    #[cfg(test)]
     pub fn assign(
         &mut self,
         key: SlotKey,
         subscription: DesiredSubscription,
         capacity: Option<usize>,
+    ) -> Result<SlotAssignment, ConnectionSlotsError> {
+        self.assign_eligible(key, subscription, capacity, |_, _| true)
+    }
+
+    pub fn assign_eligible(
+        &mut self,
+        key: SlotKey,
+        subscription: DesiredSubscription,
+        capacity: Option<usize>,
+        accepts: impl Fn(SlotId, Option<usize>) -> bool,
     ) -> Result<SlotAssignment, ConnectionSlotsError> {
         if capacity == Some(0) {
             return Err(ConnectionSlotsError::InvalidCapacity);
@@ -159,7 +170,15 @@ impl ConnectionSlots {
         let existing = self
             .slots
             .iter()
-            .find(|(_, slot)| slot.key == key && slot.capacity == capacity && slot.has_capacity())
+            .find(|(id, slot)| {
+                slot.key == key
+                    && slot.capacity == capacity
+                    && slot.has_capacity()
+                    && accepts(
+                        **id,
+                        capacity.map(|maximum| maximum - slot.subscriptions.len()),
+                    )
+            })
             .map(|(id, _)| *id);
 
         if let Some(slot_id) = existing {

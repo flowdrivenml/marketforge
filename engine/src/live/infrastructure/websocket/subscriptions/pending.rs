@@ -1,3 +1,4 @@
+use super::ack::SubscriptionAction;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -180,7 +181,7 @@ pub struct SubscriptionPendingManager {
     /// None means the historical request had no reliable
     /// native identity and cannot be disambiguated from
     /// later ID-less operations.
-    idless_history: Vec<Option<SubscriptionAckIdentity>>,
+    idless_history: Vec<(SubscriptionAction, Option<SubscriptionAckIdentity>)>,
 
     /// An uncertain ID-less transaction requires recycling
     /// the physical connection before further subscription
@@ -233,6 +234,12 @@ impl SubscriptionPendingManager {
     pub fn retired_idless_identity_count(&self) -> usize {
         self.idless_history.len()
     }
+    pub(crate) fn has_idless_pending(&self) -> bool {
+        self.pending
+            .values()
+            .any(|entry| entry.expected.request_id.is_none())
+    }
+
     pub fn pending_count(&self) -> usize {
         self.pending.len()
     }
@@ -320,7 +327,7 @@ impl SubscriptionPendingManager {
         // ----------------------------------------------------
 
         if idless {
-            for previous in &self.idless_history {
+            for (action, previous) in &self.idless_history {
                 match (previous.as_ref(), expected.identity.as_ref()) {
                     // An earlier ID-less request without an
                     // identity could produce a late generic
@@ -329,7 +336,9 @@ impl SubscriptionPendingManager {
                         return Err(SubscriptionPendingError::ReconnectRequired);
                     }
 
-                    (Some(previous), Some(current)) if previous == current => {
+                    (Some(previous), Some(current))
+                        if previous == current && *action == expected.action =>
+                    {
                         return Err(SubscriptionPendingError::RetiredIdlessIdentity);
                     }
 
@@ -377,7 +386,8 @@ impl SubscriptionPendingManager {
         if let Some(key) = request_id_key {
             self.retired_request_ids.insert(key);
         } else {
-            self.idless_history.push(expected.identity.clone());
+            self.idless_history
+                .push((expected.action, expected.identity.clone()));
         }
 
         self.next_id = next;

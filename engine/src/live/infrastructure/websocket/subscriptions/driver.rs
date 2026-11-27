@@ -290,7 +290,8 @@ impl SubscriptionDriver {
 
                 command = commands.recv(),
                 if !commands_closed
-                    && awaiting_receipt.is_empty() =>
+                    && awaiting_receipt.is_empty()
+                    && !session.has_idless_pending() =>
                 {
                     let Some(command) = command else {
                         commands_closed = true;
@@ -407,7 +408,10 @@ impl SubscriptionDriver {
                         SubscriptionDriverError::InboundClosed
                     )?;
 
-                    if !awaiting_receipt.is_empty() {
+                    let awaits_receipt = !awaiting_receipt.is_empty()
+                        && frame.to_text().ok().and_then(|text| serde_json::from_str::<Value>(text).ok())
+                            .is_some_and(|message| protocol.is_ack_candidate(&message));
+                    if awaits_receipt {
                         if early_frames.len()
                             >= limits.maximum_early_frames
                         {
@@ -485,7 +489,9 @@ impl SubscriptionDriver {
 
         match result {
             SubscriptionSessionEvent::Unrelated => {
-                Self::forward(unrelated, frame)?;
+                if !protocol.is_ack_candidate(&native) {
+                    Self::forward(unrelated, frame)?;
+                }
             }
 
             SubscriptionSessionEvent::Confirmed {

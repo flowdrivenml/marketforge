@@ -3,13 +3,15 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 use thiserror::Error;
 
-use super::ack::ExpectedSubscriptionAck;
+use super::ack::{ExpectedSubscriptionAck, SubscriptionAction};
 use super::ack_binding::{CompiledSubscriptionAckBinding, SubscriptionAckBindingError};
 use super::driver::SubscriptionCommand;
 use super::protocol::{SubscriptionProtocolError, SubscriptionStrategy};
+use super::resolver::ResolvedSubscription;
 use super::restoration_session::PreparedRestoration;
 use crate::live::config::exchange::{ExchangeConfig, ExchangeId, SubscriptionConfig};
 use crate::live::infrastructure::websocket::lifecycle::fence::{ConnectionFence, ConnectionStamp};
+use crate::live::infrastructure::websocket::streams::recovery::StreamRecoveryToken;
 
 // ============================================================
 // ERRORS
@@ -151,97 +153,97 @@ impl SubscriptionCommandFactory {
             return Err(SubscriptionCommandFactoryError::WrongRoute);
         }
 
-        // ----------------------------------------------------
-        // NATIVE SUBSCRIPTION CONFIGURATION
-        // ----------------------------------------------------
+        let mut next_id = self.next_request_id;
+        let mut commands = Vec::with_capacity(prepared.entries().len());
+        for entry in prepared.into_entries() {
+            commands.push(self.compile_operation(
+                exchange,
+                entry.subscription.resolved,
+                entry.token,
+                SubscriptionAction::Subscribe,
+                unix_seconds,
+                &mut next_id,
+            )?);
+        }
+        self.next_request_id = next_id;
+        Ok(commands)
+    }
 
+    pub(crate) fn operation(
+        &mut self,
+        exchange: &ExchangeConfig,
+        resolved: ResolvedSubscription,
+        token: StreamRecoveryToken,
+        action: SubscriptionAction,
+        unix_seconds: u64,
+    ) -> Result<SubscriptionCommand, SubscriptionCommandFactoryError> {
+        let mut next_id = self.next_request_id;
+        let command = self.compile_operation(
+            exchange,
+            resolved,
+            token,
+            action,
+            unix_seconds,
+            &mut next_id,
+        )?;
+        self.next_request_id = next_id;
+        Ok(command)
+    }
+
+    fn compile_operation(
+        &self,
+        exchange: &ExchangeConfig,
+        mut resolved: ResolvedSubscription,
+        token: StreamRecoveryToken,
+        action: SubscriptionAction,
+        unix_seconds: u64,
+        next_id: &mut u64,
+    ) -> Result<SubscriptionCommand, SubscriptionCommandFactoryError> {
+        if token.connection() != &self.stamp {
+            return Err(SubscriptionCommandFactoryError::StaleGeneration);
+        }
+        if resolved.route != self.route {
+            return Err(SubscriptionCommandFactoryError::WrongRoute);
+        }
         let subscription = exchange
             .websocket
             .subscription
             .as_ref()
             .ok_or(SubscriptionCommandFactoryError::MissingConfiguration)?;
-
-        // ----------------------------------------------------
-        // PREFLIGHT ALL COMMANDS
-        // ----------------------------------------------------
-
-        let mut commands = Vec::with_capacity(prepared.entries().len());
-
-        let mut next_id = self.next_request_id;
-
-        for entry in prepared.into_entries() {
-            let mut resolved = entry.subscription.resolved;
-
-            // -----------------------------------------------
-            // GENERATE REQUEST ID
-            // -----------------------------------------------
-
-            let request_id = Self::allocate_native_id(
-                subscription,
-                &self.stamp,
-                &mut next_id,
-                exchange.exchange.id == ExchangeId::Okx,
-            )?;
-
-            resolved.request.request_id = request_id.clone();
-
-            if matches!(
-                resolved.protocol.strategy(),
-                SubscriptionStrategy::GateV4ChannelEvent
-            ) {
-                resolved.request.unix_seconds = Some(unix_seconds);
-            }
-
-            // -----------------------------------------------
-            // SERIALIZE NATIVE REQUEST
-            // -----------------------------------------------
-
-            let wire_text = resolved.protocol.subscribe(&resolved.request)?;
-
-            // -----------------------------------------------
-            // BUILD EXPECTED ACK
-            // -----------------------------------------------
-
-            let expected = match self.ack_bindings.get(&resolved.channel_name) {
-                Some(binding) => binding.expected_subscribe(&resolved)?,
-
-                None if request_id.is_some() => {
-                    ExpectedSubscriptionAck::subscribe(request_id.clone())
-                }
-
-                None => {
-                    return Err(SubscriptionCommandFactoryError::MissingAckBinding(
-                        resolved.channel_name.clone(),
-                    ));
-                }
-            };
-
-            // -----------------------------------------------
-            // CORRELATION SAFETY
-            // -----------------------------------------------
-
-            if expected.request_id.is_none() && expected.identity.is_none() {
-                return Err(SubscriptionCommandFactoryError::UncorrelatableSubscription(
-                    resolved.channel_name.clone(),
+        let request_id = Self::allocate_native_id(
+            subscription,
+            &self.stamp,
+            next_id,
+            exchange.exchange.id == ExchangeId::Okx,
+        )?;
+        resolved.request.request_id = request_id.clone();
+        if resolved.protocol.strategy() == SubscriptionStrategy::GateV4ChannelEvent {
+            resolved.request.unix_seconds = Some(unix_seconds);
+        }
+        let wire_text = match action {
+            SubscriptionAction::Subscribe => resolved.protocol.subscribe(&resolved.request)?,
+            SubscriptionAction::Unsubscribe => resolved.protocol.unsubscribe(&resolved.request)?,
+        };
+        let expected = match self.ack_bindings.get(&resolved.channel_name) {
+            Some(binding) => match action {
+                SubscriptionAction::Subscribe => binding.expected_subscribe(&resolved)?,
+                SubscriptionAction::Unsubscribe => binding.expected_unsubscribe(&resolved)?,
+            },
+            None if request_id.is_some() => match action {
+                SubscriptionAction::Subscribe => ExpectedSubscriptionAck::subscribe(request_id),
+                SubscriptionAction::Unsubscribe => ExpectedSubscriptionAck::unsubscribe(request_id),
+            },
+            None => {
+                return Err(SubscriptionCommandFactoryError::MissingAckBinding(
+                    resolved.channel_name,
                 ));
             }
-
-            commands.push(SubscriptionCommand {
-                token: entry.token,
-                expected,
-                wire_text,
-            });
-        }
-
-        // ----------------------------------------------------
-        // COMMIT REQUEST-ID ALLOCATION
-        // ----------------------------------------------------
-
-        // No counter changes occur until the entire batch
-        // has been successfully compiled.
-        self.next_request_id = next_id;
-
-        Ok(commands)
+        };
+        Ok(SubscriptionCommand {
+            token,
+            expected,
+            wire_text,
+        })
     }
 
     // ========================================================

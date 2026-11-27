@@ -111,6 +111,7 @@ pub struct PreparedConnectionGeneration {
     recovery: SharedStreamRecovery,
 
     restoration_commands: Vec<SubscriptionCommand>,
+    factory: SubscriptionCommandFactory,
 }
 
 impl PreparedConnectionGeneration {
@@ -141,16 +142,29 @@ impl PreparedConnectionGeneration {
         heartbeat: CompiledHeartbeatPlan,
         acknowledgements: CompiledSubscriptionAck,
     ) -> ConnectionSessionInputs {
-        ConnectionSessionInputs {
-            stamp: self.stamp,
-            connection,
-            heartbeat,
-            acknowledgements,
-            subscription_session: self.subscription_session,
-            recovery: self.recovery,
-            restoration_commands: self.restoration_commands,
-            demand_revision: self.demand_revision,
-        }
+        self.into_reconciliation_inputs(connection, heartbeat, acknowledgements)
+            .0
+    }
+
+    pub(crate) fn into_reconciliation_inputs(
+        self,
+        connection: WebSocketConnection,
+        heartbeat: CompiledHeartbeatPlan,
+        acknowledgements: CompiledSubscriptionAck,
+    ) -> (ConnectionSessionInputs, SubscriptionCommandFactory) {
+        (
+            ConnectionSessionInputs {
+                stamp: self.stamp,
+                connection,
+                heartbeat,
+                acknowledgements,
+                subscription_session: self.subscription_session,
+                recovery: self.recovery,
+                restoration_commands: self.restoration_commands,
+                demand_revision: self.demand_revision,
+            },
+            self.factory,
+        )
     }
 }
 
@@ -250,11 +264,7 @@ impl ConnectionGenerationBootstrap {
         // CONNECTION-SCOPED COMMAND FACTORY
         // ----------------------------------------------------
 
-        // This factory is constructed exactly once for
-        // the initial restoration batch.
-        //
-        // Incremental subscriptions must eventually share
-        // its request-ID allocation state.
+        // Preserve this factory for incremental commands on the same generation.
         let mut factory = SubscriptionCommandFactory::new(
             stamp.clone(),
             connection_route.map(str::to_owned),
@@ -286,6 +296,7 @@ impl ConnectionGenerationBootstrap {
             subscription_session,
             recovery: recovery.clone(),
             restoration_commands: commands,
+            factory,
         })
     }
 }

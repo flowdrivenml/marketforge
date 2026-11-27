@@ -2,13 +2,10 @@ use std::{
     collections::BTreeMap,
     future,
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use tokio::{
-    sync::{mpsc, oneshot},
-    time,
-};
+use tokio::sync::{mpsc, oneshot};
 
 use tokio_tungstenite::tungstenite::Message;
 
@@ -32,22 +29,8 @@ use crate::live::infrastructure::websocket::transport::reconnect::{
     ReconnectError, ReconnectEvent, ReconnectPolicy, ReconnectRunner,
 };
 use crate::live::infrastructure::websocket::transport::session::{
-    ConnectionSession, ConnectionSessionLimits, ConnectionSessionOutputs,
+    ConnectionSession, ConnectionSessionLimits, ConnectionSessionOutputs, DemandReconciliation,
 };
-
-// ============================================================
-// DEMAND RECONCILIATION
-// ============================================================
-
-/// Maximum delay between periodic demand-revision checks
-/// while a physical WebSocket connection is running.
-///
-/// This is a MarketForge operational setting, not an
-/// exchange protocol requirement.
-///
-/// A production runtime may eventually replace polling
-/// with revision-change notifications.
-const DEMAND_RECONCILE_INTERVAL: Duration = Duration::from_millis(100);
 
 // ============================================================
 // MARKET-DATA OUTPUT MODE
@@ -322,9 +305,9 @@ impl ConnectionSlotRunner {
                     // previous generation's command queue.
                     let desired = demand_snapshot();
 
-                    let revision = desired.revision();
-
-                    let current_revision_at_bootstrap = demand_snapshot().revision();
+                    // The session reconciles any newer projection before sending
+                    // an initial command. A later revision does not revoke this socket.
+                    let current_revision_at_bootstrap = desired.revision();
 
                     // ----------------------------------------
                     // GENERATE NATIVE TIMESTAMP
@@ -370,7 +353,7 @@ impl ConnectionSlotRunner {
                     // CONSTRUCT PHYSICAL SESSION INPUTS
                     // ----------------------------------------
 
-                    let inputs = bootstrap.into_session_inputs(
+                    let (inputs, factory) = bootstrap.into_reconciliation_inputs(
                         connection,
                         heartbeat_plan(),
                         acknowledgements,
@@ -412,10 +395,10 @@ impl ConnectionSlotRunner {
                     };
 
                     // ----------------------------------------
-                    // CURRENT DEMAND REVISION PROVIDER
+                    // CURRENT DESIRED SUBSCRIPTION PROVIDER
                     // ----------------------------------------
 
-                    let current_revision = || demand_snapshot().revision();
+                    let current_demand = || demand_snapshot();
 
                     // ========================================
                     // PHYSICAL SESSION SHUTDOWN
@@ -427,13 +410,15 @@ impl ConnectionSlotRunner {
                     // PHYSICAL SESSION
                     // ========================================
 
-                    let session = ConnectionSession::run(
+                    let session = ConnectionSession::run_reconciled(
                         inputs,
                         outputs,
                         &fence,
-                        current_revision,
                         session_shutdown_receiver,
                         session_limits,
+                        DemandReconciliation {
+                            exchange: &exchange, factory, initial: desired, desired: &current_demand,
+                        },
                     );
 
                     tokio::pin!(session);
@@ -473,14 +458,6 @@ impl ConnectionSlotRunner {
                     // Pin the optional relay future so it
                     // can be polled repeatedly by select!.
                     tokio::pin!(relay);
-
-                    // ========================================
-                    // DEMAND REVISION WATCH
-                    // ========================================
-
-                    let mut demand_checks = time::interval(DEMAND_RECONCILE_INTERVAL);
-
-                    demand_checks.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
                     // ========================================
                     // RUN UNTIL TERMINATION
@@ -531,39 +508,7 @@ impl ConnectionSlotRunner {
                                 )));
                             }
 
-                            // --------------------------------
-                            // DESIRED SUBSCRIPTIONS CHANGED
-                            // --------------------------------
 
-                            _ = demand_checks.tick() => {
-                                let latest_revision =
-                                    demand_snapshot().revision();
-
-                                if latest_revision != revision {
-                                    // The current physical
-                                    // subscription set is no
-                                    // longer authoritative.
-                                    //
-                                    // ConnectionSlotRunner
-                                    // currently reconciles
-                                    // demand changes by
-                                    // recycling the session.
-                                    //
-                                    // ReconnectRunner will
-                                    // revoke this generation
-                                    // before reconnecting.
-
-                                    break Err(session_error(
-                                        format!(
-                                            "subscription demand changed \
-                                             from revision {} to {}; \
-                                             connection restoration required",
-                                            revision,
-                                            latest_revision,
-                                        ),
-                                    ));
-                                }
-                            }
                         }
                     };
 

@@ -172,6 +172,10 @@ impl StreamAvailability {
     // OBSERVABILITY
     // ========================================================
 
+    pub fn retire(&mut self, stream_id: &str) {
+        self.active.remove(stream_id);
+    }
+
     pub fn is_connected(&self, stream_id: &str) -> bool {
         self.active.contains_key(stream_id)
     }
