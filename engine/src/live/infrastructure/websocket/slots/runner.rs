@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use tokio_tungstenite::tungstenite::Message;
 
@@ -127,6 +127,7 @@ impl ConnectionSlotRunner {
             heartbeat_plan,
             ack_bindings,
             MarketDataOutput::Raw(market_data),
+            None,
             subscription_events,
             bootstrap_limits,
             session_limits,
@@ -174,6 +175,54 @@ impl ConnectionSlotRunner {
         D: Fn() -> DesiredSubscriptionSnapshot + Send + Sync + 'static,
         H: Fn() -> CompiledHeartbeatPlan + Send + Sync + 'static,
     {
+        Self::run_fenced_observed(
+            url,
+            exchange,
+            compiled_limiters,
+            shared_limiter,
+            reconnect_policy,
+            shutdown,
+            reconnect_events,
+            fence,
+            recovery,
+            connection_route,
+            demand_snapshot,
+            heartbeat_plan,
+            ack_bindings,
+            market_data,
+            subscription_events,
+            bootstrap_limits,
+            session_limits,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn run_fenced_observed<D, H>(
+        url: &str,
+        exchange: Arc<ExchangeConfig>,
+        compiled_limiters: &CompiledWebSocketLimiters,
+        shared_limiter: &RateLimitManager,
+        reconnect_policy: ReconnectPolicy,
+        shutdown: oneshot::Receiver<()>,
+        reconnect_events: mpsc::Sender<ReconnectEvent>,
+        fence: ConnectionFence,
+        recovery: SharedStreamRecovery,
+        connection_route: Option<String>,
+        demand_snapshot: D,
+        heartbeat_plan: H,
+        ack_bindings: BTreeMap<String, CompiledSubscriptionAckBinding>,
+        market_data: mpsc::Sender<FencedMessage<Message>>,
+        subscription_events: mpsc::Sender<SubscriptionDriverEvent>,
+        bootstrap_limits: ConnectionBootstrapLimits,
+        session_limits: ConnectionSessionLimits,
+        changes: Option<watch::Receiver<DesiredSubscriptionSnapshot>>,
+    ) -> Result<(), ReconnectError>
+    where
+        D: Fn() -> DesiredSubscriptionSnapshot + Send + Sync + 'static,
+        H: Fn() -> CompiledHeartbeatPlan + Send + Sync + 'static,
+    {
         Self::run_internal(
             url,
             exchange,
@@ -189,6 +238,7 @@ impl ConnectionSlotRunner {
             heartbeat_plan,
             ack_bindings,
             MarketDataOutput::Fenced(market_data),
+            changes,
             subscription_events,
             bootstrap_limits,
             session_limits,
@@ -222,6 +272,7 @@ impl ConnectionSlotRunner {
         heartbeat_plan: H,
         ack_bindings: BTreeMap<String, CompiledSubscriptionAckBinding>,
         market_data_output: MarketDataOutput,
+        changes: Option<watch::Receiver<DesiredSubscriptionSnapshot>>,
         subscription_events: mpsc::Sender<SubscriptionDriverEvent>,
         bootstrap_limits: ConnectionBootstrapLimits,
         session_limits: ConnectionSessionLimits,
@@ -273,6 +324,7 @@ impl ConnectionSlotRunner {
                 // ============================================
 
                 let exchange = exchange.clone();
+                let changes = changes.clone();
 
                 let recovery = recovery.clone();
 
@@ -417,7 +469,7 @@ impl ConnectionSlotRunner {
                         session_shutdown_receiver,
                         session_limits,
                         DemandReconciliation {
-                            exchange: &exchange, factory, initial: desired, desired: &current_demand,
+                            exchange: &exchange, factory, initial: desired, desired: &current_demand, changes,
                         },
                     );
 

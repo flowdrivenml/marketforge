@@ -6,7 +6,7 @@ use std::{
 use thiserror::Error;
 
 use tokio::{
-    sync::{mpsc, oneshot},
+    sync::{mpsc, oneshot, watch},
     time,
 };
 
@@ -47,6 +47,7 @@ pub(crate) struct DemandReconciliation<'a> {
     pub factory: SubscriptionCommandFactory,
     pub initial: DesiredSubscriptionSnapshot,
     pub desired: &'a (dyn Fn() -> DesiredSubscriptionSnapshot + Sync),
+    pub changes: Option<watch::Receiver<DesiredSubscriptionSnapshot>>,
 }
 
 impl DemandReconciliation<'_> {
@@ -73,9 +74,22 @@ impl DemandReconciliation<'_> {
         let mut initial_commands = initial_commands.into_iter();
         let mut checks = time::interval(Duration::from_millis(25));
         checks.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+        let mut latest = self
+            .changes
+            .as_mut()
+            .map_or_else(self.desired, |changes| changes.borrow_and_update().clone());
         loop {
-            let latest = (self.desired)();
-            let next = if let Some(command) = initial_commands.next() {
+            if let Some(changes) = &mut self.changes {
+                if changes
+                    .has_changed()
+                    .map_err(|_| failure("desired demand closed"))?
+                {
+                    latest = changes.borrow_and_update().clone();
+                }
+            } else {
+                latest = (self.desired)();
+            }
+            let next = if let Some(mut command) = initial_commands.next() {
                 let id = command.token.stream_id();
                 let subscription = self
                     .initial
@@ -88,6 +102,7 @@ impl DemandReconciliation<'_> {
                         .retire_subscription(&command.token);
                     continue;
                 }
+                self.refresh_initial_timestamp(subscription, &mut command)?;
                 Some((subscription.clone(), command))
             } else {
                 if let Some(retirements) = &latest.retirements {
@@ -150,7 +165,18 @@ impl DemandReconciliation<'_> {
 
             let Some((subscription, command)) = next else {
                 tokio::select! {
-                    _ = checks.tick() => continue,
+                    outcome = async {
+                        if let Some(changes) = &mut self.changes {
+                            changes.changed().await.map_err(|_| failure("desired demand closed"))?;
+                            latest = changes.borrow_and_update().clone();
+                        } else {
+                            checks.tick().await;
+                        }
+                        Ok::<(), ConnectionSessionError>(())
+                    } => {
+                        outcome?;
+                        continue;
+                    },
                     _ = events.recv() => return Err(failure("unexpected subscription completion")),
                 }
             };
@@ -180,7 +206,13 @@ impl DemandReconciliation<'_> {
                         subscription.stream_id.clone(),
                         (subscription.clone(), token),
                     );
-                    if (self.desired)().get(&subscription.stream_id) == Some(&subscription) {
+                    let still_desired = self.changes.as_ref().map_or_else(
+                        || (self.desired)().get(&subscription.stream_id) == Some(&subscription),
+                        |changes| {
+                            changes.borrow().get(&subscription.stream_id) == Some(&subscription)
+                        },
+                    );
+                    if still_desired {
                         downstream
                             .try_send(event)
                             .map_err(|_| failure("subscription event backpressure"))?;
@@ -195,6 +227,46 @@ impl DemandReconciliation<'_> {
                 }
             }
         }
+    }
+
+    fn refresh_initial_timestamp(
+        &self,
+        subscription: &DesiredSubscription,
+        command: &mut SubscriptionCommand,
+    ) -> Result<(), ConnectionSessionError> {
+        use crate::live::infrastructure::websocket::subscriptions::protocol::SubscriptionStrategy;
+        let error = |detail: String| ConnectionSessionError::Reconciliation(detail);
+        if self
+            .exchange
+            .websocket
+            .subscription
+            .as_ref()
+            .is_none_or(|config| config.strategy != "gate_v4_channel_event")
+        {
+            return Ok(());
+        }
+        let context = subscription
+            .resolution_context()
+            .map_err(|e| error(e.to_string()))?;
+        let mut resolved =
+            SubscriptionResolver::resolve(self.exchange, &subscription.channel_name, &context)
+                .map_err(|e| error(e.to_string()))?;
+        debug_assert_eq!(
+            resolved.protocol.strategy(),
+            SubscriptionStrategy::GateV4ChannelEvent
+        );
+        resolved.request.request_id = command.expected.request_id.clone();
+        resolved.request.unix_seconds = Some(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|e| error(e.to_string()))?
+                .as_secs(),
+        );
+        command.wire_text = resolved
+            .protocol
+            .subscribe(&resolved.request)
+            .map_err(|e| error(e.to_string()))?;
+        Ok(())
     }
 
     fn operation(

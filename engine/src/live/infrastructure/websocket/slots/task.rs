@@ -189,7 +189,8 @@ impl ConnectionSlotTask {
 
         let demand = SlotDemand::new(config.initial_demand);
 
-        let demand_reader = demand.reader();
+        let changes = demand.reader();
+        let demand_reader = changes.clone();
 
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -198,7 +199,7 @@ impl ConnectionSlotTask {
         let join = tokio::spawn(async move {
             let heartbeat = config.heartbeat_plan;
 
-            let result = ConnectionSlotRunner::run_fenced(
+            let result = ConnectionSlotRunner::run_fenced_observed(
                 &config.url,
                 config.exchange,
                 &config.compiled_limiters,
@@ -220,6 +221,7 @@ impl ConnectionSlotTask {
                 subscription_events,
                 config.bootstrap_limits,
                 config.session_limits,
+                Some(changes),
             )
             .await;
 
