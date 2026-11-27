@@ -1,6 +1,14 @@
 use super::{ChannelConfig, ExchangeConfig, MarketMapping, RestConfig, WebSocketConfig};
 
 use std::collections::BTreeSet;
+/// Configuration-side status of automatic REST recovery for the trades Source channel.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TradeRecoveryCapability {
+    Undeclared,
+    Supported,
+    Unsupported,
+}
+
 impl ExchangeConfig {
     /// Validate the complete exchange configuration.
     ///
@@ -19,6 +27,77 @@ impl ExchangeConfig {
             validate_market_routes(mapping, &self.websocket)?;
         }
 
+        Ok(())
+    }
+
+    /// Reports declared capability without asserting live coverage or reconciliation.
+    pub fn trade_recovery_capability(&self) -> Result<TradeRecoveryCapability, String> {
+        use crate::live::stream::source::SourceTradeRecoveryPolicy;
+        let Some(channel) = self.channel("trades").filter(|channel| channel.enabled) else {
+            return Ok(TradeRecoveryCapability::Undeclared);
+        };
+        let key = &self.exchange.profile;
+        let (strategy, endpoint) = match (&channel.recovery_strategy, &channel.recovery_endpoint) {
+            (None, None) => return Ok(TradeRecoveryCapability::Undeclared),
+            (Some(strategy), Some(endpoint)) if !strategy.trim().is_empty() => (strategy, endpoint),
+            _ => {
+                return Err(format!(
+                    "{key}: trade recovery requires both a strategy and a REST endpoint"
+                ));
+            }
+        };
+
+        let metadata = self
+            .endpoint(endpoint)
+            .ok_or_else(|| format!("{key}: missing REST trade recovery endpoint {endpoint}"))?;
+        if SourceTradeRecoveryPolicy::for_profile(self.exchange.id, self.exchange.market).is_err() {
+            return Ok(TradeRecoveryCapability::Unsupported);
+        }
+
+        if strategy != "trade_id_pagination" || endpoint != "historical_trades" {
+            return Err(format!(
+                "{key}: unsupported automatic trade recovery strategy or endpoint"
+            ));
+        }
+        if metadata.pagination_strategy.as_deref() != Some("trade_id")
+            || metadata.pagination_parameter.as_deref() != Some("fromId")
+        {
+            return Err(format!(
+                "{key}: historical trade recovery requires trade-ID pagination metadata"
+            ));
+        }
+        Ok(TradeRecoveryCapability::Supported)
+    }
+
+    /// Check prerequisites for the native REST parameter binders.
+    pub fn validate_native_rest_mapping(&self) -> Result<(), String> {
+        for (name, endpoint) in &self.rest.endpoints {
+            if endpoint.category.as_deref() == Some("{native_rest_category}")
+                && !self.market_mapping.as_ref().is_some_and(|mapping| {
+                    mapping.native_types.values().any(|native| {
+                        native
+                            .rest_category
+                            .as_ref()
+                            .is_some_and(|category| !category.trim().is_empty())
+                    })
+                })
+            {
+                return Err(format!(
+                    "{}: REST endpoint {name} requires a native market category mapping",
+                    self.profile()
+                ));
+            }
+            if endpoint.settlement.as_deref() == Some("{native_settlement}")
+                && !self.market_mapping.as_ref().is_some_and(|mapping| {
+                    mapping.native_settlement.is_some() || !mapping.supported_settlements.is_empty()
+                })
+            {
+                return Err(format!(
+                    "{}: REST endpoint {name} requires a native settlement mapping",
+                    self.profile()
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -411,6 +490,71 @@ fn validate_market_routes(
 #[cfg(test)]
 mod tests {
     use crate::live::config::exchange::RestApplicationResponseConfig;
+    #[test]
+    fn recovery_capability_distinguishes_absence_support_and_missing_metadata() {
+        use super::{ExchangeConfig, TradeRecoveryCapability};
+        let profiles = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/.config/live/exchanges"
+        ));
+        let mut spot = ExchangeConfig::load(profiles.join("binance_spot.toml")).unwrap();
+        assert_eq!(
+            spot.trade_recovery_capability(),
+            Ok(TradeRecoveryCapability::Supported)
+        );
+        let linear = ExchangeConfig::load(profiles.join("binance_linear.toml")).unwrap();
+        assert_eq!(
+            linear.trade_recovery_capability(),
+            Ok(TradeRecoveryCapability::Undeclared)
+        );
+        let bybit = ExchangeConfig::load(profiles.join("bybit_spot.toml")).unwrap();
+        assert_eq!(
+            bybit.trade_recovery_capability(),
+            Ok(TradeRecoveryCapability::Unsupported)
+        );
+
+        spot.rest
+            .endpoints
+            .get_mut("historical_trades")
+            .unwrap()
+            .pagination_parameter = None;
+        assert!(
+            spot.trade_recovery_capability()
+                .unwrap_err()
+                .contains("pagination metadata")
+        );
+        spot.channels.get_mut("trades").unwrap().recovery_endpoint = None;
+        assert!(
+            spot.trade_recovery_capability()
+                .unwrap_err()
+                .contains("both a strategy and a REST endpoint")
+        );
+    }
+
+    #[test]
+    fn native_rest_placeholders_require_mapping_metadata() {
+        use super::ExchangeConfig;
+        let profiles = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/.config/live/exchanges"
+        ));
+        for (profile, reason) in [
+            ("bitget_linear", "category mapping"),
+            ("gateio_linear", "settlement mapping"),
+        ] {
+            let mut config =
+                ExchangeConfig::load(profiles.join(format!("{profile}.toml"))).unwrap();
+            config.validate_native_rest_mapping().unwrap();
+            config.market_mapping = None;
+            assert!(
+                config
+                    .validate_native_rest_mapping()
+                    .unwrap_err()
+                    .contains(reason)
+            );
+        }
+    }
+
     #[test]
     fn validates_raw_response() {
         let config: RestApplicationResponseConfig = toml::from_str(

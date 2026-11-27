@@ -9,6 +9,16 @@ pub struct PostgresConfig {
 }
 
 impl PostgresConfig {
+    /// Select credentials for the specified database environment without connecting.
+    /// An explicit URL takes precedence over environment and workspace sources.
+    pub fn resolve(
+        root: &std::path::Path,
+        database: super::DatabaseEnvironment,
+        explicit: Option<&str>,
+    ) -> Result<Self, String> {
+        super::credentials::resolve(root, database, explicit).map(Self::new)
+    }
+
     pub fn from_env() -> Result<Self, env::VarError> {
         let database_url = env::var(DATABASE_URL_ENV)?;
 

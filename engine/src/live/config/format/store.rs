@@ -32,6 +32,31 @@ pub struct FormatConfigStore {
 }
 
 impl FormatConfigStore {
+    /// Check the format references used by executable Source channels.
+    pub fn validate_source_formats(
+        &self,
+        exchange: &crate::live::config::ExchangeConfig,
+    ) -> Result<(), String> {
+        let profile = &exchange.exchange.profile;
+        for (name, channel) in exchange.enabled_channels() {
+            let present = match name {
+                "trades" => self.trade(profile).is_some(),
+                "depth" => self.depth(profile).is_some(),
+                _ => continue,
+            };
+            let expected = format!("{name}/{profile}");
+            if channel.format.as_deref() != Some(expected.as_str()) {
+                return Err(format!(
+                    "{profile}: {name} Source requires format reference {expected}"
+                ));
+            }
+            if !present {
+                return Err(format!("{profile}: missing Source format {expected}"));
+            }
+        }
+        Ok(())
+    }
+
     // ========================================================
     // CONSTRUCTION
     // ========================================================

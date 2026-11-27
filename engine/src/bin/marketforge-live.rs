@@ -5,10 +5,8 @@ mod unix_application {
         live::{application::*, config::*, stream::persistence::*},
         shared::{persistence::postgres, workspace},
     };
-    #[cfg(not(feature = "management-api"))]
-    use std::collections::BTreeSet;
     use std::{
-        collections::BTreeMap,
+        collections::{BTreeMap, BTreeSet},
         path::{Path, PathBuf},
         sync::Arc,
     };
@@ -26,11 +24,11 @@ mod unix_application {
         /// Explicit empty resolved graph for service diagnostics; no database definitions restored.
         #[arg(long)]
         empty_definitions: bool,
-        /// Restrict static validation profiles; running profiles come from definitions.
+        /// Restrict profiles prepared for validation or operation.
         #[arg(long, value_delimiter = ',')]
         profiles: Vec<String>,
-        #[arg(long, default_value = "local-egress")]
-        egress_id: String,
+        #[arg(long)]
+        egress_id: Option<String>,
         /// Verified shared-weight quota, repeated: PROFILE=CAPACITY/WINDOW_SECONDS.
         #[arg(long)]
         rest_weight: Vec<String>,
@@ -58,6 +56,160 @@ mod unix_application {
         runtime.shutdown_timeout(std::time::Duration::from_secs(1));
         code
     }
+    fn requires_weight(profile: &ExchangeConfig) -> bool {
+        profile
+            .rest
+            .rate_limiting
+            .as_ref()
+            .is_some_and(|rate| rate.strategy == "weighted_shared_pool")
+    }
+
+    fn validate_weight_bindings(
+        store: &ExchangeConfigStore,
+        weights: &BTreeMap<String, (u64, u64)>,
+    ) -> Result<(), String> {
+        for name in weights.keys() {
+            let profile = store
+                .get(name)
+                .ok_or_else(|| format!("REST quota references missing exchange profile {name}"))?;
+            if !requires_weight(profile) {
+                return Err(format!(
+                    "{name}: profile does not accept a REST shared-weight quota"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_profile(
+        profile: &ExchangeConfig,
+        formats: &FormatConfigStore,
+    ) -> Result<(), String> {
+        formats.validate_source_formats(profile)?;
+        profile.validate_native_rest_mapping()?;
+        for (channel, _) in profile.enabled_channels() {
+            if !matches!(channel, "trades" | "depth") {
+                tracing::debug!(profile = %profile.exchange.profile, channel, "enabled exchange channel has no Source execution capability");
+            }
+        }
+        use marketforge_engine::live::config::exchange::TradeRecoveryCapability;
+        match profile.trade_recovery_capability()? {
+            TradeRecoveryCapability::Unsupported => {
+                tracing::warn!(
+                    profile = %profile.exchange.profile,
+                    "trade recovery declared; automatic REST recovery is unsupported for this profile"
+                );
+            }
+            TradeRecoveryCapability::Undeclared | TradeRecoveryCapability::Supported => {}
+        }
+        Ok(())
+    }
+
+    fn prepare_profiles(
+        store: &ExchangeConfigStore,
+        formats: &FormatConfigStore,
+        recovery: &general::RecoveryDefaultsConfig,
+        deployment: &general::ResolvedDeployment,
+        required: &BTreeSet<String>,
+        requested: &BTreeSet<String>,
+    ) -> Result<ExchangeConfigStore, String> {
+        // An explicitly restricted store must still contain every enabled persisted Source profile.
+        if !requested.is_empty() {
+            if let Some(name) = required.difference(requested).next() {
+                return Err(format!(
+                    "enabled persisted Source requires exchange profile {name}, excluded by --profiles"
+                ));
+            }
+        }
+        store.selected(required)?;
+        let mut unavailable = BTreeMap::new();
+        for (name, profile) in store.iter() {
+            let candidate = BTreeSet::from([name.to_owned()]);
+            let check = || {
+                validate_profile(profile, formats)?;
+                let selected = store.selected(&candidate)?;
+                let limiters =
+                    compile_limiters(&selected, &deployment.egress_id, &deployment.rest_weight)?;
+                compile_websocket(&selected, &limiters, recovery, &BTreeMap::new())?;
+                Ok::<_, String>(())
+            };
+            match check() {
+                Ok(()) => {}
+                Err(reason) if required.contains(name) || requested.contains(name) => {
+                    return Err(format!("exchange profile {name} unavailable: {reason}"));
+                }
+                Err(reason) => {
+                    tracing::warn!(profile = name, %reason, "exchange profile unavailable");
+                    unavailable.insert(name.to_owned(), reason);
+                }
+            }
+        }
+        let operational = store.clone().without_unavailable(unavailable);
+        if operational.is_empty() {
+            return Err(
+                "no operational exchange profiles; check the profile prerequisite diagnostics"
+                    .into(),
+            );
+        }
+        // The caller compiles the available profiles together so the limiter factory
+        // can enforce shared quotas and reject cross-profile conflicts.
+        Ok(operational)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn profile_preparation_requires_prerequisites_for_enabled_persisted_sources() {
+            let base = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/.config/live"));
+            let installed = ExchangeConfigStore::load_dir(base.join("exchanges")).unwrap();
+            let formats = FormatConfigStore::load_dir(base.join("formats")).unwrap();
+            let recovery = general::RecoveryDefaultsConfig {
+                initial_backoff_ms: 100,
+                max_backoff_seconds: 1,
+                jitter: false,
+            };
+            let deployment = general::DeploymentConfig::default()
+                .resolve(None, &[])
+                .unwrap();
+            let required = BTreeSet::from(["binance_spot".into()]);
+            let error = prepare_profiles(
+                &installed,
+                &formats,
+                &recovery,
+                &deployment,
+                &required,
+                &BTreeSet::new(),
+            )
+            .unwrap_err();
+            assert!(error.contains("binance_spot") && error.contains("capacity/window required"));
+
+            let available = prepare_profiles(
+                &installed,
+                &formats,
+                &recovery,
+                &deployment,
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+            )
+            .unwrap();
+            let reason = available.require_operational("binance_spot").unwrap_err();
+            assert!(reason.contains("capacity/window required"));
+            assert!(available.get("bybit_spot").is_some());
+            let error = prepare_profiles(
+                &installed,
+                &formats,
+                &recovery,
+                &deployment,
+                &BTreeSet::from(["absent_spot".into()]),
+                &BTreeSet::new(),
+            )
+            .unwrap_err();
+            assert!(error.contains("missing exchange profile absent_spot"));
+        }
+    }
+
     async fn execute(args: Arguments) -> Result<(), String> {
         let invocation = std::env::current_dir().map_err(|e| e.to_string())?;
         let root = workspace::resolve(None, &invocation).map_err(|e| e.to_string())?;
@@ -98,30 +250,22 @@ mod unix_application {
         if config.recording.enabled {
             return Err("recording.enabled is unsupported: no faithful Router recorder adapter or durable identity allocator; PostgreSQL remains required for definitions".into());
         }
-        if config.metrics.prometheus.enabled && !config.metrics.enabled {
-            return Err("Prometheus requires metrics.enabled".into());
-        }
-        let mut weights = BTreeMap::new();
-        for arg in args.rest_weight {
-            let (name, value) = arg
-                .split_once('=')
-                .ok_or("expected PROFILE=CAPACITY/WINDOW_SECONDS")?;
-            let (capacity, window) = value.split_once('/').ok_or("expected capacity/window")?;
-            weights.insert(
-                name.to_string(),
-                (
-                    capacity.parse().map_err(|_| "invalid quota capacity")?,
-                    window.parse().map_err(|_| "invalid quota window")?,
-                ),
-            );
-        }
+        let deployment = config
+            .deployment
+            .resolve(args.egress_id.as_deref(), &args.rest_weight)?;
+        validate_weight_bindings(&exchanges, &deployment.rest_weight)?;
+        let requested: BTreeSet<_> = args.profiles.into_iter().collect();
+        let selected = if requested.is_empty() {
+            exchanges
+        } else {
+            exchanges.selected(&requested)?
+        };
         if args.validate_only {
-            let selected = if args.profiles.is_empty() {
-                exchanges
-            } else {
-                exchanges.selected(&args.profiles.into_iter().collect())?
-            };
-            let limiters = compile_limiters(&selected, &args.egress_id, &weights)?;
+            for (_, profile) in selected.iter() {
+                validate_profile(profile, &formats)?;
+            }
+            let limiters =
+                compile_limiters(&selected, &deployment.egress_id, &deployment.rest_weight)?;
             let _runtime = compile_websocket(
                 &selected,
                 &limiters,
@@ -131,14 +275,18 @@ mod unix_application {
             tracing::info!(
                 event = "configuration_validated",
                 definitions_loaded = false,
-                "static configuration valid; persisted graph not inspected"
+                "static configuration valid; credentials, connections and persisted Source readiness were not checked"
             );
             return Ok(());
         }
         let pool = if args.empty_definitions {
             None
         } else {
-            let database=postgres::PostgresConfig::from_env().map_err(|_|"MARKETFORGE_DATABASE_URL is required for definition restoration, independently of recording")?;
+            let database = postgres::PostgresConfig::resolve(
+                &root,
+                postgres::DatabaseEnvironment::Production,
+                None,
+            )?;
             Some(
                 tokio::time::timeout(
                     std::time::Duration::from_secs(config.runtime.shutdown_timeout_seconds),
@@ -163,8 +311,7 @@ mod unix_application {
         } else {
             (vec![], vec![])
         };
-        #[cfg(not(feature = "management-api"))]
-        let profiles: BTreeSet<_> = definitions
+        let required: BTreeSet<_> = definitions
             .iter()
             .filter(|d| d.desired.enabled)
             .filter_map(|d| match &d.definition {
@@ -176,23 +323,16 @@ mod unix_application {
                 _ => None,
             })
             .collect();
-        #[cfg(feature = "management-api")]
-        let exchanges = Arc::new(if args.profiles.is_empty() {
-            exchanges
-        } else {
-            exchanges.selected(&args.profiles.into_iter().collect())?
-        });
-        #[cfg(not(feature = "management-api"))]
-        let exchanges = Arc::new(if profiles.is_empty() {
-            if args.profiles.is_empty() {
-                exchanges
-            } else {
-                exchanges.selected(&args.profiles.into_iter().collect())?
-            }
-        } else {
-            exchanges.selected(&profiles)?
-        });
-        let limiters = compile_limiters(&exchanges, &args.egress_id, &weights)?;
+        let exchanges = Arc::new(prepare_profiles(
+            &selected,
+            &formats,
+            &config.defaults.recovery,
+            &deployment,
+            &required,
+            &requested,
+        )?);
+        let limiters =
+            compile_limiters(&exchanges, &deployment.egress_id, &deployment.rest_weight)?;
         let websocket = compile_websocket(
             &exchanges,
             &limiters,
@@ -200,10 +340,12 @@ mod unix_application {
             &BTreeMap::new(),
         )?;
         #[cfg(feature = "management-api")]
-        let credentials = marketforge_engine::live::management::service::Credentials::load(
-            &config.control.management,
-        )
-        .map_err(|e| e.to_string())?;
+        let credentials =
+            marketforge_engine::live::management::service::Credentials::load_workspace(
+                &config.control.management,
+                &root,
+            )
+            .map_err(|e| e.to_string())?;
         // Install both handlers before advertising readiness. A controller may
         // send a signal immediately after observing the serving notification.
         let mut terminate =

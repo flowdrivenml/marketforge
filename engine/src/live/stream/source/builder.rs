@@ -136,19 +136,16 @@ impl SourceRuntimeBuilder {
         let StreamDefinition::Source(source) = &definition.definition else {
             return Err(fail("expected source definition".into()));
         };
-        let instance = self
-            .factory
-            .create(&definition.stream_id, source.clone())
-            .map_err(|e| fail(e.to_string()))?;
         let profile = format!(
             "{}_{}",
             source.exchange.as_str(),
             source.market_category.as_str()
         );
-        let exchange = self
-            .exchanges
-            .get(&profile)
-            .ok_or_else(|| fail("missing exchange profile".into()))?;
+        let exchange = self.exchanges.require_operational(&profile).map_err(fail)?;
+        let instance = self
+            .factory
+            .create(&definition.stream_id, source.clone())
+            .map_err(|e| fail(e.to_string()))?;
         let channel = exchange
             .channel(source.channel.as_str())
             .ok_or_else(|| fail("missing channel".into()))?;
@@ -188,7 +185,21 @@ impl SourceRuntimeBuilder {
                 )
                 .map_err(|e| fail(format!("{e:?}")))?;
                 let binder = SourceAcquisitionBinder::trades(binding.clone());
-                trade_policy = SourceTradeRecoveryPolicy::for_source(source).ok();
+                use crate::live::config::exchange::TradeRecoveryCapability;
+                trade_policy = match exchange.trade_recovery_capability().map_err(fail)? {
+                    TradeRecoveryCapability::Supported => Some(
+                        SourceTradeRecoveryPolicy::for_source(source)
+                            .map_err(|error| fail(error.to_string()))?,
+                    ),
+                    TradeRecoveryCapability::Undeclared => None,
+                    TradeRecoveryCapability::Unsupported => {
+                        tracing::debug!(
+                            profile,
+                            "declared trade recovery has no automatic REST executor; integrity holds remain active"
+                        );
+                        None
+                    }
+                };
                 let integrity = IntegrityFacadeFactory::trades(CreateTradeIntegrity {
                     binding,
                     plan,

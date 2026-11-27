@@ -21,9 +21,11 @@ def test_testing_selection_ignores_production_secret(
     (tmp_path / "forge/pyproject.toml").touch()
     (tmp_path / "engine").mkdir()
     (tmp_path / ".secrets").mkdir()
-    (tmp_path / ".secrets" / "postgres.env").write_text(
+    source = tmp_path / ".secrets" / "postgres.env"
+    source.write_text(
         "PRODUCTION_DATABASE_KEY=postgresql://production/marketforge\n"
     )
+    source.chmod(0o600)
     with pytest.raises(DatabaseSelectionError, match="TEST_DATABASE_KEY"):
         load_testing_dsn(tmp_path)
 
@@ -36,8 +38,10 @@ def test_environment_file_is_literal_not_executable(
     (tmp_path / "forge/pyproject.toml").touch()
     (tmp_path / "engine").mkdir()
     (tmp_path / ".secrets").mkdir()
-    (tmp_path / ".secrets" / "postgres.env").write_text(
+    source = tmp_path / ".secrets" / "postgres.env"
+    source.write_text(
         "export TEST_DATABASE_KEY='$(touch should-not-exist)'\n"
     )
+    source.chmod(0o600)
     assert load_testing_dsn(tmp_path) == "$(touch should-not-exist)"
     assert not (tmp_path / "should-not-exist").exists()
