@@ -8,7 +8,7 @@ use marketforge_engine::live::{
         },
         websocket::{
             ConnectionBootstrapLimits, ConnectionSessionLimits, DesiredSubscription,
-            HeartbeatPlanCompiler, ReconnectPolicy, StreamInput, StreamSource,
+            HeartbeatPlanCompiler, ReconnectPolicy, StreamAcquisition, StreamInput, StreamSource,
             SubscriptionDriverLimits, WebSocketManager, WebSocketManagerRuntime,
             WebSocketProfileRuntime,
         },
@@ -250,7 +250,7 @@ fn trade_source(symbol: &str) -> StreamSource {
 // EVENT HELPERS
 // ============================================================
 
-async fn wait_connected(rx: &mut mpsc::Receiver<StreamInput>, label: &str) {
+async fn wait_connected(rx: &mut mpsc::Receiver<StreamInput>, label: &str) -> StreamAcquisition {
     let deadline = Instant::now() + EVENT_TIMEOUT;
 
     loop {
@@ -264,7 +264,7 @@ async fn wait_connected(rx: &mut mpsc::Receiver<StreamInput>, label: &str) {
             .unwrap_or_else(|| panic!("{label} channel closed before Connected"));
 
         match event {
-            StreamInput::Connected(_) => return,
+            StreamInput::Connected(acquisition) => return acquisition,
 
             StreamInput::Disconnected(_) => {
                 println!("[{label}] Disconnected while awaiting Connected");
@@ -277,37 +277,11 @@ async fn wait_connected(rx: &mut mpsc::Receiver<StreamInput>, label: &str) {
     }
 }
 
-async fn wait_disconnected(rx: &mut mpsc::Receiver<StreamInput>, label: &str) {
-    let deadline = Instant::now() + EVENT_TIMEOUT;
-
-    loop {
-        let remaining = deadline
-            .checked_duration_since(Instant::now())
-            .unwrap_or_default();
-
-        let event = time::timeout(remaining, rx.recv())
-            .await
-            .unwrap_or_else(|_| panic!("timed out waiting for {label} Disconnected"))
-            .unwrap_or_else(|| panic!("{label} channel closed before Disconnected"));
-
-        match event {
-            StreamInput::Disconnected(_) => return,
-
-            // Previously queued data may legitimately precede
-            // Disconnected in this stream's ordered channel.
-            StreamInput::Data { .. } => {}
-
-            StreamInput::Connected(_) => {
-                panic!(
-                    "{label} received duplicate Connected \
-                     without Disconnected"
-                );
-            }
-        }
-    }
-}
-
-async fn wait_trade(rx: &mut mpsc::Receiver<StreamInput>, expected_symbol: &str) -> Value {
+async fn wait_trade(
+    rx: &mut mpsc::Receiver<StreamInput>,
+    expected_symbol: &str,
+    expected_acquisition: &StreamAcquisition,
+) -> Value {
     let deadline = Instant::now() + EVENT_TIMEOUT;
 
     loop {
@@ -347,8 +321,12 @@ async fn wait_trade(rx: &mut mpsc::Receiver<StreamInput>, expected_symbol: &str)
 
             StreamInput::Data {
                 message: Message::Text(text),
-                ..
+                acquisition,
             } => {
+                assert_eq!(
+                    &acquisition, expected_acquisition,
+                    "acquisition changed for {expected_symbol}"
+                );
                 let value: Value =
                     serde_json::from_str(text.as_str()).expect("native market-data JSON");
 
@@ -398,195 +376,74 @@ async fn wait_trade(rx: &mut mpsc::Receiver<StreamInput>, expected_symbol: &str)
 #[tokio::test]
 #[ignore = "connects to Binance public futures WebSocket"]
 async fn websocket_manager_shared_slot_lifecycle_live() {
-    let manager = build_manager();
+    time::timeout(Duration::from_secs(120), async {
+        let manager = build_manager();
+        let (btc_tx, mut btc_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let btc_binding = manager
+            .attach_request(
+                StreamRequest::new(PROFILE, "BTCUSDT", "trades").unwrap(),
+                btc_tx,
+            )
+            .await
+            .expect("attach BTC through automatic resolution");
+        let btc = wait_connected(&mut btc_rx, "BTC").await;
+        wait_trade(&mut btc_rx, "BTCUSDT", &btc).await;
 
-    // ========================================================
-    // 1. ATTACH BTC
-    // ========================================================
+        let (eth_tx, mut eth_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let eth_binding = manager
+            .attach_request(
+                StreamRequest::new(PROFILE, "ETHUSDT", "trades").unwrap(),
+                eth_tx,
+            )
+            .await
+            .expect("attach ETH through automatic resolution");
+        assert_ne!(btc_binding, eth_binding);
+        assert_eq!(manager.slot_count().await, 1);
+        assert_eq!(manager.stream_count().await, 2);
 
-    let (btc_tx, mut btc_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let eth = wait_connected(&mut eth_rx, "ETH").await;
+        assert_eq!(btc.connection, eth.connection);
+        wait_trade(&mut eth_rx, "ETHUSDT", &eth).await;
+        wait_fresh_trade(&mut btc_rx, "BTCUSDT", &btc).await;
 
-    let btc_binding = manager
-        .attach_request(
-            StreamRequest::new(PROFILE, "BTCUSDT", "trades").unwrap(),
-            btc_tx,
-        )
-        .await
-        .expect("attach BTC through automatic resolution");
+        manager.detach(btc_binding).await.expect("detach BTC");
+        assert_eq!(manager.slot_count().await, 1);
+        assert_eq!(manager.stream_count().await, 1);
+        wait_closed(&mut btc_rx).await;
+        wait_fresh_trade(&mut eth_rx, "ETHUSDT", &eth).await;
 
-    assert_eq!(manager.slot_count().await, 1);
-    assert_eq!(manager.stream_count().await, 1);
-
-    println!("[1] BTC attached");
-
-    // ========================================================
-    // 2. BTC SUBSCRIPTION CONFIRMED
-    // ========================================================
-
-    wait_connected(&mut btc_rx, "BTC").await;
-
-    println!("[2] BTC Connected");
-
-    // ========================================================
-    // 3. BTC NATIVE MARKET DATA
-    // ========================================================
-
-    let btc_trade = wait_trade(&mut btc_rx, "BTCUSDT").await;
-
-    println!("[3] BTC trade received: {}", btc_trade);
-
-    // ========================================================
-    // 4. ATTACH ETH TO SAME SLOT
-    // ========================================================
-
-    let (eth_tx, mut eth_rx) = mpsc::channel(CHANNEL_CAPACITY);
-
-    let eth_binding = manager
-        .attach_request(
-            StreamRequest::new(PROFILE, "ETHUSDT", "trades").unwrap(),
-            eth_tx,
-        )
-        .await
-        .expect("attach ETH through automatic resolution");
-
-    assert_ne!(btc_binding, eth_binding);
-
-    assert_eq!(
-        manager.slot_count().await,
-        1,
-        "BTC and ETH should share one logical connection slot"
-    );
-
-    assert_eq!(manager.stream_count().await, 2);
-
-    println!("[4] ETH attached to same slot");
-
-    // ========================================================
-    // 5. ETH SUBSCRIPTION CONFIRMED
-    // ========================================================
-
-    wait_connected(&mut eth_rx, "ETH").await;
-
-    println!("[5] ETH Connected");
-
-    // ========================================================
-    // 6. ETH NATIVE MARKET DATA
-    // ========================================================
-
-    let eth_trade = wait_trade(&mut eth_rx, "ETHUSDT").await;
-
-    println!("[6] ETH trade received: {}", eth_trade);
-    // ========================================================
-    // VERIFY EXISTING BTC STREAM SURVIVES DEMAND REVISION
-    // ========================================================
-
-    // Adding ETH changes the shared connection's desired
-    // subscriptions. The current ConnectionSlotRunner
-    // recycles its physical generation when demand changes.
-    //
-    // BTC must observe the old generation ending.
-    wait_disconnected(&mut btc_rx, "BTC").await;
-
-    println!("[6A] BTC Disconnected after ETH attachment");
-
-    // BTC must receive a fresh subscription confirmation
-    // from the replacement connection.
-    wait_connected(&mut btc_rx, "BTC").await;
-
-    println!("[6B] BTC reconnected after ETH attachment");
-
-    // Verify market data continues reaching BTC after
-    // the connection generation changes.
-    let btc_after_eth = wait_trade(&mut btc_rx, "BTCUSDT").await;
-
-    println!("[6C] BTC trade after ETH attachment: {}", btc_after_eth);
-
-    // Both streams must remain assigned to one slot.
-    assert_eq!(manager.slot_count().await, 1);
-    assert_eq!(manager.stream_count().await, 2);
-    // This verifies ETH's stream receives ETH market data.
-    // BTC's separate destination was already independently
-    // verified above.
-
-    // ========================================================
-    // 7. DETACH BTC
-    // ========================================================
-
-    time::timeout(SHUTDOWN_TIMEOUT, manager.detach(btc_binding))
-        .await
-        .expect("BTC detach timed out")
-        .expect("detach BTC");
-
-    assert_eq!(manager.slot_count().await, 1);
-    assert_eq!(manager.stream_count().await, 1);
-
-    println!("[7] BTC detached; ETH remains assigned");
-
-    // ========================================================
-    // 8. BTC DESTINATION RETIRED
-    // ========================================================
-
-    // BTC may still have previously accepted data queued.
-    // Drain it, then require terminal channel closure.
-    time::timeout(SHUTDOWN_TIMEOUT, async {
-        while btc_rx.recv().await.is_some() {}
+        manager
+            .detach(eth_binding)
+            .await
+            .expect("detach final stream");
+        assert_eq!(manager.slot_count().await, 0);
+        assert_eq!(manager.stream_count().await, 0);
+        wait_closed(&mut eth_rx).await;
+        manager.shutdown().await.expect("clean shutdown");
+        manager.shutdown().await.expect("repeated shutdown");
     })
     .await
-    .expect("BTC destination did not close");
+    .expect("shared-slot lifecycle deadline exceeded");
+}
 
-    println!("[8] BTC receiver closed");
-
-    // ========================================================
-    // 9. ETH OBSERVES CONNECTION REPLACEMENT
-    // ========================================================
-
-    wait_disconnected(&mut eth_rx, "ETH").await;
-
-    println!("[9] ETH Disconnected");
-
-    wait_connected(&mut eth_rx, "ETH").await;
-
-    println!("[10] ETH reconnected");
-
-    // ========================================================
-    // 10. ETH RECEIVES DATA AFTER REPLACEMENT
-    // ========================================================
-
-    let recovered_trade = wait_trade(&mut eth_rx, "ETHUSDT").await;
-
-    println!("[11] ETH trade after reconnect: {}", recovered_trade);
-
-    // ========================================================
-    // 11. MANAGER SHUTDOWN
-    // ========================================================
-
-    time::timeout(SHUTDOWN_TIMEOUT, manager.shutdown())
-        .await
-        .expect("manager shutdown timed out")
-        .expect("manager shutdown failed");
-
-    assert_eq!(manager.slot_count().await, 0);
-    assert_eq!(manager.stream_count().await, 0);
-
-    println!("[12] Manager shut down");
-
-    // ========================================================
-    // 12. TERMINAL CHANNEL CLOSURE
-    // ========================================================
-
+async fn wait_closed(rx: &mut mpsc::Receiver<StreamInput>) {
     time::timeout(SHUTDOWN_TIMEOUT, async {
-        while eth_rx.recv().await.is_some() {}
+        while rx.recv().await.is_some() {}
     })
     .await
-    .expect("ETH destination did not close");
+    .expect("detached destination did not close");
+}
 
-    println!("[13] ETH receiver closed");
-
-    // Repeated shutdown must remain safe.
-    manager.shutdown().await.unwrap();
-
-    println!();
-    println!("WEBSOCKET MANAGER LIVE TEST PASSED");
+async fn wait_fresh_trade(
+    rx: &mut mpsc::Receiver<StreamInput>,
+    symbol: &str,
+    expected: &StreamAcquisition,
+) {
+    // Check the queued prefix for lifecycle boundaries, then require new data.
+    for _ in 0..rx.len() {
+        wait_trade(rx, symbol, expected).await;
+    }
+    wait_trade(rx, symbol, expected).await;
 }
 
 #[tokio::test]
@@ -689,11 +546,11 @@ async fn websocket_manager_backpressure_isolated_between_slots() {
     // VERIFY HEALTHY ETH STREAM
     // ========================================================
 
-    wait_connected(&mut eth_rx, "ETH").await;
+    let eth = wait_connected(&mut eth_rx, "ETH").await;
 
     println!("[2] ETH Connected");
 
-    let first_eth_trade = wait_trade(&mut eth_rx, "ETHUSDT").await;
+    let first_eth_trade = wait_trade(&mut eth_rx, "ETHUSDT", &eth).await;
 
     println!("[3] ETH received trade: {}", first_eth_trade);
 
@@ -761,7 +618,7 @@ async fn websocket_manager_backpressure_isolated_between_slots() {
     //
     // The failure of BTC's slot must not terminate
     // ETH's event loop or close its destination.
-    let next_eth_trade = wait_trade(&mut eth_rx, "ETHUSDT").await;
+    let next_eth_trade = wait_trade(&mut eth_rx, "ETHUSDT", &eth).await;
 
     println!("[7] ETH continues receiving trades: {}", next_eth_trade);
 
@@ -795,117 +652,39 @@ async fn websocket_manager_backpressure_isolated_between_slots() {
 
 #[tokio::test]
 #[ignore = "connects to Binance public futures WebSocket"]
-async fn websocket_manager_routing_conflict_retires_entire_slot() {
-    let manager = build_manager();
+async fn websocket_manager_routing_conflict_preserves_healthy_slot() {
+    time::timeout(Duration::from_secs(75), async {
+        let manager = build_manager();
+        let (btc_tx, mut btc_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let btc_binding = manager.attach(trade_source("BTCUSDT"), btc_tx).await.unwrap();
+        let btc = wait_connected(&mut btc_rx, "BTC").await;
+        wait_trade(&mut btc_rx, "BTCUSDT", &btc).await;
 
-    // ========================================================
-    // START A VALID BTC STREAM
-    // ========================================================
+        // A distinct logical stream cannot claim the same native selector.
+        let conflicting_source = StreamSource::new(
+            PROFILE,
+            DesiredSubscription::new("conflicting-eth-stream", "trades", "ETHUSDT").unwrap(),
+            vec![("/stream".to_owned(), json!("btcusdt@trade"))],
+        )
+        .unwrap();
+        let (eth_tx, mut eth_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let result = manager.attach(conflicting_source, eth_tx).await;
+        assert!(
+            matches!(&result, Err(marketforge_engine::live::infrastructure::websocket::WebSocketManagerError::Attachment(reason))
+                if reason.contains("selector")),
+            "duplicate routing selector must be rejected: {result:?}"
+        );
 
-    let (btc_tx, mut btc_rx) = mpsc::channel::<StreamInput>(512);
+        assert_eq!(manager.slot_count().await, 1);
+        assert_eq!(manager.stream_count().await, 1);
+        assert!(time::timeout(SHUTDOWN_TIMEOUT, eth_rx.recv()).await.unwrap().is_none());
+        wait_fresh_trade(&mut btc_rx, "BTCUSDT", &btc).await;
 
-    let btc_binding = manager
-        .attach(trade_source("BTCUSDT"), btc_tx)
-        .await
-        .expect("attach BTC");
-
-    wait_connected(&mut btc_rx, "BTC").await;
-
-    let _ = wait_trade(&mut btc_rx, "BTCUSDT").await;
-
-    assert_eq!(manager.slot_count().await, 1);
-    assert_eq!(manager.stream_count().await, 1);
-
-    println!("[1] BTC connected and receiving market data");
-
-    // ========================================================
-    // CREATE A CONFLICTING SOURCE
-    // ========================================================
-
-    // Different logical stream identity, but exactly
-    // the same native-message routing identity.
-    //
-    // Two independently attached logical streams must not
-    // claim the same incoming native message.
-    let conflicting_source = StreamSource::new(
-        PROFILE,
-        DesiredSubscription::new("conflicting-eth-stream", "trades", "ETHUSDT").unwrap(),
-        vec![("/stream".to_owned(), json!("btcusdt@trade"))],
-    )
-    .unwrap();
-
-    let (eth_tx, mut eth_rx) = mpsc::channel::<StreamInput>(512);
-
-    // ========================================================
-    // REQUIRE FAIL-CLOSED ATTACHMENT
-    // ========================================================
-
-    let result = manager.attach(conflicting_source, eth_tx).await;
-
-    assert!(
-        matches!(
-            result,
-            Err(
-                marketforge_engine::live::
-                    infrastructure::websocket::
-                    WebSocketManagerError::ConnectionSlot(_)
-            )
-        ),
-        "conflicting routing identity must fail"
-    );
-
-    println!("[2] Conflicting routing update rejected");
-
-    // ========================================================
-    // ENTIRE AFFECTED SLOT MUST BE RETIRED
-    // ========================================================
-
-    assert_eq!(
-        manager.slot_count().await,
-        0,
-        "failed slot must not remain registered"
-    );
-
-    assert_eq!(
-        manager.stream_count().await,
-        0,
-        "failed slot must not retain logical subscriptions"
-    );
-
-    println!("[3] Affected connection slot retired");
-
-    // ========================================================
-    // BOTH RECEIVERS MUST TERMINATE
-    // ========================================================
-
-    // BTC may have valid market data queued before
-    // retirement. Drain it, then require EOF.
-    time::timeout(Duration::from_secs(10), async {
-        while btc_rx.recv().await.is_some() {}
+        manager.detach(btc_binding).await.expect("healthy binding remains valid");
+        wait_closed(&mut btc_rx).await;
+        assert_eq!(manager.slot_count().await, 0);
+        manager.shutdown().await.unwrap();
     })
     .await
-    .expect("BTC destination remained open");
-
-    println!("[4] Existing BTC destination closed");
-
-    // ETH was never successfully established.
-    assert!(
-        time::timeout(Duration::from_secs(5), eth_rx.recv(),)
-            .await
-            .expect("ETH destination remained open")
-            .is_none()
-    );
-
-    println!("[5] Rejected ETH destination closed");
-
-    // The old binding is no longer valid.
-    assert!(
-        manager.detach(btc_binding).await.is_err(),
-        "retired binding must be invalid"
-    );
-
-    manager.shutdown().await.unwrap();
-
-    println!();
-    println!("ROUTING CONFLICT FAIL-CLOSED TEST PASSED");
+    .expect("routing conflict verification deadline exceeded");
 }

@@ -11,11 +11,8 @@ use marketforge_engine::live::{
     config::exchange::ExchangeConfig,
     infrastructure::{
         limiter::{
-            BudgetScope, RateLimitManager, RateLimitPolicySet,
-            factory::{
-                CompiledWebSocketLimiters, WebSocketBudgetBinding, WebSocketLimiterBindings,
-                WebSocketLimiterCompiler,
-            },
+            RateLimitManager, RateLimitPolicySet,
+            factory::{CompiledWebSocketLimiters, WebSocketLimiterCompiler},
         },
         websocket::{
             CompiledSubscriptionAckBinding, ConnectionBootstrapLimits, ConnectionFence,
@@ -157,32 +154,29 @@ fn ack_bindings(
 ) -> Result<BTreeMap<String, CompiledSubscriptionAckBinding>, String> {
     let mut bindings = BTreeMap::new();
 
-    if config.exchange.id.as_str() == "bitget" {
-        // Bitget UTA V3:
-        //
-        // Subscription argument:
-        // {
-        //   "instType": "spot",
-        //   "topic": "publicTrade",
-        //   "symbol": "BTCUSDT"
-        // }
-        //
-        // Expected ACK identity:
-        // {
-        //   "arg": {
-        //     "instType": "spot",
-        //     "topic": "publicTrade",
-        //     "symbol": "BTCUSDT"
-        //   }
-        // }
-
-        let binding = CompiledSubscriptionAckBinding::new(vec![
-            SubscriptionAckFieldBinding::object(0, "instType", "arg.instType"),
-            SubscriptionAckFieldBinding::object(0, "topic", "arg.topic"),
-            SubscriptionAckFieldBinding::object(0, "symbol", "arg.symbol"),
-        ])
-        .map_err(|error| error.to_string())?;
-
+    // Public argument-routed profiles can omit request IDs in their ACKs.
+    if let Some(routing) = config
+        .websocket
+        .routing
+        .as_ref()
+        .filter(|r| r.mode == "arg")
+    {
+        let fields = [
+            routing.channel_field.as_deref(),
+            routing.instrument_field.as_deref(),
+            routing.instrument_type_field.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|path| {
+            let field = path
+                .strip_prefix("arg.")
+                .ok_or_else(|| format!("unsupported argument ACK path {path}"))?;
+            Ok(SubscriptionAckFieldBinding::object(0, field, path))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+        let binding =
+            CompiledSubscriptionAckBinding::new(fields).map_err(|error| error.to_string())?;
         bindings.insert(channel.to_owned(), binding);
     }
 
@@ -315,7 +309,8 @@ fn reconnect_policy() -> ReconnectPolicy {
 async fn check(
     case: ProfileCase,
     channel: &'static str,
-    capture: Option<(&crate::capture::Capture, &RateLimitManager)>,
+    shared_limiter: &RateLimitManager,
+    capture: Option<&crate::capture::Capture>,
 ) -> Result<String, String> {
     let config = load_config(case.name)?;
 
@@ -327,23 +322,8 @@ async fn check(
     let heartbeat = HeartbeatPlanCompiler::compile(&config)
         .map_err(|error| format!("heartbeat compilation: {error}"))?;
     let native_ack_bindings = ack_bindings(&config, channel)?;
-    let (compiled, shared_limiter) = if let Some((_, shared)) = capture {
-        (compile_capture_limits(&config)?, shared.clone())
-    } else {
-        let scope = BudgetScope::Egress("bulk-live-test".into());
-        let service = format!("bulk-live-{}", case.name);
-        let binding = WebSocketBudgetBinding::new(service.clone(), scope);
-        let bindings = WebSocketLimiterBindings {
-            connection_attempts: Some(binding.clone()),
-            connection_attempts_per_second: Some(binding),
-            connection_service: Some(service),
-        };
-        let compiled = WebSocketLimiterCompiler::compile(&config, &bindings)
-            .map_err(|error| format!("limiter compilation: {error}"))?;
-        let manager = RateLimitManager::new(compiled.shared.policies.clone(), 32)
-            .map_err(|error| error.to_string())?;
-        (compiled, manager)
-    };
+    let compiled = compile_capture_limits(&config)?;
+    let shared_limiter = shared_limiter.clone();
 
     let exchange = Arc::new(config);
 
@@ -490,10 +470,10 @@ async fn check(
 
     match observation {
         Ok(Ok(details)) => {
-            if let Some((capture, _)) = capture {
-                if runner_result != "clean shutdown" {
-                    return Err(diagnostics);
-                }
+            if runner_result != "clean shutdown" {
+                return Err(diagnostics);
+            }
+            if let Some(capture) = capture {
                 let relative = format!("websocket-fixtures/{channel}/{}.json", case.name);
                 capture
                     .save(&relative, details.as_bytes())
@@ -517,57 +497,112 @@ async fn check(
 // BULK EXECUTION
 // ============================================================
 
+fn selected_cases(filter: &str) -> Result<Vec<(ProfileCase, &'static str)>, String> {
+    let selected: Vec<_> = CASES
+        .into_iter()
+        .filter(|case| case.name.contains(filter))
+        .flat_map(|case| ["trades", "depth"].map(move |channel| (case, channel)))
+        .collect();
+    if selected.is_empty() {
+        return Err(format!(
+            "MF_LIVE_FILTER={filter:?} selects no WebSocket cases"
+        ));
+    }
+    Ok(selected)
+}
+
+fn shared_limits(cases: &[(ProfileCase, &str)]) -> Result<RateLimitManager, String> {
+    let mut policies = RateLimitPolicySet::new();
+    for (case, _) in cases {
+        let config = load_config(case.name)?;
+        let compiled = compile_capture_limits(&config)?;
+        for (id, quota) in compiled.shared.policies.iter() {
+            policies
+                .insert(id.clone(), *quota)
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    RateLimitManager::new(policies, 32).map_err(|error| error.to_string())
+}
+
+fn external_block(reason: &str) -> bool {
+    // Keep ambiguous timeouts and subscription failures in the failure count.
+    ["HTTP error: 403", "HTTP error: 429", "HTTP error: 451"]
+        .iter()
+        .any(|status| reason.contains(status))
+}
+
 #[tokio::test]
-#[ignore = "connects to public exchange WebSockets"]
+#[ignore = "connects to public exchange WebSockets; requires coordinated egress"]
 async fn all_exchange_profiles_live() {
-    let mut passed = 0_usize;
-    let mut failed = Vec::new();
+    let filter = std::env::var("MF_LIVE_FILTER").unwrap_or_default();
+    let cases = selected_cases(&filter).unwrap();
+    let selected = cases.len();
+    let limiter = match shared_limits(&cases) {
+        Ok(limiter) => limiter,
+        Err(error) => {
+            println!(
+                "SELECTED: {selected}; EXECUTED: 0; PASSED: 0; FAILED: 0; BLOCKED: {selected}"
+            );
+            panic!("WebSocket limiter preflight blocked execution: {error}");
+        }
+    };
+    let mut executed = 0;
+    let mut passed = 0;
+    let mut failed = 0;
+    let mut blocked = 0;
 
-    println!();
-    println!("MARKETFORGE BULK LIVE VALIDATION");
-    println!("================================");
-
-    for case in CASES {
-        let filter = std::env::var("MF_LIVE_FILTER").unwrap_or_default();
-        for channel in ["trades", "depth"] {
-            if !filter.is_empty() && !case.name.contains(&filter) {
-                continue;
+    for (case, channel) in cases {
+        executed += 1;
+        let label = format!("{:<20} {channel:<7}", case.name);
+        match check(case, channel, &limiter, None).await {
+            Ok(details) => {
+                passed += 1;
+                println!("[PASS] {label} {details}");
             }
-            let label = format!("{:<20} {:<7}", case.name, channel,);
-
-            // The individual result is recorded even when
-            // another exchange or channel has failed.
-            match check(case, channel, None).await {
-                Ok(details) => {
-                    passed += 1;
-
-                    println!("[PASS] {label} {details}");
-                }
-
-                Err(reason) => {
-                    println!("[FAIL] {label} {reason}");
-
-                    failed.push(format!("{} {channel}: {reason}", case.name,));
-                }
+            Err(reason) if external_block(&reason) => {
+                blocked += 1;
+                println!("[BLOCKED] {label} {reason}");
+            }
+            Err(reason) => {
+                failed += 1;
+                println!("[FAIL] {label} {reason}");
             }
         }
     }
 
-    println!();
-    println!("================================");
-    println!("PASSED: {passed}/30");
-    println!("FAILED: {}", failed.len());
+    println!(
+        "SELECTED: {selected}; EXECUTED: {executed}; PASSED: {passed}; FAILED: {failed}; BLOCKED: {blocked}"
+    );
+    assert_eq!(passed, selected, "{failed} failed and {blocked} blocked");
+}
 
-    if !failed.is_empty() {
-        println!();
-        println!("FAILURE SUMMARY:");
-
-        for reason in &failed {
-            println!("  - {reason}");
+#[test]
+fn bulk_selection_and_shared_limits_are_valid_offline() {
+    let all = selected_cases("").unwrap();
+    assert_eq!(all.len(), 30);
+    shared_limits(&all).unwrap();
+    for (case, channel) in all {
+        let config = load_config(case.name).unwrap();
+        let bindings = ack_bindings(&config, channel).unwrap();
+        if matches!(config.exchange.id.as_str(), "okx" | "bitget") {
+            assert!(
+                bindings.contains_key(channel),
+                "missing native ACK identity for {}",
+                case.name
+            );
         }
     }
-
-    assert!(failed.is_empty(), "{} live checks failed", failed.len(),);
+    let filtered = selected_cases("gateio_linear").unwrap();
+    assert_eq!(filtered.len(), 2);
+    assert!(
+        filtered
+            .iter()
+            .all(|(case, _)| case.name == "gateio_linear")
+    );
+    assert!(selected_cases("no-such-profile").is_err());
+    assert!(external_block("Websocket upgrade failed: HTTP error: 451"));
+    assert!(!external_block("timed out after 30 seconds"));
 }
 
 fn compile_capture_limits(config: &ExchangeConfig) -> Result<CompiledWebSocketLimiters, String> {
@@ -650,18 +685,10 @@ async fn collect_websocket_fixtures() {
         .collect::<Vec<_>>();
     assert!(!requested.is_empty(), "no WebSocket fixtures requested");
 
-    let mut policies = RateLimitPolicySet::new();
-    for (case, _) in &requested {
-        let config = load_config(case.name).unwrap();
-        let compiled = compile_capture_limits(&config).unwrap();
-        for (id, quota) in compiled.shared.policies.iter() {
-            policies.insert(id.clone(), *quota).unwrap();
-        }
-    }
-    let manager = RateLimitManager::new(policies, 32).unwrap();
+    let manager = shared_limits(&requested).unwrap();
     let mut failures = Vec::new();
     for (case, channel) in requested {
-        match check(case, channel, Some((&capture, &manager))).await {
+        match check(case, channel, &manager, Some(&capture)).await {
             Ok(details) => println!("{details}"),
             Err(error) => {
                 eprintln!("{} {channel}: {error}", case.name);

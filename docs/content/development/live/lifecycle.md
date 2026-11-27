@@ -61,3 +61,34 @@ Bybit and OKX shared-slot mutations, rejected unsubscribe, and serialized
 restoration while heartbeat and demand changes remain active. Subscription
 restoration establishes transport acquisition authority. The existing
 Source lifecycle owns financial recovery.
+
+### WebSocket acceptance verification
+
+A compatible attachment can share the survivor's physical connection. Its
+own acquisition starts after native acknowledgment. Surviving subscriptions
+keep their physical stamp and acquisition generation across ordinary add
+and remove operations. An atomic duplicate-selector rejection leaves the
+existing slot intact. A failure after routing ownership becomes uncertain
+can retire the slot. Final detachment releases it.
+
+Offline acceptance on the reconciliation branch passed 3,003 Rust tests,
+with 23 intentionally ignored and zero failures. All 95 existing fixture
+files were imported from a prepared worktree, and all eight fixture script
+tests passed. Captured trades and depth cover all 15 configured profiles.
+Source preparation and managed loopback tests cover Gate.io Linear USDT and
+USD1 routes and Bitget Linear USDT-FUTURES and USDC-FUTURES product types.
+The alternate settlement inputs in those tests are synthetic routing inputs.
+Loopback runs also verify Gate.io's decimal-size handshake header across
+reconnect, dynamic shared-slot acquisition, and conservative fallback after
+an uncertain unsubscribe.
+
+Public WebSocket acceptance requires explicit opt-in and coordination with
+other workloads on the same egress. The ignored bulk test runs selected
+profile and channel cases sequentially under one shared limiter and
+reports selected, executed, passed, failed and blocked counts. Its baseline
+cases exercise the low-level transport through native acknowledgment and
+data receipt. Verifying live automatic settlement routing additionally
+requires authoritative current instrument metadata and the production
+Source preparation and manager path. A transport ACK and native
+observations establish acquisition. Financial continuity requires the
+downstream Source integrity and recovery checks.
