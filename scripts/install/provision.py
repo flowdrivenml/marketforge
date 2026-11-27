@@ -23,6 +23,7 @@ from forge.shared.database.credentials import (
     PRODUCTION_DATABASE_KEY,
     TEST_DATABASE_KEY,
     MissingDatabaseCredentials,
+    dotenv_database_value,
     resolve_database_dsn,
 )
 from forge.shared.database.status import DatabaseStatus, inspect_database
@@ -200,6 +201,20 @@ def verify_owned_local(dsn: str, name: str, role: str, port: str) -> None:
             )
 
 
+def credential_file_contents(previous: str, key: str, dsn: str) -> str:
+    """Replace the selected blank entry after credential resolution found it missing."""
+    bom = "\ufeff" if previous.startswith("\ufeff") else ""
+    previous = previous.removeprefix("\ufeff")
+    if (dotenv_database_value(previous, key) or "").strip():
+        raise MarketForgeError("Credential file changed during provisioning. Review it and rerun.")
+    assignment = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
+    contents = "\n".join(
+        line for line in previous.split("\n") if not assignment.match(line)
+    )
+    separator = "\n" if contents and not contents.endswith("\n") else ""
+    return f'{bom}{contents}{separator}{key}="{dsn}"\n'
+
+
 def provision(
     root: Path, testing: bool, socket: str, port: str, admin: list[str]
 ) -> None:
@@ -239,6 +254,10 @@ def provision(
                 ".secrets/postgres.env must be a regular file for local provisioning."
             )
         original = source.read_bytes() if source.exists() else None
+        previous = original.decode("utf-8") if original is not None else ""
+        # Check the exact snapshot to avoid replacing a credential added after resolution.
+        if (dotenv_database_value(previous.removeprefix("\ufeff"), key) or "").strip():
+            return
         marker = directory / f".pending-{purpose}.json"
 
         def query(statement: str) -> str:
@@ -310,11 +329,9 @@ def provision(
             raise MarketForgeError(
                 "Credential file changed during provisioning. Review it and rerun."
             )
-        previous = original.decode("utf-8") if original is not None else ""
-        separator = "\n" if previous and not previous.endswith("\n") else ""
         write_private(
             source,
-            f'{previous}{separator}{key}="{dsn}"\n',
+            credential_file_contents(previous, key, dsn),
             replace=original is not None,
         )
         marker.unlink()

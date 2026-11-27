@@ -1,4 +1,6 @@
 #![cfg(unix)]
+#[path = "../support/live_daemon.rs"]
+mod live_daemon;
 mod support;
 use marketforge_engine::live::{
     application::*,
@@ -1254,9 +1256,18 @@ async fn actual_headless_binary_authenticates_resizes_saves_and_shuts_down_witho
     let dir = tempfile::tempdir().unwrap();
     let mut opts = options(&dir, "ws://127.0.0.1:1", vec![], false);
     opts.config.control.listen_address = "127.0.0.1:0".into();
+    opts.config.deployment.egress_id = Some("isolated-test-egress".into());
+    opts.config.deployment.rest_weight.insert(
+        "binance_spot".into(),
+        marketforge_engine::live::config::general::RestWeightQuota {
+            capacity: 6000,
+            window_seconds: 60,
+        },
+    );
+    let deployment = opts.config.deployment.clone();
     let path = dir.path().join("general.toml");
     std::fs::write(&path, toml::to_string(&opts.config).unwrap()).unwrap();
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_marketforge-live"))
+    let mut child = tokio::process::Command::from(live_daemon::command(dir.path()))
         .args([
             "--empty-definitions",
             "--config-dir",
@@ -1265,10 +1276,7 @@ async fn actual_headless_binary_authenticates_resizes_saves_and_shuts_down_witho
             path.to_str().unwrap(),
             "--profiles",
             "binance_spot",
-            "--rest-weight",
-            "binance_spot=6000/60",
         ])
-        .env_remove("MARKETFORGE_DATABASE_URL")
         .env(
             "MARKETFORGE_MANAGEMENT_CREDENTIALS",
             serde_json::json!([{"identity":"admin","role":"administrator","token":ADMIN}])
@@ -1322,6 +1330,12 @@ async fn actual_headless_binary_authenticates_resizes_saves_and_shuts_down_witho
             .workers,
         3
     );
+    assert_eq!(
+        marketforge_engine::live::config::general::GeneralConfig::load(&path)
+            .unwrap()
+            .deployment,
+        deployment
+    );
     let plan = client.preview(p::Action::Shutdown).await.unwrap();
     client.apply(&plan.id, "daemon-shutdown").await.unwrap();
     assert!(bounded(child.wait()).await.unwrap().success());
@@ -1334,7 +1348,7 @@ async fn unavailable_definition_persistence_is_not_replaced_by_an_empty_catalogu
     let path = dir.path().join("general.toml");
     std::fs::write(&path, toml::to_string(&opts.config).unwrap()).unwrap();
     let result = bounded(
-        tokio::process::Command::new(env!("CARGO_BIN_EXE_marketforge-live"))
+        tokio::process::Command::from(live_daemon::command(dir.path()))
             .args([
                 "--config-dir",
                 concat!(env!("CARGO_MANIFEST_DIR"), "/../data/.config/live"),
@@ -1342,8 +1356,9 @@ async fn unavailable_definition_persistence_is_not_replaced_by_an_empty_catalogu
                 path.to_str().unwrap(),
                 "--profiles",
                 "binance_spot",
+                "--rest-weight",
+                "binance_spot=6000/60",
             ])
-            .env_remove("MARKETFORGE_DATABASE_URL")
             .kill_on_drop(true)
             .output(),
     )
@@ -1351,7 +1366,8 @@ async fn unavailable_definition_persistence_is_not_replaced_by_an_empty_catalogu
     .unwrap();
     assert!(!result.status.success());
     let reason = String::from_utf8(result.stderr).unwrap();
-    assert!(reason.contains("MARKETFORGE_DATABASE_URL is required"));
+    assert!(reason.contains("set PRODUCTION_DATABASE_KEY in the environment or in a private workspace .secrets/postgres.env file"), "{reason}");
+    assert!(!reason.contains("management_serving"));
     assert!(!std::path::Path::new(&opts.config.publication.socket_path).exists());
 }
 

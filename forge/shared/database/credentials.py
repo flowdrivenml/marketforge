@@ -68,6 +68,27 @@ def _read_private_dotenv(source: Path) -> str:
         return content.decode("utf-8-sig")
 
 
+def dotenv_database_value(contents: str, key: str) -> str | None:
+    """Parse only the selected key from a UTF-8 dotenv document."""
+    value: str | None = None
+    for number, line in enumerate(contents.split("\n"), 1):
+        assignment = _ASSIGNMENT.match(line.rstrip("\r"))
+        if assignment is None:
+            if line.strip() == key or line.strip().split(maxsplit=1) == ["export", key]:
+                raise DatabaseCredentialsError(
+                    f"Invalid assignment for {key} in .secrets/postgres.env at line {number}."
+                )
+            continue
+        if assignment[1] != key:
+            continue
+        if value is not None:
+            raise DatabaseCredentialsError(
+                f"Duplicate assignment for {key} in .secrets/postgres.env at line {number}."
+            )
+        value = _dotenv_value(assignment[2], key=key, line=number)
+    return value
+
+
 def resolve_database_dsn(*, testing: bool, project_root: Path | None = None) -> str:
     """Use a nonblank environment value, then the same key in the project file.
 
@@ -84,7 +105,6 @@ def resolve_database_dsn(*, testing: bool, project_root: Path | None = None) -> 
         return environment.strip()
 
     source = resolve_project_root(project_root) / ".secrets" / "postgres.env"
-    value: str | None = None
     try:
         contents = _read_private_dotenv(source)
     except FileNotFoundError:
@@ -94,21 +114,7 @@ def resolve_database_dsn(*, testing: bool, project_root: Path | None = None) -> 
             f"Cannot read PostgreSQL credentials for {key} from .secrets/postgres.env. "
             "Use a private regular UTF-8 file owned by the running user."
         ) from None
-    for number, line in enumerate(contents.split("\n"), 1):
-        assignment = _ASSIGNMENT.match(line.rstrip("\r"))
-        if assignment is None:
-            if line.strip() == key or line.strip().split(maxsplit=1) == ["export", key]:
-                raise DatabaseCredentialsError(
-                    f"Invalid assignment for {key} in .secrets/postgres.env at line {number}."
-                )
-            continue
-        if assignment[1] != key:
-            continue
-        if value is not None:
-            raise DatabaseCredentialsError(
-                f"Duplicate assignment for {key} in .secrets/postgres.env at line {number}."
-            )
-        value = _dotenv_value(assignment[2], key=key, line=number)
+    value = dotenv_database_value(contents, key)
     if value is None or not value.strip():
         raise MissingDatabaseCredentials(
             f"Set {key} to a nonempty value in the environment or in "

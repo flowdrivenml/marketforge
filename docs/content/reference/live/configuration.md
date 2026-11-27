@@ -12,6 +12,16 @@ The `live_config` integration target uses the tracked fixture at
 checks the installation template separately through the Live loader. Operator
 settings and production credentials are unnecessary for these tests.
 
+See [Live deployment configuration](deployment-configuration.md) for workspace
+credential provisioning, REST quota bindings and egress identity. See
+[Live runtime configuration wiring](../../development/live/runtime-configuration.md)
+for startup settings and the two supported live configuration mutations.
+
+The full offline Rust regression also uses captured exchange JSON under
+`data/.cache/live/rest-fixtures`, `rest-service-fixtures`, and
+`websocket-fixtures`. When verifying from a separate worktree, populate those
+ignored directories from the regression baseline's local captures.
+
 ## Application
 
 Existing general configuration remains the loader and authority. Optional `[runtime.application]` defaults:

@@ -1,6 +1,15 @@
 # Copy to general.toml for workspace-specific settings.
 schema_version = 1
 
+# [deployment]
+# egress_id = "local-egress"
+
+# Add a table for each weighted REST profile used by this deployment.
+# [deployment.rest_weight.binance_spot]
+# capacity = <verified positive integer>
+# window_seconds = <verified positive integer>
+# Binance Linear and Inverse use separate binance_linear and binance_inverse tables.
+
 [runtime]
 # Upper bound for graceful shutdown, in seconds.
 shutdown_timeout_seconds = 15
@@ -19,7 +28,8 @@ buffered_bytes = 67108864
 # Unix socket path relative to the workspace. The connection limit counts each connection separately.
 socket_path = "data/.live/marketforge-data.sock"
 max_connections = 64
-# Maximum queued payload per subscriber. Slow subscribers are disconnected.
+# Maximum queued payload bytes per publication connection, shared by its subscriptions.
+# Connections that cannot keep up are disconnected.
 subscriber_queue_bytes = 16777216
 
 [control]
@@ -54,4 +64,6 @@ level = "info"
 # Recovery retry backoff starts in milliseconds and is capped in seconds.
 initial_backoff_ms = 500
 max_backoff_seconds = 60
+# Physical WebSocket reconnects sample from ceil(base / 2) through base, inclusive.
+# With jitter disabled, reconnects use the capped exponential base delay.
 jitter = true

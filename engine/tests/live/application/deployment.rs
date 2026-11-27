@@ -2,50 +2,17 @@ use super::*;
 use std::{path::Path, process::Command};
 
 const CONFIG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data/.config/live");
-const GENERAL: &str = r#"
-schema_version = 1
-[runtime]
-shutdown_timeout_seconds = 5
-[publication]
-socket_path = "data/.live/marketforge-data.sock"
-max_connections = 8
-subscriber_queue_bytes = 1048576
-[control]
-listen_address = "127.0.0.1:0"
-[recording]
-enabled = false
-batch_max_records = 10
-batch_max_delay_ms = 100
-[metrics]
-enabled = true
-snapshot_interval_ms = 100
-[metrics.prometheus]
-enabled = false
-listen_address = "127.0.0.1:9091"
-path = "/metrics"
-max_concurrent_requests = 8
-max_response_bytes = 65536
-cache_interval_ms = 100
-[logging]
-level = "info"
-[defaults.recovery]
-initial_backoff_ms = 500
-max_backoff_seconds = 10
-jitter = false
-"#;
+const GENERAL: &str = live_daemon::GENERAL;
 
 pub(super) fn general(root: &Path) -> std::path::PathBuf {
     let general = root.join("general.toml");
-    std::fs::write(&general, GENERAL).unwrap();
+    std::fs::write(&general, GENERAL.replace("127.0.0.1:8080", "127.0.0.1:0")).unwrap();
     general
 }
 
 fn fixture() -> (tempfile::TempDir, std::path::PathBuf) {
     let root = tempfile::tempdir().unwrap();
     std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    std::fs::create_dir(root.path().join("engine")).unwrap();
-    std::fs::create_dir(root.path().join("forge")).unwrap();
-    std::fs::write(root.path().join("forge/pyproject.toml"), "").unwrap();
     std::fs::create_dir(root.path().join("data")).unwrap();
     std::fs::create_dir(root.path().join("data/.live")).unwrap();
     std::fs::set_permissions(
@@ -65,16 +32,10 @@ fn secret(root: &Path, name: &str, text: &str) {
 }
 
 fn daemon(root: &Path, general: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_marketforge-live"));
+    let mut command = live_daemon::command(root);
     command
         .args(["--config-dir", CONFIG_DIR, "--general"])
-        .arg(general)
-        .current_dir(root.join("engine"))
-        .env("MARKETFORGE_PROJECT_ROOT", root)
-        .env_remove("MARKETFORGE_DATABASE_URL")
-        .env_remove("PRODUCTION_DATABASE_KEY")
-        .env_remove("TEST_DATABASE_KEY")
-        .env_remove("MARKETFORGE_MANAGEMENT_CREDENTIALS");
+        .arg(general);
     command
 }
 

@@ -4,6 +4,8 @@ mod acquisition;
 #[path = "../integration/derived/harness.rs"]
 mod definitions;
 mod deployment;
+#[path = "../support/live_daemon.rs"]
+mod live_daemon;
 #[path = "../integration/rest/support.rs"]
 mod rest_support;
 #[path = "../support/websocket_server.rs"]
@@ -67,11 +69,7 @@ fn options_profile(
     profile: &str,
 ) -> LiveApplicationOptions {
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let mut config = general::GeneralConfig::load(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../data/.config/live/general.toml"
-    ))
-    .unwrap();
+    let mut config: general::GeneralConfig = toml::from_str(live_daemon::GENERAL).unwrap();
     config
         .runtime
         .processing
@@ -319,7 +317,7 @@ async fn unsupported_recording_and_binding_failure_are_preflighted() {
 fn executable_validation_is_offline_and_rejects_invalid_configuration() {
     let dir = tempfile::tempdir().unwrap();
     let general = deployment::general(dir.path());
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_marketforge-live"))
+    let output = live_daemon::command(dir.path())
         .args([
             "--validate-only",
             "--config-dir",
@@ -331,7 +329,6 @@ fn executable_validation_is_offline_and_rejects_invalid_configuration() {
         ])
         .arg("--general")
         .arg(general)
-        .env_remove("MARKETFORGE_DATABASE_URL")
         .output()
         .unwrap();
     assert!(
@@ -339,7 +336,7 @@ fn executable_validation_is_offline_and_rejects_invalid_configuration() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_marketforge-live"))
+    let output = live_daemon::command(dir.path())
         .args(["--validate-only", "--config-dir", "/missing/config"])
         .output()
         .unwrap();
@@ -1079,7 +1076,7 @@ async fn executable_signal_shutdown_owns_actual_services_without_database() {
     opts.config.control.listen_address = "127.0.0.1:0".into();
     let general = dir.path().join("general.toml");
     std::fs::write(&general, toml::to_string(&opts.config).unwrap()).unwrap();
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_marketforge-live"))
+    let mut child = tokio::process::Command::from(live_daemon::command(dir.path()))
         .args([
             "--empty-definitions",
             "--config-dir",
@@ -1092,7 +1089,6 @@ async fn executable_signal_shutdown_owns_actual_services_without_database() {
             "binance_spot=6000/60",
         ])
         .env("MARKETFORGE_MANAGEMENT_CREDENTIALS",r#"[{"identity":"test-admin","role":"administrator","token":"child-only-management-token-123456"}]"#)
-        .env_remove("MARKETFORGE_DATABASE_URL")
         .stderr(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .kill_on_drop(true)

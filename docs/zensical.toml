@@ -45,7 +45,7 @@ nav = [
       "reference/index.md",
       { "CLI" = ["reference/cli/index.md", "reference/cli/sorting.md", "reference/cli/forge.md", "reference/cli/acquisition.md", "reference/cli/storage.md", "reference/cli/runs.md", "reference/cli/catalog.md", "reference/cli/maintenance.md", "reference/cli/engine.md", "reference/cli/registration.md", "reference/cli/normalize.md", "reference/cli/merge.md", "reference/cli/convert.md", "reference/cli/pipeline.md", "reference/cli/datasets.md", "reference/cli/markets.md"] },
       { "Configuration and recipes" = ["reference/configuration/index.md", "reference/configuration/application.md", "reference/configuration/explorer.md", "reference/runtime.md", "reference/configuration/pipeline-runtime.md", "reference/configuration/acquisition.md", "reference/configuration/catalogue.md", "reference/configuration/normalization.md", "reference/configuration/normalization-runtime.md", "reference/configuration/merge.md", "reference/configuration/merge-runtime.md", "reference/configuration/conversion.md", "reference/configuration/conversion-runtime.md", "reference/configuration/profile-fields.md", "reference/configuration/pipeline.md", "reference/configuration/markets.md"] },
-      { "Live" = ["reference/live/configuration.md", "reference/live/management-api.md", "reference/live/streaming-protocol.md"] },
+      { "Live" = ["reference/live/configuration.md", "reference/live/deployment-configuration.md", "reference/live/management-api.md", "reference/live/streaming-protocol.md"] },
       "reference/acquisition-sources.md",
       "reference/registration.md",
       { "Data formats" = [
@@ -78,7 +78,7 @@ nav = [
       { "System overview" = "development/architecture.md" },
       "development/forge.md",
       { "Historical Engine" = ["development/normalize.md", "development/merge.md", "development/convert.md"] },
-      { "Live Engine" = ["development/live/architecture.md", "development/live/lifecycle.md", "development/live/processing.md"] },
+      { "Live Engine" = ["development/live/architecture.md", "development/live/lifecycle.md", "development/live/processing.md", "development/live/runtime-configuration.md"] },
       "development/operations.md",
       "development/forge-tui.md",
     ] },

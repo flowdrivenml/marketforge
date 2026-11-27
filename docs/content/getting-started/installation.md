@@ -142,3 +142,8 @@ Check that all three Engine targets are verified.
 - If a newer toolchain is required, update the active toolchain deliberately, then rerun. A verified binary with an unsupported runtime option needs a managed rebuild using the current checkout.
 
 Continue with the [Quick Start](quickstart.md).
+
+
+For Live management credentials and deployment-specific REST quota bindings,
+follow the [Live deployment configuration](../reference/live/deployment-configuration.md)
+reference after installation.

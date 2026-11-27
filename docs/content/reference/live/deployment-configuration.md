@@ -18,6 +18,21 @@ the workspace `.secrets/` directory.
 | `.secrets/live-management.json` | JSON array of objects with `identity`, `role`, and `token`. Supported roles are `viewer`, `operator`, and `administrator`. Existing credential bounds and role checks apply. |
 | `.secrets/live-management-token` | A single bearer token for the client identity the operator has authorized. |
 
+For local PostgreSQL provisioning, use the installer to create the selected
+database and write its URL privately. An existing valid credential is reused.
+For an externally provisioned database, place its URL under the appropriate
+key. Keep a single assignment per key and preserve the other environment's
+credentials.
+
+For management, create the directory with mode `0700` if it is absent. Use a
+private editor or secret manager to write the server JSON with one independent
+high-entropy token per identity. Choose the minimum role needed for each
+client. Install only that identity's token in the client file on the client
+account, or use an explicit private token file for that account. Create files
+under `umask 077` and verify file ownership and mode `0600` before starting
+Live. Keep existing files and identities when upgrading. Management credential
+provisioning and rotation are explicit operator actions.
+
 For Live's definition database, `MARKETFORGE_DATABASE_URL` overrides
 `PRODUCTION_DATABASE_KEY` in the environment. The same production key then
 falls back to the workspace file. The shared Rust resolver also accepts a

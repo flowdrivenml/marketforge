@@ -8,6 +8,7 @@ General models are in `engine/src/live/config/general/model.rs`, except `Managem
 
 | Configuration field | Validation | Runtime consumer | Status and effect | Mutability |
 |---|---|---|---|---|
+| `deployment.egress_id`, `deployment.rest_weight.*` | `DeploymentConfig::resolve`, exchange compiler | Daemon → shared limiter | Optional egress identity and verified weighted REST capacity/window bindings. | Restart required |
 | `schema_version` | `validate_schema_version` | General loader | Wired. Accepts general schema 1. The streaming wire protocol has its own version. | Immutable compatibility requirement |
 | `runtime.shutdown_timeout_seconds` | `validate_runtime` | `application/runtime.rs`, `stream/processing/service.rs`, daemon | Wired. Deadline for application and pool cleanup observation. The daemon also uses it for definition database connection and restoration at startup. Cleanup can remain owned past the deadline. | Restart required |
 | `runtime.application.command_capacity` | `ApplicationRuntimeConfig::validate` | `application/runtime.rs` | Wired. Bounds the application command channel. | Restart required |
@@ -24,7 +25,7 @@ General models are in `engine/src/live/config/general/model.rs`, except `Managem
 | `runtime.processing.derived.startup_timeout_ms`, `retry_delay_ms` | Same | Processing service association lifecycle | Wired. Controls startup deadlines and retry scheduling after eligible failures. | Restart required |
 | `runtime.processing.derived.stall_timeout_ms`, `planning_steps` | Same | Derived operation timing and conversion planning | Wired. Bounds stalled operation state and conversion graph search. | Restart required |
 | `publication.socket_path`, `max_connections` | `validate_publication`, `PublicationConfig::validate_streaming`, Router admission check | Daemon path resolution and Unix publication server | Wired. Selects the Unix socket and bounds simultaneous publication connections. | Restart required |
-| `publication.subscriber_queue_bytes` | Same model validation, including frame fit | `streaming/transport/session.rs` | Wired. Per-session subscriber byte budget. | Restart required today. Future resource managed |
+| `publication.subscriber_queue_bytes` | Same model validation, including frame fit | `streaming/transport/session.rs` | Wired. Connection-wide queued payload byte budget shared by subscriptions. | Restart required today. Future resource managed |
 | `publication.streaming.max_subscriptions`, `max_frame_bytes`, `pending_commands` | `PublicationConfig::validate_streaming`, application Router subscription check | Streaming session and Router admission | Wired. Per-session subscriptions, frame encoding and parsing bound, and pending command queue. | Restart required |
 | `publication.streaming.handshake_timeout_ms`, `read_timeout_ms`, `write_timeout_ms`, `shutdown_timeout_ms` | `PublicationConfig::validate_streaming` | Streaming session and Unix server shutdown | Wired. Client-facing publication deadlines. Exchange WebSockets use their own limits. | Restart required |
 | `control.listen_address` | `validate_control` | `application/managed.rs`, management HTTP bind | Wired with `management-api`. Loopback-only, with ephemeral port support. | Restart required. Loopback constraint is invariant |
@@ -45,7 +46,7 @@ Stream definitions own the financial inputs, algorithms and dependency topology 
 
 ## Operational limits
 
-Values below are observed production construction values. Proposed settings in the next section require a separate configuration decision.
+The table records the limits currently used to construct production services.
 
 | Limit | Current value | Implementation location and consumer | Classification | Recommendation |
 |---|---:|---|---|---|
@@ -70,16 +71,6 @@ Values below are observed production construction values. Proposed settings in t
 | Source transport and continuity buffers | 256 input slots. Trade retention 1024 batches, 8192 records, 16 MiB. Depth retention 1024 messages, 16 MiB. | `SourceInitializationLimits::default` in `stream/source/builder.rs` | Internal safety / future resource managed | Preserve per-Source bounds and integrity behavior. |
 | Exchange connection attempts, messaging and REST quotas | Per selected exchange/profile and egress | `compile_limiters`, limiter factory, connector and REST client | Authoritative external constraints | Bind verified exchange limits. Reconnect jitter changes attempt timing while the shared limiter continues to enforce admission. |
 
-### Candidate configuration extensions
-
-These are startup-only proposals. Each recommended default retains the verified construction value for compatibility. No production schema expansion is required for the reconnect or management fixes.
-
-| Proposed field | Current / proposed default | Validation | Intended consumer and regression |
-|---|---:|---|---|
-| `runtime.websocket.connection_timeout_ms` | 10,000 ms | Positive, representable and explicitly bounded by the approved operational maximum. | `compile_websocket` → `ReconnectPolicy::connection_timeout`. Test default parity, invalid values, custom timeout covering quota/handshake and cancellation. |
-| `runtime.websocket.subscription_ack_timeout_ms` | 10,000 ms | Positive and bounded. Document interaction with separately bounded driver waits. | `compile_websocket` → `ConnectionBootstrapLimits::acknowledgement_timeout`. Test default parity, matching and missing ACKs, and stale-generation rejection. |
-| `runtime.rest.max_concurrent_requests` | 8 | Positive and bounded for semaphore capacity and maximum response-memory exposure. | `LiveApplication::start` → `RestClientConfig`. Test default parity, concurrent requests above/below the cap and unchanged shared quota admission. Resource ownership requires review before exposure. |
-
 ## Runtime application and persistence
 
 - Management admits authorized, bounded, reviewed operations. Worker resize uses the existing ProcessingService handle and pool supervisor. The Live application command channel owns graph, lifecycle, demand and shutdown messages. Resize avoids that channel and uses the existing pool revision and worker ownership directly.
@@ -88,9 +79,15 @@ These are startup-only proposals. Each recommended default retains the verified 
 - Runtime-only changes leave TOML unchanged. An apply-and-save operation validates the value and full edited document, saves first, and applies second. A conflict or pre-replacement write failure stops before runtime application. If the rename succeeds but directory sync fails, the file has been replaced, crash durability is unknown, and live application stops with a reported partial failure. A save followed by rejected or failed runtime application likewise retains a saved outcome and error. Worker views expose the requested count, actual running count and saved startup count. The interval setting view exposes the effective value and whether it matches the stored value. The file and operation record carry the persisted/requested interval when they diverge.
 - The writer preserves unrelated TOML, field comments, Unix owner/group and permission bits. It creates a same-directory temporary file, syncs it before rename, and syncs the parent after rename. It checks expected contents before writing and again before rename, with an identity and metadata check across the write on Unix. This still has a final check-to-rename race with independent writers and assumes the operator controls the configuration directory. Filesystem-specific ACLs, extended attributes and hard-link identity are outside the replacement guarantee. External edits require an explicit reload by restarting with the intended file.
 
-## Integration ownership
+## Deployment and startup
 
-- **Agent 2, deployment compiler inputs.** In `engine/src/bin/marketforge-live.rs`, restore or select the authoritative exchange profile set before calling `application/infrastructure.rs::compile_limiters`. Pass the same selected `ExchangeConfigStore` and returned `ExchangeLimiters` into `compile_websocket` and `LiveApplicationOptions`. Weighted REST profiles require a verified positive capacity/window for each selected profile and an explicit egress identity. Compile a single shared manager. Preserve static validation failure for missing budgets or unresolved selected profiles. The existing `compile_limiters(configs, egress, weights)` and `compile_websocket(configs, limiters, recovery, overrides)` interfaces already cover this handoff.
-- **Agent 2, profile availability and feedback.** In the management build, the baseline selects all profiles unless an explicit list is supplied. Any replacement selection must cover restored Sources and only admit future Sources whose profiles are compiled. Management source templates come from authoritative stored definitions, and available instrument metadata comes from the definition owner. `LiveApplication::start` currently passes empty REST usage-header bindings. If an approved deployment binding schema supplies verified accounting semantics, its handoff is `RestFactoryFeedbackPolicy::usage_bindings` keyed by the same compiled profile set. Verified exchange accounting determines header bindings and quota capacities. Credential/schema changes and daemon selection belong to Agent 2.
-- **Agent 1, installation and fixtures.** The existing `defaults.recovery` field names and defaults remain supported. Operator documentation should state that `jitter` affects physical WebSocket reconnection. Baseline management tests read `data/.config/live/general.toml`; synchronize those test entry points with the deterministic fixture when integrating the foundations work so a clean checkout needs no operator file. This worktree used Agent 1's fixture at the baseline test path for verification.
-- Automatic PostgreSQL recording, new exchange financial recovery strategies, bootstrap coordination and resource automation remain separate milestones.
+The [deployment reference](../../reference/live/deployment-configuration.md)
+covers credential, egress and weighted quota resolution. The daemon builds the
+shared limiter and WebSocket manager from the same operational profile set
+passed to the application. Connection establishment remains demand-driven.
+Deployment changes require a restart. Management saves preserve deployment
+tables when persisting worker count or observation interval.
+
+Automatic PostgreSQL recording and additional financial recovery strategies
+remain unavailable. Offline validation checks declarations and compiler inputs
+without connecting to PostgreSQL or an exchange.

@@ -72,11 +72,7 @@ pub(crate) fn options_profile(
     profile: &str,
 ) -> LiveApplicationOptions {
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let mut config = general::GeneralConfig::load(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../data/.config/live/general.toml"
-    ))
-    .unwrap();
+    let mut config: general::GeneralConfig = toml::from_str(super::live_daemon::GENERAL).unwrap();
     config
         .runtime
         .processing

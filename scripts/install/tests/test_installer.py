@@ -394,6 +394,25 @@ def test_existing_unconfigured_local_conflict_preserves_data(
     assert not (workspace / ".secrets/postgres.env").exists()
 
 
+def test_provision_replaces_blank_key_without_changing_other_credentials(
+    workspace: Path,
+) -> None:
+    source = workspace / ".secrets/postgres.env"
+    source.parent.mkdir()
+    dsn = "postgresql://synthetic@127.0.0.1/marketforge_test"
+    production = 'PRODUCTION_DATABASE_KEY="postgresql://synthetic@localhost/marketforge"\r\n'
+    previous = "\ufeff" + production + "export TEST_DATABASE_KEY = # provision locally\r\n"
+    contents = provision.credential_file_contents(previous, TEST_DATABASE_KEY, dsn)
+    provision.write_private(source, contents, replace=False)
+    assert source.read_bytes().startswith(("\ufeff" + production).encode())
+    assert contents.count(TEST_DATABASE_KEY) == 1
+    assert provision.resolve_database_dsn(project_root=workspace, testing=True) == dsn
+    assert source.stat().st_mode & 0o777 == 0o600
+    with pytest.raises(MarketForgeError, match="Credential file changed"):
+        provision.credential_file_contents(contents, TEST_DATABASE_KEY, dsn)
+
+
+
 def test_real_postgres_isolated(
     workspace: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -453,6 +472,7 @@ def test_real_postgres_isolated(
             dotfile.write_text(
                 "UNRELATED='literal extension setting'"
             )  # No trailing newline.
+            dotfile.chmod(0o600)
             admin = [pg("psql"), "-U", owner]
             for testing in (True, False):
                 provision.provision(workspace, testing, short, port, admin)
