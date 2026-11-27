@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 use futures_util::{SinkExt, StreamExt};
 
@@ -10,7 +13,8 @@ use tokio::{
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 
 use marketforge_engine::live::{
-    config::exchange::ExchangeConfig,
+    application::{compile_limiters, compile_websocket},
+    config::{ExchangeConfigStore, exchange::ExchangeConfig, general::RecoveryDefaultsConfig},
     infrastructure::{
         limiter::{
             BudgetScope, RateLimitManager,
@@ -21,7 +25,8 @@ use marketforge_engine::live::{
         },
         websocket::{
             CompiledHeartbeatPlan, HeartbeatPlanCompiler, ReconnectError, ReconnectEvent,
-            ReconnectPolicy, ReconnectRunner, SupervisorExit, WebSocketSupervisor,
+            ReconnectPolicy, ReconnectRunner, SupervisorExit, WebSocketManagerRuntime,
+            WebSocketSupervisor,
         },
     },
 };
@@ -342,4 +347,188 @@ fn rejects_invalid_retry_configuration() {
         )
         .is_err()
     );
+}
+
+fn compiled_runtime(jitter: bool, initial_backoff_ms: u64) -> WebSocketManagerRuntime {
+    let exchanges = ExchangeConfigStore::load_dir(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../data/.config/live/exchanges"
+    ))
+    .unwrap()
+    .selected(&BTreeSet::from(["binance_spot".into()]))
+    .unwrap();
+    let weights = BTreeMap::from([("binance_spot".into(), (100, 60))]);
+    let limiters = compile_limiters(&exchanges, "local-test", &weights).unwrap();
+    compile_websocket(
+        &exchanges,
+        &limiters,
+        &RecoveryDefaultsConfig {
+            initial_backoff_ms,
+            max_backoff_seconds: 60,
+            jitter,
+        },
+        &BTreeMap::new(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn production_reconnect_compiles_recovery_settings() {
+    for jitter in [false, true] {
+        let policy = compiled_runtime(jitter, 501).reconnect_policy;
+        assert_eq!(policy.jitter_enabled(), jitter);
+        for (failure, maximum) in [
+            (1, 501_u64),
+            (2, 1002),
+            (3, 2004),
+            (8, 60_000),
+            (u32::MAX, 60_000),
+        ] {
+            let minimum = if jitter { maximum.div_ceil(2) } else { maximum };
+            let delay = policy.delay_for_failure(failure);
+            assert!(
+                (Duration::from_millis(minimum)..=Duration::from_millis(maximum)).contains(&delay)
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn production_reconnect_jitter_wait_is_cancellable_and_charged_to_shared_quota() {
+    let listener = crate::websocket_server::listen().await;
+    let url = format!("ws://{}", listener.local_addr().unwrap());
+    let reject_handshakes = async {
+        for _ in 0..2 {
+            let (socket, _) = listener.accept().await.unwrap();
+            drop(socket);
+        }
+    };
+    let runtime = compiled_runtime(true, 60_000);
+    let compiled = &runtime.profiles[0].compiled_limiters;
+
+    let start = || async {
+        let (stop, shutdown) = oneshot::channel();
+        let (events, mut observed) = mpsc::channel(8);
+        let runner = ReconnectRunner::run(
+            &url,
+            compiled,
+            &runtime.shared_limiter,
+            runtime.reconnect_policy,
+            shutdown,
+            events,
+            |_, _| std::future::ready(Ok(SupervisorExit::Shutdown)),
+        );
+        let cancel = async {
+            assert!(matches!(
+                observed.recv().await,
+                Some(ReconnectEvent::Connecting { .. })
+            ));
+            assert!(matches!(
+                observed.recv().await,
+                Some(ReconnectEvent::Disconnected { .. })
+            ));
+            match observed.recv().await.unwrap() {
+                ReconnectEvent::Backoff {
+                    consecutive_failures: 1,
+                    delay,
+                    ..
+                } => {
+                    assert!((Duration::from_secs(30)..=Duration::from_secs(60)).contains(&delay));
+                }
+                event => panic!("unexpected retry event {event:?}"),
+            }
+            stop.send(()).unwrap();
+            assert_eq!(observed.recv().await, Some(ReconnectEvent::Stopped));
+        };
+        let (result, ()) = tokio::join!(runner, cancel);
+        result.unwrap();
+    };
+    time::timeout(Duration::from_secs(5), async {
+        tokio::join!(start(), start(), reject_handshakes)
+    })
+    .await
+    .expect("both reconnect waits must cancel before their minimum delay");
+    let snapshot = runtime.shared_limiter.snapshot();
+    assert_eq!(snapshot.total_pending_requests, 0);
+    assert!(
+        snapshot
+            .budgets
+            .iter()
+            .any(|budget| budget.locally_used == 2)
+    );
+}
+
+#[tokio::test]
+async fn reconnect_resets_failure_history_only_after_a_stable_session() {
+    let listener = crate::websocket_server::listen().await;
+    let url = format!("ws://{}", listener.local_addr().unwrap());
+    let server = async {
+        for _ in 0..4 {
+            let (stream, _) = listener.accept().await.unwrap();
+            accept_async(stream).await.unwrap();
+        }
+    };
+    let (compiled, shared, _) = infrastructure();
+    let mut policy = retry_policy(Some(3));
+    policy.stable_connection_duration = Duration::from_secs(1);
+    let (_stop, shutdown) = oneshot::channel();
+    let (events, mut observed) = mpsc::channel(16);
+    let runner = ReconnectRunner::run(
+        &url,
+        &compiled,
+        &shared,
+        policy,
+        shutdown,
+        events,
+        |generation, _| async move {
+            match generation.get() {
+                3 => time::sleep(policy.stable_connection_duration).await,
+                4 => return Ok(SupervisorExit::Shutdown),
+                _ => {}
+            }
+            Ok(SupervisorExit::PeerClosed)
+        },
+    );
+    let verify = async {
+        for (failures, delay) in [(1, 30), (2, 60), (1, 30)] {
+            assert!(matches!(
+                observed.recv().await,
+                Some(ReconnectEvent::Connecting { .. })
+            ));
+            assert!(matches!(
+                observed.recv().await,
+                Some(ReconnectEvent::Connected { .. })
+            ));
+            assert!(matches!(
+                observed.recv().await,
+                Some(ReconnectEvent::Disconnected { .. })
+            ));
+            match observed.recv().await.unwrap() {
+                ReconnectEvent::Backoff {
+                    consecutive_failures,
+                    delay: actual,
+                    ..
+                } => {
+                    assert_eq!(consecutive_failures, failures);
+                    assert_eq!(actual, Duration::from_millis(delay));
+                }
+                event => panic!("unexpected reconnect event {event:?}"),
+            }
+        }
+        assert!(matches!(
+            observed.recv().await,
+            Some(ReconnectEvent::Connecting { .. })
+        ));
+        assert!(matches!(
+            observed.recv().await,
+            Some(ReconnectEvent::Connected { .. })
+        ));
+        assert_eq!(observed.recv().await, Some(ReconnectEvent::Stopped));
+    };
+    let (result, (), ()) = time::timeout(Duration::from_secs(8), async {
+        tokio::join!(runner, server, verify)
+    })
+    .await
+    .expect("local reconnect lifecycle timed out");
+    result.unwrap();
 }
