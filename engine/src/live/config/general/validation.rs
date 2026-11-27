@@ -9,18 +9,19 @@ use std::{net::SocketAddr, path::Path};
 pub fn validate(config: &GeneralConfig) -> Result<(), String> {
     validate_schema_version(config)?;
 
+    config.deployment.validate()?;
     validate_runtime(config)?;
     config.runtime.application.validate()?;
     validate_publication(config)?;
     config.publication.validate_streaming()?;
-    validate_control(config)?;
+    let control = validate_control(config)?;
     config.control.management.validate()?;
     config.recording.validate()?;
     validate_metrics(config)?;
     validate_logging(config)?;
     validate_recovery(config)?;
 
-    validate_cross_section_constraints(config)?;
+    validate_cross_section_constraints(config, control)?;
 
     Ok(())
 }
@@ -94,7 +95,7 @@ fn validate_publication(config: &GeneralConfig) -> Result<(), String> {
 // CONTROL REST API
 // ============================================================
 
-fn validate_control(config: &GeneralConfig) -> Result<(), String> {
+fn validate_control(config: &GeneralConfig) -> Result<SocketAddr, String> {
     let address: SocketAddr = config
         .control
         .listen_address
@@ -109,7 +110,7 @@ fn validate_control(config: &GeneralConfig) -> Result<(), String> {
             .into());
     }
 
-    Ok(())
+    Ok(address)
 }
 
 // ============================================================
@@ -247,28 +248,33 @@ fn validate_recovery(config: &GeneralConfig) -> Result<(), String> {
 // CROSS-SECTION CONSTRAINTS
 // ============================================================
 
-fn validate_cross_section_constraints(config: &GeneralConfig) -> Result<(), String> {
-    // Prometheus cannot bind to the exact same address as the
-    // mandatory control REST API when both are active.
-
+fn validate_cross_section_constraints(
+    config: &GeneralConfig,
+    control: SocketAddr,
+) -> Result<(), String> {
     if config.metrics.prometheus.enabled {
-        let control =
-            parse_listen_address(&config.control.listen_address, "control.listen_address")?;
-
+        if !config.metrics.enabled {
+            return Err("Prometheus requires metrics.enabled".into());
+        }
         let prometheus = parse_listen_address(
             &config.metrics.prometheus.listen_address,
             "metrics.prometheus.listen_address",
         )?;
 
-        if control == prometheus {
+        let overlaps = control.ip() == prometheus.ip()
+            || (prometheus.ip().is_unspecified() && (prometheus.is_ipv6() || control.is_ipv4()))
+            || match (control, prometheus) {
+                (SocketAddr::V4(control), SocketAddr::V6(prometheus)) => {
+                    prometheus.ip().to_ipv4_mapped().as_ref() == Some(control.ip())
+                }
+                _ => false,
+            };
+        if control.port() != 0 && control.port() == prometheus.port() && overlaps {
             return Err(
-                "control.listen_address and metrics.prometheus.listen_address \
-                 must differ when Prometheus is enabled"
-                    .into(),
+                "control.listen_address and metrics.prometheus.listen_address must differ without overlapping bindings when Prometheus is enabled".into(),
             );
         }
     }
-
     Ok(())
 }
 
@@ -943,6 +949,33 @@ jitter = true
         config.metrics.prometheus.listen_address = config.control.listen_address.clone();
 
         assert_invalid(&config, "must differ");
+    }
+
+    #[test]
+    fn accept_ephemeral_control_with_prometheus_on_ipv4_and_ipv6() {
+        let mut config = valid_config();
+        config.metrics.prometheus.enabled = true;
+        for (control, metrics) in [("127.0.0.1:0", "0.0.0.0:9091"), ("[::1]:0", "[::]:9091")] {
+            config.control.listen_address = control.into();
+            config.metrics.prometheus.listen_address = metrics.into();
+            config.validate().unwrap();
+        }
+    }
+
+    #[test]
+    fn reject_overlapping_fixed_listeners_and_disabled_metrics() {
+        let mut config = valid_config();
+        config.metrics.prometheus.enabled = true;
+        for (control, metrics) in [
+            ("127.0.0.1:9091", "0.0.0.0:9091"),
+            ("[::1]:9091", "[::]:9091"),
+        ] {
+            config.control.listen_address = control.into();
+            config.metrics.prometheus.listen_address = metrics.into();
+            assert_invalid(&config, "overlapping bindings");
+        }
+        config.metrics.enabled = false;
+        assert_invalid(&config, "requires metrics.enabled");
     }
 
     #[test]

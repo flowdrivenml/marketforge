@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct GeneralConfig {
     pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "super::DeploymentConfig::is_default")]
+    pub deployment: super::DeploymentConfig,
 
     pub runtime: RuntimeConfig,
     pub publication: PublicationConfig,

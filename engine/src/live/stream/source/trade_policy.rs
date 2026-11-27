@@ -65,12 +65,19 @@ impl SourceTradeRecoveryPolicy {
             return Err(Error::WrongChannel);
         }
 
-        match (source.exchange, source.market_category) {
+        Self::for_profile(source.exchange, source.market_category)
+    }
+
+    pub(crate) fn for_profile(
+        exchange: ExchangeId,
+        market: MarketType,
+    ) -> Result<Self, SourceTradeRecoveryPolicyError> {
+        match (exchange, market) {
             (ExchangeId::Binance, MarketType::Spot) => Ok(Self {
                 max_records_per_page: 1000,
             }),
 
-            _ => Err(Error::UnsupportedProfile),
+            _ => Err(SourceTradeRecoveryPolicyError::UnsupportedProfile),
         }
     }
 

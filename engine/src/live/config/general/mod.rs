@@ -1,3 +1,5 @@
+mod deployment;
+pub use deployment::{DeploymentConfig, ResolvedDeployment, RestWeightQuota};
 mod model;
 mod validation;
 

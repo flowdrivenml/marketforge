@@ -17,7 +17,23 @@ impl GeneralConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
         let path = path.as_ref();
 
-        let config: Self = load_toml(path)?;
+        let config: Self = load_toml(path).map_err(|error| match error {
+            ConfigError::Parse { path, source } => {
+                // TOML errors can contain complete input lines and rejected values.
+                let message = match source.span() {
+                    Some(span) => format!(
+                        "invalid general TOML at byte {} (input redacted)",
+                        span.start
+                    ),
+                    None => "invalid general TOML (input redacted)".into(),
+                };
+                ConfigError::Parse {
+                    path,
+                    source: serde::de::Error::custom(message),
+                }
+            }
+            other => other,
+        })?;
 
         config
             .validate()
@@ -35,5 +51,21 @@ impl GeneralConfig {
     /// a configuration programmatically.
     pub fn validate(&self) -> Result<(), String> {
         validation::validate(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_general_toml_does_not_echo_credentials() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let private = "synthetic-secret-in-invalid-general-config";
+        std::fs::write(file.path(), format!("schema_version = \"{private}\"")).unwrap();
+        let error = GeneralConfig::load(file.path()).unwrap_err();
+        assert!(matches!(error, ConfigError::Parse { .. }));
+        assert!(!format!("{error:?} {error}").contains(private));
+        assert!(error.to_string().contains("invalid general TOML at byte"));
     }
 }

@@ -7,6 +7,7 @@ mod identity;
 mod market;
 mod rest;
 mod validation;
+pub use validation::TradeRecoveryCapability;
 mod websocket;
 
 // ---------------------------------------------------------
