@@ -15,7 +15,7 @@
 #   Trade and L2 acquisition
 #   REST snapshots and trade recovery
 #
-# Instrument metadata comes from Python orchestration.
+# Managed Sources select the native route from catalogue settlement metadata.
 # Trade/L2 normalization is configured separately.
 #
 # IMPORTANT:
@@ -198,6 +198,7 @@ update_event = "update"
 [channels.trades]
 
 enabled = true
+# Static route for low-level subscriptions. Managed Sources select from market_mapping.
 route = "usdt"
 channel = "futures.trades"
 
@@ -231,6 +232,7 @@ recovery_endpoint = "historical_trades"
 [channels.depth]
 
 enabled = true
+# Static route for low-level subscriptions. Managed Sources select from market_mapping.
 route = "usdt"
 channel = "futures.order_book_update"
 

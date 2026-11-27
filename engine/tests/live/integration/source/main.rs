@@ -9,6 +9,7 @@ mod database;
 mod depth;
 mod gateio;
 mod harness;
+mod native_market;
 mod pipeline;
 mod recovery;
 mod resources;
