@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Exchange-specific mapping between MarketForge's canonical
 /// market categories and the exchange's native market types.
 ///
-/// Instrument classification is performed externally.
-/// This configuration describes how resolved native instrument
-/// types map to exchange connectivity and REST parameters.
+/// The Source resolver selects a configured mapping using catalogue metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MarketMapping {
@@ -120,6 +118,148 @@ pub struct NativeMarketType {
     pub websocket_route: Option<String>,
 }
 
+/// Native protocol values selected from the loaded profile. Their case is preserved.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct ResolvedNativeMarket<'a> {
+    pub classification: Option<&'a str>,
+    pub websocket_route: Option<&'a str>,
+    pub websocket_inst_type: Option<&'a str>,
+    pub rest_category: Option<&'a str>,
+    pub settlement: Option<&'a str>,
+}
+
+impl super::ExchangeConfig {
+    pub(crate) fn resolve_native_market(
+        &self,
+        source: &crate::live::management::protocol::definitions::CreateSourceStreamRequest,
+    ) -> Result<ResolvedNativeMarket<'_>, String> {
+        use super::{ExchangeId, MarketType};
+        let fail = |reason: String| {
+            format!(
+                "{} instrument {} ({}): {reason}",
+                self.profile(),
+                source.instrument_id,
+                source.symbol
+            )
+        };
+        if source.exchange != self.exchange.id || source.market_category != self.market() {
+            return Err(fail(
+                "instrument exchange or market differs from profile".into(),
+            ));
+        }
+
+        let subscription_type = self
+            .websocket
+            .subscription
+            .as_ref()
+            .and_then(|subscription| subscription.instrument_type.as_deref());
+        let requires_type = subscription_type == Some("{native_ws_inst_type}");
+        let requires_route = !self.websocket.routes.is_empty()
+            && self
+                .rest
+                .endpoints
+                .values()
+                .any(|endpoint| endpoint.settlement.as_deref() == Some("{native_settlement}"));
+        let subscription_type = subscription_type.filter(|value| !value.contains('{'));
+        let Some(mapping) = &self.market_mapping else {
+            if requires_type || requires_route {
+                return Err(fail("profile requires a native market mapping".into()));
+            }
+            return Ok(ResolvedNativeMarket {
+                websocket_inst_type: subscription_type,
+                ..Default::default()
+            });
+        };
+        let settlement_asset = source.settlement_asset.as_deref();
+        if let (Some(expected), Some(actual)) =
+            (mapping.native_settlement.as_deref(), settlement_asset)
+        {
+            if !expected.eq_ignore_ascii_case(actual) {
+                return Err(fail(format!(
+                    "settlement_asset {actual} conflicts with configured settlement {expected}"
+                )));
+            }
+        }
+
+        let mut resolved = ResolvedNativeMarket {
+            classification: mapping.native_category.as_deref(),
+            websocket_inst_type: mapping.websocket_inst_type.as_deref().or(subscription_type),
+            rest_category: mapping.rest_category.as_deref(),
+            settlement: mapping.native_settlement.as_deref(),
+            ..Default::default()
+        };
+        if mapping.native_types.is_empty() {
+            if requires_route || (requires_type && resolved.websocket_inst_type.is_none()) {
+                return Err(fail(
+                    "profile is missing required native market variants".into(),
+                ));
+            }
+            return Ok(resolved);
+        }
+        let asset = settlement_asset.ok_or_else(|| {
+            fail("settlement_asset is required for native market selection".into())
+        })?;
+        let mut matches = mapping.native_types().filter(|(_, native)| {
+            native
+                .settlement
+                .as_deref()
+                .is_some_and(|candidate| candidate.eq_ignore_ascii_case(asset))
+        });
+        let (name, native) = matches
+            .next()
+            .ok_or_else(|| fail(format!("unsupported settlement_asset {asset}")))?;
+        if matches.next().is_some() {
+            return Err(fail(format!(
+                "ambiguous native mappings for settlement_asset {asset}"
+            )));
+        }
+
+        // These stablecoin linear products are quoted and settled in the selected asset.
+        if matches!(
+            (self.exchange.id, self.market()),
+            (ExchangeId::Bitget | ExchangeId::Gateio, MarketType::Linear)
+        ) {
+            if let Some(quote) = source.quote_asset.as_deref() {
+                if !quote.eq_ignore_ascii_case(asset) {
+                    return Err(fail(format!(
+                        "quote_asset {quote} conflicts with settlement_asset {asset}"
+                    )));
+                }
+            }
+        }
+        if let Some(route) = native.websocket_route.as_deref() {
+            if self.route(route).is_none() {
+                return Err(fail(format!(
+                    "native mapping {name} has unknown WebSocket route {route}"
+                )));
+            }
+        } else if requires_route
+            || mapping
+                .native_types
+                .values()
+                .any(|native| native.websocket_route.is_some())
+        {
+            return Err(fail(format!(
+                "native mapping {name} is missing a WebSocket route"
+            )));
+        }
+        resolved.classification = Some(name);
+        resolved.websocket_route = native.websocket_route.as_deref();
+        resolved.websocket_inst_type = native
+            .websocket_inst_type
+            .as_deref()
+            .or(resolved.websocket_inst_type);
+        if requires_type && resolved.websocket_inst_type.is_none() {
+            return Err(fail(format!(
+                "native mapping {name} is missing a WebSocket instrument type"
+            )));
+        }
+        resolved.rest_category = native.rest_category.as_deref().or(resolved.rest_category);
+        resolved.settlement = native.settlement.as_deref();
+        Ok(resolved)
+    }
+}
+
 impl MarketMapping {
     /// Retrieve a native market mapping by identifier.
     pub fn native_type(&self, name: &str) -> Option<&NativeMarketType> {
@@ -219,6 +359,262 @@ impl MarketMapping {
 #[cfg(test)]
 mod tests {
     use crate::live::config::exchange::MarketMapping;
+
+    fn profile_and_source(
+        name: &str,
+    ) -> (
+        super::super::ExchangeConfig,
+        crate::live::stream::request::CreateSourceStreamRequest,
+    ) {
+        use std::path::Path;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let profile = super::super::ExchangeConfig::load(
+            root.join(format!("../data/.config/live/exchanges/{name}.toml")),
+        )
+        .unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/live/support/data/instruments/btc_sources.json"
+        )))
+        .unwrap();
+        // The catalogue fixture has no Bitget inverse entry. This pure mapping
+        // test substitutes only market metadata and makes no financial assertion.
+        let fixture_name = if name == "bitget_inverse" {
+            "gateio_inverse"
+        } else {
+            name
+        };
+        let mut source = fixture["instruments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| {
+                format!(
+                    "{}_{}",
+                    item["exchange"].as_str().unwrap(),
+                    item["market_category"].as_str().unwrap()
+                ) == fixture_name
+            })
+            .unwrap()
+            .clone();
+        for key in [
+            "exchange_id",
+            "tick_size",
+            "qty_step",
+            "min_qty",
+            "max_qty",
+            "min_notional",
+        ] {
+            source.as_object_mut().unwrap().remove(key);
+        }
+        source["channel"] = "trades".into();
+        if name == "bitget_inverse" {
+            source["exchange"] = "bitget".into();
+        }
+        (profile, serde_json::from_value(source).unwrap())
+    }
+
+    #[test]
+    fn resolves_settlement_variants_and_native_rest_templates() {
+        use crate::live::infrastructure::rest::{RestRequest, RestRequestResolver};
+        // The alternate variants reuse a fixture request only as synthetic metadata.
+        for (profile, asset, symbol, route, inst_type, category) in [
+            (
+                "gateio_linear",
+                "uSdT",
+                "BTC_USDT",
+                Some("usdt"),
+                None,
+                None,
+            ),
+            (
+                "gateio_linear",
+                "UsD1",
+                "BTC_USD1",
+                Some("usd1"),
+                None,
+                None,
+            ),
+            (
+                "bitget_linear",
+                "uSdT",
+                "BTCUSDT",
+                None,
+                Some("usdt-futures"),
+                Some("USDT-FUTURES"),
+            ),
+            (
+                "bitget_linear",
+                "UsDc",
+                "BTCUSDC",
+                None,
+                Some("usdc-futures"),
+                Some("USDC-FUTURES"),
+            ),
+        ] {
+            let (exchange, mut source) = profile_and_source(profile);
+            source.symbol = symbol.into();
+            source.settlement_asset = Some(asset.into());
+            source.quote_asset = Some(asset.to_ascii_uppercase());
+            let native = exchange.resolve_native_market(&source).unwrap();
+            assert_eq!(native.websocket_route, route);
+            assert_eq!(native.websocket_inst_type, inst_type);
+            assert_eq!(native.rest_category, category);
+            if let Some(route) = route {
+                assert_eq!(native.classification, Some(route));
+                assert_eq!(native.settlement, Some(route));
+                for (name, action) in [
+                    ("depth_snapshot", "order_book"),
+                    ("historical_trades", "trades"),
+                ] {
+                    let request = RestRequest::new(profile, name)
+                        .with_parameter("symbol", symbol)
+                        .with_parameter("native_settlement", native.settlement.unwrap());
+                    let resolved = RestRequestResolver::resolve_endpoint(
+                        &exchange,
+                        exchange.endpoint(name).unwrap(),
+                        &request,
+                    )
+                    .unwrap();
+                    assert!(
+                        resolved
+                            .url()
+                            .ends_with(&format!("/futures/{route}/{action}"))
+                    );
+                    assert_eq!(resolved.parameter("contract"), Some(symbol));
+                }
+            } else {
+                assert_eq!(native.classification, category);
+                assert_eq!(native.settlement, Some(asset.to_ascii_uppercase().as_str()));
+                for name in ["depth_snapshot", "recent_trades"] {
+                    let request = RestRequest::new(profile, name)
+                        .with_parameter("symbol", symbol)
+                        .with_parameter("native_rest_category", native.rest_category.unwrap());
+                    let resolved = RestRequestResolver::resolve_endpoint(
+                        &exchange,
+                        exchange.endpoint(name).unwrap(),
+                        &request,
+                    )
+                    .unwrap();
+                    assert_eq!(resolved.parameter("category"), category);
+                    assert_eq!(resolved.parameter("symbol"), Some(symbol));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn static_profiles_preserve_mapping_contracts() {
+        let (gate, mut source) = profile_and_source("gateio_inverse");
+        let native = gate.resolve_native_market(&source).unwrap();
+        assert_eq!(native.settlement, Some("btc"));
+        assert!(native.websocket_route.is_none());
+        assert!(gate.websocket.url.as_deref().unwrap().ends_with("/btc"));
+        source.settlement_asset = Some("USD".into());
+        assert!(
+            gate.resolve_native_market(&source)
+                .unwrap_err()
+                .contains("conflicts with configured settlement btc")
+        );
+        source.settlement_asset = None;
+        assert_eq!(
+            gate.resolve_native_market(&source).unwrap().settlement,
+            Some("btc")
+        );
+
+        let (gate, mut source) = profile_and_source("gateio_spot");
+        source.settlement_asset = None;
+        assert_eq!(
+            gate.resolve_native_market(&source).unwrap(),
+            Default::default()
+        );
+        let (bitget, mut source) = profile_and_source("bitget_spot");
+        source.settlement_asset = None;
+        assert_eq!(
+            bitget
+                .resolve_native_market(&source)
+                .unwrap()
+                .websocket_inst_type,
+            Some("spot")
+        );
+        let (bitget, mut source) = profile_and_source("bitget_inverse");
+        source.settlement_asset = Some("ETH".into());
+        let native = bitget.resolve_native_market(&source).unwrap();
+        assert_eq!(native.websocket_inst_type, Some("coin-futures"));
+        assert_eq!(native.rest_category, Some("COIN-FUTURES"));
+    }
+
+    #[test]
+    fn rejects_missing_ambiguous_and_contradictory_native_metadata() {
+        let (mut exchange, mut source) = profile_and_source("gateio_linear");
+        let original = source.clone();
+        source.settlement_asset = None;
+        assert!(
+            exchange
+                .resolve_native_market(&source)
+                .unwrap_err()
+                .contains("settlement_asset is required")
+        );
+        source.settlement_asset = Some("EUR".into());
+        assert!(
+            exchange
+                .resolve_native_market(&source)
+                .unwrap_err()
+                .contains("unsupported settlement_asset EUR")
+        );
+        source = original;
+        source.quote_asset = Some("USD".into());
+        assert!(
+            exchange
+                .resolve_native_market(&source)
+                .unwrap_err()
+                .contains("quote_asset USD conflicts")
+        );
+        source.quote_asset = Some("USDT".into());
+        let types = &mut exchange.market_mapping.as_mut().unwrap().native_types;
+        let duplicate = types["usdt"].clone();
+        types.insert("duplicate".into(), duplicate);
+        assert!(
+            exchange
+                .resolve_native_market(&source)
+                .unwrap_err()
+                .contains("ambiguous native mappings")
+        );
+        exchange
+            .market_mapping
+            .as_mut()
+            .unwrap()
+            .native_types
+            .remove("duplicate");
+        exchange.websocket.routes.remove("usdt");
+        assert!(
+            exchange
+                .resolve_native_market(&source)
+                .unwrap_err()
+                .contains("unknown WebSocket route usdt")
+        );
+        exchange
+            .market_mapping
+            .as_mut()
+            .unwrap()
+            .native_types
+            .get_mut("usdt")
+            .unwrap()
+            .websocket_route = None;
+        assert!(
+            exchange
+                .resolve_native_market(&source)
+                .unwrap_err()
+                .contains("missing a WebSocket route")
+        );
+        exchange.market_mapping = None;
+        assert!(
+            exchange
+                .resolve_native_market(&source)
+                .unwrap_err()
+                .contains("requires a native market mapping")
+        );
+    }
 
     // ============================================================
     // HELPERS

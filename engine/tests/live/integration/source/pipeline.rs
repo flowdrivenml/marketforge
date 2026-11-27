@@ -57,13 +57,6 @@ async fn trade_profile_capability_matrix() {
         );
         let id = definition.stream_id.clone();
         let prepared = builder.prepare(definition.clone()).unwrap();
-        let prepared = if profile == "bitget_linear" {
-            prepared
-                .with_subscription_parameter("native_ws_inst_type", "usdt-futures")
-                .unwrap()
-        } else {
-            prepared
-        };
         let metrics = prepared.runner().instance().metrics_handle();
         let (recovery, recovery_task) = recovery(configs, &profile, limiters);
         let executor = prepared

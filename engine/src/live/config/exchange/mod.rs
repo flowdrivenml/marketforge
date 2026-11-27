@@ -18,6 +18,7 @@ pub use channel::{ChannelConfig, DepthValue, QuantityConfig, SynchronizationConf
 
 pub use identity::{ExchangeId, ExchangeIdentity, MarketType};
 
+pub(crate) use market::ResolvedNativeMarket;
 pub use market::{MarketMapping, NativeMarketType};
 
 pub use rest::{
