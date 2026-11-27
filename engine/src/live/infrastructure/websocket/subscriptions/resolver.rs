@@ -55,6 +55,7 @@ pub enum SubscriptionResolutionError {
 #[derive(Debug, Clone)]
 pub struct SubscriptionResolutionContext {
     variables: BTreeMap<String, String>,
+    route: Option<String>,
 }
 
 impl SubscriptionResolutionContext {
@@ -71,7 +72,18 @@ impl SubscriptionResolutionContext {
         variables.insert("symbol_lower".into(), symbol.to_ascii_lowercase());
         variables.insert("symbol_upper".into(), symbol.to_ascii_uppercase());
 
-        Ok(Self { variables })
+        Ok(Self {
+            variables,
+            route: None,
+        })
+    }
+
+    pub(in crate::live::infrastructure::websocket) fn with_route(
+        mut self,
+        route: Option<&str>,
+    ) -> Self {
+        self.route = route.map(str::to_owned);
+        self
     }
 
     /// Provide explicit subscription parameters such as
@@ -275,11 +287,20 @@ impl SubscriptionResolver {
 
         Ok(ResolvedSubscription {
             channel_name: channel_name.to_owned(),
-            route: channel.route.clone(),
+            route: self::select_route(context.route.as_deref(), channel.route.as_deref())
+                .map(str::to_owned),
             protocol,
             request: SubscriptionRequest::new(arguments),
         })
     }
+}
+
+/// The stored route takes precedence over a legacy channel default.
+pub(in crate::live::infrastructure::websocket) fn select_route<'a>(
+    resolved: Option<&'a str>,
+    channel_default: Option<&'a str>,
+) -> Option<&'a str> {
+    resolved.or(channel_default)
 }
 
 fn missing(channel_name: &str) -> SubscriptionResolutionError {

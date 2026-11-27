@@ -149,6 +149,7 @@ impl SourceRuntimeBuilder {
         let channel = exchange
             .channel(source.channel.as_str())
             .ok_or_else(|| fail("missing channel".into()))?;
+        let native_market = exchange.resolve_native_market(source).map_err(fail)?;
         let native_exchange = match source.exchange.as_str() {
             "bybit" => Exchange::Bybit,
             "binance" => Exchange::Binance,
@@ -160,6 +161,7 @@ impl SourceRuntimeBuilder {
         let mut request = StreamRequest::new(&profile, &source.symbol, source.channel.as_str())
             .map_err(|e| fail(e.to_string()))?
             .with_stream_id(&definition.stream_id)
+            .and_then(|request| request.with_native_market(&native_market))
             .map_err(|e| fail(e.to_string()))?;
         let mut depth_policy = None;
         let mut trade_policy = None;
@@ -310,8 +312,7 @@ impl PreparedSourceStream {
         )
         .map_err(SourceInitializationError)
     }
-    /// Supply a catalog-resolved native subscription value when canonical market
-    /// classification alone is ambiguous (for example Bitget linear products).
+    /// Supply an additional subscription parameter. Resolved native types are authoritative.
     pub fn with_subscription_parameter(
         mut self,
         name: &str,

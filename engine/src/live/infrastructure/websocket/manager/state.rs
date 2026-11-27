@@ -269,7 +269,11 @@ impl WebSocketManagerState {
                 channel: subscription.channel_name.clone(),
             })?;
 
-        let route = channel.route.clone();
+        let route = crate::live::infrastructure::websocket::subscriptions::resolver::select_route(
+            subscription.route(),
+            channel.route.as_deref(),
+        )
+        .map(str::to_owned);
 
         if let Some(route_name) = &route {
             if !config.websocket.routes.contains_key(route_name) {
@@ -457,6 +461,73 @@ base_url = "https://example.invalid"
             )],
         )
         .unwrap()
+    }
+
+    #[test]
+    fn bitget_native_types_share_slot_but_restore_distinct_arguments() {
+        use crate::live::infrastructure::websocket::routing::message_router::{
+            NativeMessageRouter, NativeMessageRouterError,
+        };
+        use crate::live::infrastructure::websocket::{
+            ConnectionFence, StreamRequest, SubscriptionRestorationPlanner,
+            streams::resolver::StreamSourceResolver,
+        };
+        use tokio_tungstenite::tungstenite::Message;
+        let profile = "bitget_linear";
+        let config = Arc::new(
+            ExchangeConfig::load(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../data/.config/live/exchanges/bitget_linear.toml"),
+            )
+            .unwrap(),
+        );
+        let mut manager = WebSocketManagerState::new([config.clone()]).unwrap();
+        let mut router = NativeMessageRouter::new();
+        let mut assignments = Vec::new();
+        let mut receivers = Vec::new();
+        // The deliberately identical synthetic symbol shows that the product
+        // type remains part of the native subscription and routing identity.
+        for (id, inst_type) in [("one", "usdt-futures"), ("two", "usdc-futures")] {
+            let request = StreamRequest::new(profile, "SYNTHETIC", "trades")
+                .unwrap()
+                .with_stream_id(id)
+                .unwrap()
+                .with_parameter("native_ws_inst_type", inst_type)
+                .unwrap();
+            let source = StreamSourceResolver::resolve(&config, &request).unwrap();
+            router.register(id, source.routing().clone()).unwrap();
+            let (tx, rx) = mpsc::channel(4);
+            receivers.push(rx);
+            assignments.push(manager.attach_local(source, tx).unwrap());
+        }
+        let message =
+            |inst_type: &str| {
+                Message::Text(json!({
+            "arg": {"instType": inst_type, "topic": "publicTrade", "symbol": "SYNTHETIC"},
+        }).to_string().into())
+            };
+        assert_eq!(router.route(message("usdt-futures")).unwrap()[0].0, "one");
+        assert_eq!(router.route(message("usdc-futures")).unwrap()[0].0, "two");
+        assert!(matches!(
+            router.route(message("coin-futures")),
+            Err(NativeMessageRouterError::UnknownMessage)
+        ));
+        assert_eq!(assignments[0].slot_id, assignments[1].slot_id);
+        let desired = &assignments[1].desired;
+        assert_eq!(desired.len(), 2);
+        assert!(desired.iter().all(|entry| entry.route().is_none()));
+        let fence = ConnectionFence::new("market-test", "shared-slot").unwrap();
+        let stamp = fence.begin_connect().unwrap();
+        fence.connected(&stamp).unwrap();
+        let plan = SubscriptionRestorationPlanner::plan(&config, &fence, &stamp, desired).unwrap();
+        assert_eq!(
+            plan.entries()[0].resolved.request.arguments[0]["instType"],
+            "usdt-futures"
+        );
+        assert_eq!(
+            plan.entries()[1].resolved.request.arguments[0]["instType"],
+            "usdc-futures"
+        );
     }
 
     #[test]

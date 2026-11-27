@@ -13,8 +13,7 @@
 # MarketForge classification: Linear
 # Native categories: USDT-FUTURES, USDC-FUTURES
 #
-# Instrument metadata and native product classification
-# are supplied by Python orchestration.
+# Managed Sources select the native product from catalogue settlement metadata.
 #
 # Trade and L2 normalization are configured separately.
 #
@@ -51,10 +50,12 @@ resolver = "marketforge_instrument_catalog"
 supported_native_categories = ["USDT-FUTURES", "USDC-FUTURES"]
 
 [market_mapping.native_types.USDT-FUTURES]
+settlement = "USDT"
 websocket_inst_type = "usdt-futures"
 rest_category = "USDT-FUTURES"
 
 [market_mapping.native_types.USDC-FUTURES]
+settlement = "USDC"
 websocket_inst_type = "usdc-futures"
 rest_category = "USDC-FUTURES"
 

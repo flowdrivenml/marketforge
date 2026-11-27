@@ -109,7 +109,8 @@ impl StreamSourceResolver {
             variables.insert(name.clone(), value.clone());
         }
 
-        let mut context = SubscriptionResolutionContext::new(request.native_symbol())?;
+        let mut context = SubscriptionResolutionContext::new(request.native_symbol())?
+            .with_route(request.native_route());
 
         for (name, value) in &variables {
             context = context.with_variable(name.clone(), value.clone())?;
@@ -306,6 +307,7 @@ impl StreamSourceResolver {
                     StreamSourceResolutionError::IncompleteRouting(error.to_string())
                 })?;
 
+        subscription = subscription.with_resolved_route(resolved.route);
         for (name, value) in variables {
             subscription = subscription.with_variable(name, value);
         }

@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use thiserror::Error;
 
+use crate::live::config::exchange::ResolvedNativeMarket;
+
 // ============================================================
 // ERRORS
 // ============================================================
@@ -25,6 +27,8 @@ pub enum StreamRequestError {
 
     #[error("duplicate subscription parameter: {0}")]
     DuplicateParameter(String),
+    #[error("native subscription parameter {0} conflicts with resolved instrument metadata")]
+    ConflictingNativeParameter(String),
     #[error("invalid logical stream ID")]
     InvalidStreamId,
 }
@@ -51,6 +55,8 @@ pub struct StreamRequest {
     channel: String,
     stream_id: Option<String>,
     parameters: BTreeMap<String, String>,
+    native_route: Option<String>,
+    native_inst_type: Option<String>,
 }
 
 impl StreamRequest {
@@ -80,6 +86,8 @@ impl StreamRequest {
             native_symbol,
             channel,
             parameters: BTreeMap::new(),
+            native_route: None,
+            native_inst_type: None,
             stream_id: None,
         })
     }
@@ -139,6 +147,16 @@ impl StreamRequest {
             return Err(StreamRequestError::InvalidParameterValue);
         }
 
+        if name == "native_ws_inst_type" {
+            if let Some(authoritative) = &self.native_inst_type {
+                return if authoritative == &value {
+                    Ok(self)
+                } else {
+                    Err(StreamRequestError::ConflictingNativeParameter(name))
+                };
+            }
+        }
+
         if self.parameters.contains_key(&name) {
             return Err(StreamRequestError::DuplicateParameter(name));
         }
@@ -146,6 +164,29 @@ impl StreamRequest {
         self.parameters.insert(name, value);
 
         Ok(self)
+    }
+
+    pub(crate) fn with_native_market(
+        mut self,
+        native: &ResolvedNativeMarket<'_>,
+    ) -> Result<Self, StreamRequestError> {
+        self.native_route = native.websocket_route.map(str::to_owned);
+        if let Some(inst_type) = native.websocket_inst_type {
+            let name = "native_ws_inst_type";
+            match self.parameters.get(name) {
+                Some(value) if value != inst_type => {
+                    return Err(StreamRequestError::ConflictingNativeParameter(name.into()));
+                }
+                Some(_) => {}
+                None => self = self.with_parameter(name, inst_type)?,
+            }
+            self.native_inst_type = Some(inst_type.to_owned());
+        }
+        Ok(self)
+    }
+
+    pub(crate) fn native_route(&self) -> Option<&str> {
+        self.native_route.as_deref()
     }
 
     pub fn profile(&self) -> &str {

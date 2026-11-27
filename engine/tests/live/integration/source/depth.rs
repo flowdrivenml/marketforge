@@ -70,13 +70,6 @@ async fn depth_profile_capability_matrix() {
         let prepared = builder(configs.clone(), SourceInitializationLimits::default())
             .prepare(definition.clone())
             .unwrap();
-        let prepared = if profile == "bitget_linear" {
-            prepared
-                .with_subscription_parameter("native_ws_inst_type", "usdt-futures")
-                .unwrap()
-        } else {
-            prepared
-        };
         let metrics = prepared.runner().instance().metrics_handle();
         let (recovery, task) = recovery(configs, &profile, limiters);
         let executor = prepared
