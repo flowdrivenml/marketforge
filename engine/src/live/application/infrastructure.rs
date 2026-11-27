@@ -1,6 +1,7 @@
 use crate::live::{
     config::{ExchangeConfigStore, general::RecoveryDefaultsConfig},
     infrastructure::{
+        backoff::BackoffConfig,
         limiter::{factory::*, *},
         websocket::*,
     },
@@ -143,9 +144,8 @@ pub fn compile_websocket(
         runtime_id: format!("live-{}", std::process::id()),
         profiles,
         shared_limiter: limiters.manager(),
-        reconnect_policy: ReconnectPolicy::new(
-            Duration::from_millis(recovery.initial_backoff_ms),
-            Duration::from_secs(recovery.max_backoff_seconds),
+        reconnect_policy: ReconnectPolicy::from_backoff(
+            BackoffConfig::try_from(recovery).map_err(|e| e.to_string())?,
             Duration::from_secs(60),
             Duration::from_secs(10),
             None,

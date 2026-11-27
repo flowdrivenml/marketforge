@@ -2,6 +2,7 @@ use super::connection::WebSocketConnection;
 use super::connector::WebSocketConnector;
 use super::error::WebSocketTransportError;
 use super::supervisor::SupervisorExit;
+use crate::live::infrastructure::backoff::{BackoffConfig, equal_jitter};
 use crate::live::infrastructure::limiter::{RateLimitManager, factory::CompiledWebSocketLimiters};
 use crate::live::infrastructure::websocket::lifecycle::fence::{
     ConnectionFence, ConnectionFenceError, ConnectionStamp,
@@ -66,6 +67,7 @@ impl Drop for FenceShutdownGuard {
 pub struct ReconnectPolicy {
     pub initial_delay: Duration,
     pub maximum_delay: Duration,
+    jitter: bool,
 
     /// A connection surviving this long resets the
     /// consecutive-failure counter.
@@ -115,16 +117,40 @@ impl ReconnectPolicy {
         Ok(Self {
             initial_delay,
             maximum_delay,
+            jitter: false,
             stable_connection_duration,
             connection_timeout,
             maximum_consecutive_failures,
         })
     }
 
+    pub(crate) fn from_backoff(
+        backoff: BackoffConfig,
+        stable_connection_duration: Duration,
+        connection_timeout: Duration,
+        maximum_consecutive_failures: Option<u32>,
+    ) -> Result<Self, ReconnectError> {
+        let mut policy = Self::new(
+            backoff.initial_delay,
+            backoff.maximum_delay,
+            stable_connection_duration,
+            connection_timeout,
+            maximum_consecutive_failures,
+        )?;
+        policy.jitter = backoff.jitter;
+        Ok(policy)
+    }
+
+    pub fn jitter_enabled(&self) -> bool {
+        self.jitter
+    }
+
     pub fn delay_for_failure(&self, failures: u32) -> Duration {
         let mut delay = self.initial_delay;
 
-        for _ in 1..failures.min(64) {
+        // A Duration fits in u128 nanoseconds. Even from one nanosecond,
+        // doubling this many times reaches every representable maximum.
+        for _ in 1..failures.min(u128::BITS) {
             delay = delay.saturating_mul(2).min(self.maximum_delay);
 
             if delay == self.maximum_delay {
@@ -132,7 +158,12 @@ impl ReconnectPolicy {
             }
         }
 
-        delay
+        if self.jitter {
+            let milliseconds = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX);
+            Duration::from_millis(equal_jitter(milliseconds.max(1))).min(delay)
+        } else {
+            delay
+        }
     }
 }
 

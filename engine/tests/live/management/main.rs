@@ -13,7 +13,11 @@ use marketforge_engine::live::{
         protocol::{StreamMessage, market::NativeEvent},
     },
 };
-use std::{sync::Arc, time::Duration};
+use std::{
+    os::unix::fs::{MetadataExt, PermissionsExt},
+    sync::Arc,
+    time::Duration,
+};
 use support::*;
 const OPERATOR: &str = "operator-token-for-local-test-only";
 const ADMIN: &str = "administrator-token-local-test-only";
@@ -47,7 +51,16 @@ impl Rig {
             &config_path,
             format!(
                 "# preserve this operator comment\n{}",
-                toml::to_string(&options.config).unwrap()
+                toml::to_string(&options.config).unwrap().replace(
+                    &format!(
+                        "workers = {}\n",
+                        options.config.runtime.processing.unwrap().workers
+                    ),
+                    &format!(
+                        "workers = {} # preserve worker comment\n",
+                        options.config.runtime.processing.unwrap().workers
+                    ),
+                )
             ),
         )
         .unwrap();
@@ -904,6 +917,8 @@ async fn concurrent_conflicting_edits_and_graph_validation_do_not_replace_runtim
 async fn atomic_configuration_save_preserves_other_settings_and_detects_external_edits() {
     let rig = Rig::new(vec![]).await;
     let path = rig.dir.path().join("general.toml");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+    let metadata_before = std::fs::metadata(&path).unwrap();
     let before = marketforge_engine::live::config::general::GeneralConfig::load(&path).unwrap();
     let operation = apply(
         &rig.client,
@@ -926,6 +941,13 @@ async fn atomic_configuration_save_preserves_other_settings_and_detects_external
     );
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.contains("# preserve this operator comment"));
+    assert!(text.contains("workers = 3 # preserve worker comment"));
+    let metadata_after = std::fs::metadata(&path).unwrap();
+    assert_eq!(metadata_before.mode(), metadata_after.mode());
+    assert_eq!(
+        (metadata_before.uid(), metadata_before.gid()),
+        (metadata_after.uid(), metadata_after.gid())
+    );
     let after = marketforge_engine::live::config::general::GeneralConfig::load(&path).unwrap();
     assert_eq!(
         after.runtime.processing.unwrap().buffered_bytes,
@@ -1524,4 +1546,219 @@ async fn multiple_api_metric_readers_do_not_consume_or_reset_sampling_windows() 
         before.revision
     );
     rig.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conflicting_configuration_plans_and_temporary_observation_changes() {
+    let rig = Rig::configured(vec![], |config| {
+        config.control.management.overview_interval_ms = 60_000;
+    })
+    .await;
+    let observer = Principal::trusted("observer", p::Role::Viewer).unwrap();
+    let management = rig.management.handle();
+    let cursor = management
+        .events(&observer, None, 0)
+        .unwrap()
+        .cursor
+        .parse()
+        .unwrap();
+    let path = rig.dir.path().join("general.toml");
+    let before = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        rig.client
+            .preview(p::Action::ResizeWorkers {
+                workers: 0,
+                save: false
+            })
+            .await
+            .is_err()
+    );
+
+    let temporary = apply(
+        &rig.client,
+        p::Action::SetObservationInterval {
+            milliseconds: 100,
+            save: false,
+        },
+        "observe-runtime-only-interval",
+    )
+    .await;
+    assert!(!temporary.saved);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    bounded(async {
+        loop {
+            let page = management.events(&observer, None, cursor).unwrap();
+            if page.events.iter().any(|event| event.kind == "observation") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+
+    let resize = rig
+        .client
+        .preview(p::Action::ResizeWorkers {
+            workers: 3,
+            save: true,
+        })
+        .await
+        .unwrap();
+    let interval = rig
+        .client
+        .preview(p::Action::SetObservationInterval {
+            milliseconds: 250,
+            save: true,
+        })
+        .await
+        .unwrap();
+    assert_eq!(resize.config_revision, interval.config_revision);
+    let (resize_result, interval_result) = tokio::join!(
+        rig.client.apply(&resize.id, "concurrent-resize"),
+        rig.client.apply(&interval.id, "concurrent-interval"),
+    );
+    let mut completed = 0;
+    for result in [resize_result, interval_result] {
+        match result {
+            Ok(op) => {
+                let op = bounded(rig.client.wait_operation(&op.id, Duration::from_secs(5)))
+                    .await
+                    .unwrap();
+                if op.state == "completed" {
+                    assert!(op.saved);
+                    completed += 1;
+                } else {
+                    assert!(!op.saved);
+                    assert!(op.detail.unwrap().contains("stale_plan"));
+                }
+            }
+            Err(error) => assert!(error.to_string().contains("stale_plan"), "{error}"),
+        }
+    }
+    assert_eq!(completed, 1);
+    let persisted = std::fs::read_to_string(&path).unwrap();
+    assert_ne!(before, persisted);
+    let saved = marketforge_engine::live::config::general::GeneralConfig::load(&path).unwrap();
+    let pool = rig.client.overview().await.unwrap().pool;
+    assert_eq!(
+        pool.saved_startup_workers,
+        Some(saved.runtime.processing.unwrap().workers)
+    );
+    assert_eq!(pool.live_workers, saved.runtime.processing.unwrap().workers);
+
+    let op = apply(
+        &rig.client,
+        p::Action::SetObservationInterval {
+            milliseconds: 400,
+            save: false,
+        },
+        "temporary-interval",
+    )
+    .await;
+    assert!(!op.saved);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), persisted);
+    let settings = rig.client.config().await.unwrap();
+    let interval = settings
+        .iter()
+        .find(|setting| setting.name == "control.management.overview_interval_ms")
+        .unwrap();
+    assert_eq!(interval.effective, 400);
+    assert!(!interval.saved);
+
+    let op = apply(
+        &rig.client,
+        p::Action::SetObservationInterval {
+            milliseconds: 450,
+            save: true,
+        },
+        "persistent-interval",
+    )
+    .await;
+    assert!(op.saved);
+    let saved = marketforge_engine::live::config::general::GeneralConfig::load(&path).unwrap();
+    assert_eq!(saved.control.management.overview_interval_ms, 450);
+    let settings = rig.client.config().await.unwrap();
+    let interval = settings
+        .iter()
+        .find(|setting| setting.name == "control.management.overview_interval_ms")
+        .unwrap();
+    assert_eq!(interval.effective, 450);
+    assert!(interval.saved);
+    rig.close().await;
+}
+
+#[test]
+fn persistent_configuration_reports_save_without_application_during_shutdown() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let rig = Rig::new(vec![]).await;
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, block) = std::sync::mpsc::channel();
+        let blocker = tokio::task::spawn_blocking(move || {
+            entered.send(()).unwrap();
+            block.recv_timeout(Duration::from_secs(8)).unwrap();
+        });
+        ready.await.unwrap();
+
+        let plan = rig
+            .client
+            .preview(p::Action::SetObservationInterval {
+                milliseconds: 450,
+                save: true,
+            })
+            .await
+            .unwrap();
+        let op = rig
+            .client
+            .apply(&plan.id, "shutdown-interval")
+            .await
+            .unwrap();
+        bounded(async {
+            while rig.client.operation(&op.id).await.unwrap().state != "executing" {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        // On the current-thread runtime execution yielded with the file write
+        // queued behind the blocking worker. Stop Live before releasing it.
+        rig.app.handle().request_shutdown().await.unwrap();
+        bounded(async {
+            while !rig.app.handle().status().shutting_down {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        release.send(()).unwrap();
+        blocker.await.unwrap();
+        let operation = bounded(rig.client.wait_operation(&op.id, Duration::from_secs(5)))
+            .await
+            .unwrap();
+        assert!(operation.saved);
+        assert_eq!(operation.state, "saved_runtime_failed");
+        let settings = rig.client.config().await.unwrap();
+        let interval = settings
+            .iter()
+            .find(|setting| setting.name == "control.management.overview_interval_ms")
+            .unwrap();
+        assert_eq!(interval.effective, 100);
+        assert!(!interval.saved);
+        let saved = marketforge_engine::live::config::general::GeneralConfig::load(
+            rig.dir.path().join("general.toml"),
+        )
+        .unwrap();
+        assert_eq!(saved.control.management.overview_interval_ms, 450);
+        let rejected = rig
+            .client
+            .preview(p::Action::ResizeWorkers {
+                workers: 3,
+                save: false,
+            })
+            .await;
+        assert!(rejected.is_err());
+        rig.close().await;
+    });
 }

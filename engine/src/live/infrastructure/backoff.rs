@@ -166,25 +166,12 @@ impl ExponentialBackoff {
         self.next_base_ms = base_ms.saturating_mul(2).min(self.config.maximum_ms());
 
         let actual_ms = if self.config.jitter {
-            Self::equal_jitter(base_ms)
+            equal_jitter(base_ms)
         } else {
             base_ms
         };
 
         Duration::from_millis(actual_ms)
-    }
-
-    /// Apply equal jitter to an exponential delay.
-    ///
-    /// The resulting delay never exceeds the base delay.
-    fn equal_jitter(base_ms: u64) -> u64 {
-        let minimum_ms = base_ms / 2 + base_ms % 2;
-
-        if minimum_ms == base_ms {
-            return base_ms;
-        }
-
-        rand::random_range(minimum_ms..=base_ms)
     }
 
     // ========================================================
@@ -216,6 +203,19 @@ impl ExponentialBackoff {
     pub fn config(&self) -> BackoffConfig {
         self.config
     }
+}
+
+/// Apply equal jitter to an exponential delay.
+///
+/// The resulting delay never exceeds the base delay.
+pub(super) fn equal_jitter(base_ms: u64) -> u64 {
+    let minimum_ms = base_ms / 2 + base_ms % 2;
+
+    if minimum_ms == base_ms {
+        return base_ms;
+    }
+
+    rand::random_range(minimum_ms..=base_ms)
 }
 
 // ============================================================
